@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateProduct, setProductMedia } from '@/modules/shop/lib/db/products'
+import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
 import { getVariantById, setVariantEnabled } from '@/modules/shop-variations/lib/db/variants'
 
 const Body = z.object({
@@ -42,6 +43,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (data.imageUrl !== undefined) {
     await setProductMedia(variant.childProductId, data.imageUrl ? [{ type: 'IMAGE', url: data.imageUrl, isPrimary: true }] : [])
+    // File the variant's image in the parent product's media-library folder, so
+    // every image for a product - its own and its variants' - sits together.
+    // The child is a hidden product with no categories of its own, so left to
+    // itself it would land under "Uncategorised"; passing the parent as the
+    // folder owner keeps the name (from the child's unique slug) but borrows the
+    // parent's folder.
+    if (data.imageUrl) await reorganiseProductMedia(variant.childProductId, { folderProductId: variant.productId })
   }
 
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)
