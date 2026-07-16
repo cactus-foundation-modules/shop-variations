@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { updateOption, deleteOption } from '@/modules/shop-variations/lib/db/options'
+import { updateOption, deleteOption, getOptionProductId, optionNameTaken } from '@/modules/shop-variations/lib/db/options'
 
 const PatchBody = z.object({
   name: z.string().min(1).max(80).optional(),
@@ -15,7 +15,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params
   const parsed = PatchBody.safeParse(await request.json())
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
-  await updateOption(id, parsed.data)
+
+  // An option's name is not part of the generated variant child names (those are
+  // composed from the value labels only), so a rename here needs no re-sync.
+  const name = parsed.data.name?.trim()
+  if (name !== undefined) {
+    if (!name) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    const productId = await getOptionProductId(id)
+    if (!productId) return NextResponse.json({ error: 'Option not found' }, { status: 404 })
+    if (await optionNameTaken(productId, name, id)) {
+      return NextResponse.json({ error: `This product already has an option called "${name}".` }, { status: 409 })
+    }
+  }
+
+  await updateOption(id, { ...parsed.data, ...(name !== undefined ? { name } : {}) })
   return NextResponse.json({ ok: true })
 }
 

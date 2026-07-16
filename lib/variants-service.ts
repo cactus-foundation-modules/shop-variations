@@ -99,6 +99,47 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
   return { created, removed, total: combos.length }
 }
 
+// Re-compose every variant child product's name from the current option value
+// labels. Child names are snapshotted at generate time, so a value rename leaves
+// them stale until this runs. Slugs are deliberately left alone: they are already
+// live urls, and the children are catalogue-hidden anyway. Placed orders keep the
+// name they snapshotted, which is the point of that snapshot.
+export async function syncVariantChildNames(parentId: string): Promise<number> {
+  const parent = await getProductById(parentId)
+  if (!parent) return 0
+
+  const options = await getOptionsWithValues(parentId)
+  const labelByValueId = new Map<string, string>()
+  const optionOrderByValueId = new Map<string, number>()
+  options.forEach((o, oi) => o.values.forEach((v) => {
+    labelByValueId.set(v.id, v.label)
+    optionOrderByValueId.set(v.id, oi)
+  }))
+
+  const variants = await getVariants(parentId)
+  if (variants.length === 0) return 0
+  const valueMap = await getVariantValueMap(parentId)
+
+  const currentNames = new Map<string, string>()
+  const childRows = await prisma.$queryRaw<{ id: string; name: string }[]>`
+    SELECT "id", "name" FROM "shp_products" WHERE "id" IN (${Prisma.join(variants.map((v) => v.childProductId))})
+  `
+  for (const r of childRows) currentNames.set(r.id, r.name)
+
+  let renamed = 0
+  for (const variant of variants) {
+    const ids = (valueMap[variant.id] ?? []).slice()
+      .sort((a, b) => (optionOrderByValueId.get(a) ?? 0) - (optionOrderByValueId.get(b) ?? 0))
+    const labels = ids.map((id) => labelByValueId.get(id)).filter(Boolean)
+    if (labels.length === 0) continue
+    const name = `${parent.name} - ${labels.join(' / ')}`
+    if (currentNames.get(variant.childProductId) === name) continue
+    await updateProduct(variant.childProductId, { name })
+    renamed += 1
+  }
+  return renamed
+}
+
 // Delete every variant + child product for a parent (used when clearing the
 // matrix). Options/add-ons are left in place unless separately removed.
 export async function clearVariants(parentId: string): Promise<number> {

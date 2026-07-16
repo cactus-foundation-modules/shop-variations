@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { useAdminPath } from '@/components/admin/AdminPathContext'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
 import type { SvrAddon } from '@/modules/shop-variations/lib/types'
@@ -43,6 +43,28 @@ export function VariationsEditorScreen({ productId, productName }: { productId: 
   const [newOptionName, setNewOptionName] = useState('')
   const [newOptionType, setNewOptionType] = useState<'DROPDOWN' | 'SWATCH' | 'PILL'>('DROPDOWN')
   const [newOptionValues, setNewOptionValues] = useState('')
+  const [optionError, setOptionError] = useState<string | null>(null)
+
+  // Both renames go through the same PATCH shape. A rejected rename (duplicate
+  // name) leaves the field open so the admin can correct it in place.
+  async function rename(url: string, patch: Record<string, string>, fallback: string): Promise<boolean> {
+    setBusy(true); setOptionError(null)
+    const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setOptionError(body.error ?? fallback)
+      setBusy(false)
+      return false
+    }
+    await refresh(); setBusy(false)
+    return true
+  }
+
+  const renameOption = (id: string, name: string) =>
+    rename(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
+
+  const renameValue = (id: string, label: string) =>
+    rename(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
 
   async function addOption() {
     if (!newOptionName.trim()) return
@@ -130,11 +152,19 @@ export function VariationsEditorScreen({ productId, productName }: { productId: 
       {/* Options */}
       <section style={{ display: 'grid', gap: '0.75rem' }}>
         <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Options</h2>
+        {optionError && <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--color-danger)' }}>{optionError}</p>}
         {data.options.length === 0 && <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>No options yet. Add one below (e.g. Size, Colour), then generate the variants.</p>}
         {data.options.map((opt) => (
           <div key={opt.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '0.75rem 1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-              <strong>{opt.name}</strong>
+              <InlineRename
+                value={opt.name}
+                ariaLabel={`Rename option ${opt.name}`}
+                onSave={(name) => renameOption(opt.id, name)}
+                disabled={busy}
+                inputWidth={160}
+                textStyle={{ fontWeight: 600 }}
+              />
               <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{CONTROL_LABELS[opt.controlType]}</span>
                 <button className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
@@ -144,7 +174,14 @@ export function VariationsEditorScreen({ productId, productName }: { productId: 
               {opt.values.map((v) => (
                 <span key={v.id} style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center', background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 999, padding: '0.125rem 0.5rem', fontSize: '0.8125rem' }}>
                   {opt.controlType === 'SWATCH' && v.swatch && <span aria-hidden style={{ width: 12, height: 12, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
-                  {v.label}
+                  <InlineRename
+                    value={v.label}
+                    ariaLabel={`Rename value ${v.label}`}
+                    onSave={(label) => renameValue(v.id, label)}
+                    disabled={busy}
+                    inputWidth={90}
+                    textStyle={{ fontSize: '0.8125rem' }}
+                  />
                   <button aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>×</button>
                 </span>
               ))}
@@ -237,6 +274,61 @@ export function VariationsEditorScreen({ productId, productName }: { productId: 
       {/* Personalisation add-ons */}
       <PersonalisationEditor productId={productId} addons={data.addons} currency={currency} onChange={refresh} />
     </div>
+  )
+}
+
+// Click the text to rename it in place. Enter or blur saves, Escape cancels, and
+// a rejected save (duplicate name) keeps the field open with the draft intact so
+// the admin can correct it rather than retype it.
+function InlineRename({ value, onSave, disabled, ariaLabel, inputWidth, textStyle }: {
+  value: string
+  onSave: (next: string) => Promise<boolean>
+  disabled: boolean
+  ariaLabel: string
+  inputWidth: number
+  textStyle?: CSSProperties
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+
+  async function commit() {
+    const next = draft.trim()
+    if (!next || next === value) { setEditing(false); return }
+    setSaving(true)
+    const ok = await onSave(next)
+    setSaving(false)
+    if (ok) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        aria-label={ariaLabel}
+        value={draft}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit() }
+          if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+        }}
+        style={{ padding: '0.125rem 0.375rem', borderRadius: 6, border: '1px solid var(--color-border)', width: inputWidth, fontSize: '0.8125rem', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => { setDraft(value); setEditing(true) }}
+      style={{ background: 'none', border: 'none', borderBottom: '1px dashed var(--color-border)', padding: 0, cursor: 'pointer', font: 'inherit', color: 'var(--color-text)', ...textStyle }}
+    >
+      {value}
+    </button>
   )
 }
 

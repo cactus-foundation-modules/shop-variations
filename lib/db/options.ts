@@ -59,6 +59,48 @@ export async function deleteOption(id: string): Promise<void> {
   await prisma.$executeRaw`DELETE FROM "svr_options" WHERE "id" = ${id}`
 }
 
+// The parent product an option belongs to. Renames need it to re-sync the
+// variant child products afterwards.
+export async function getOptionProductId(id: string): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ product_id: string }[]>`
+    SELECT "product_id" FROM "svr_options" WHERE "id" = ${id} LIMIT 1
+  `
+  return rows[0]?.product_id ?? null
+}
+
+// The owning option id and parent product id of a single value.
+export async function getOptionValueOwner(id: string): Promise<{ optionId: string; productId: string } | null> {
+  const rows = await prisma.$queryRaw<{ option_id: string; product_id: string }[]>`
+    SELECT v."option_id", o."product_id"
+    FROM "svr_option_values" v
+    JOIN "svr_options" o ON o."id" = v."option_id"
+    WHERE v."id" = ${id} LIMIT 1
+  `
+  const row = rows[0]
+  return row ? { optionId: row.option_id, productId: row.product_id } : null
+}
+
+// Case-insensitive duplicate checks. Two options on a product sharing a name, or
+// two values in one option sharing a label, make the generated variant names
+// ambiguous, so renames are refused rather than allowed to collide.
+export async function optionNameTaken(productId: string, name: string, exceptId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "svr_options"
+    WHERE "product_id" = ${productId} AND lower("name") = lower(${name}) AND "id" <> ${exceptId}
+    LIMIT 1
+  `
+  return rows.length > 0
+}
+
+export async function optionValueLabelTaken(optionId: string, label: string, exceptId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "svr_option_values"
+    WHERE "option_id" = ${optionId} AND lower("label") = lower(${label}) AND "id" <> ${exceptId}
+    LIMIT 1
+  `
+  return rows.length > 0
+}
+
 export async function createOptionValue(optionId: string, label: string, swatch: string | null, position: number): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
     INSERT INTO "svr_option_values" ("option_id", "label", "swatch", "position")
