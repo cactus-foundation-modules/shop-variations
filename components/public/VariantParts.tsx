@@ -42,7 +42,9 @@ export function VariantOptionsPart({ preview, slug: explicitSlug }: PartProps) {
   )
 }
 
-function OptionControl({ option, sel }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection> }) {
+// Exported so the slot parts (DetailSlotParts.tsx) render the identical control
+// inside shop's own detail chrome - one control, two hosts.
+export function OptionControl({ option, sel }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection> }) {
   const chosen = sel.optionValues[option.id]
   const label = <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: '0.375rem' }}>{option.name}</span>
 
@@ -119,7 +121,8 @@ export function VariantPersonalisationPart({ preview, slug: explicitSlug }: Part
   )
 }
 
-function AddonControl({ addon, value, onChange, currency, slug }: { addon: SvrAddon; value: AddonValue; onChange: (v: AddonValue) => void; currency: string; slug: string }) {
+// Exported alongside OptionControl for the same reason.
+export function AddonControl({ addon, value, onChange, currency, slug }: { addon: SvrAddon; value: AddonValue; onChange: (v: AddonValue) => void; currency: string; slug: string }) {
   const priceHint = addon.config.flatPrice ? ` (+${money(addon.config.flatPrice, currency)})`
     : addon.config.pricePerChar ? ` (+${money(addon.config.pricePerChar, currency)}/character)` : ''
   const labelEl = (

@@ -1,11 +1,11 @@
 {
   "name": "shop-variations",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.426",
   "requiresModules": [
-    { "name": "shop", "minVersion": "0.1.26" }
+    { "name": "shop", "minVersion": "0.1.35" }
   ],
   "permissions": [],
   "navGroupLabel": "Shop",
@@ -19,7 +19,8 @@
   ],
   "extensionPoints": [
     { "point": "shop.product-editor-sections", "id": "variations-inline", "permission": "shop.products", "import": "./components/admin/ProductVariationsSection", "component": "ProductVariationsSection" },
-    { "point": "shop.cart-line-resolver", "id": "variations-addons", "import": "./lib/line-resolver", "component": "resolveVariationLineMeta" }
+    { "point": "shop.cart-line-resolver", "id": "variations-addons", "import": "./lib/line-resolver", "component": "resolveVariationLineMeta" },
+    { "point": "shop.product-detail-parts", "id": "variations-detail-parts", "import": "./lib/detail-parts-provider", "component": "shopVariationsDetailParts" }
   ],
   "puckBlocks": [
     { "type": "ShopVariantPurchase", "import": "./components/puck/ShopVariantPurchase", "component": "shopVariantPurchasePuckComponent", "rscComponent": "shopVariantPurchasePuckRscComponent", "layoutTypes": ["shopProduct"] },
