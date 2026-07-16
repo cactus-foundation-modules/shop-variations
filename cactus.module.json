@@ -1,6 +1,6 @@
 {
   "name": "shop-variations",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.426",
@@ -29,7 +29,6 @@
     { "type": "ShopVariantAddToCart", "import": "./components/puck/variant-parts", "component": "shopVariantAddToCartPuckComponent", "rscComponent": "shopVariantAddToCartPuckRscComponent", "layoutTypes": ["shopProductDetail"] },
     { "type": "ShopVariantGallery", "import": "./components/puck/variant-parts", "component": "shopVariantGalleryPuckComponent", "rscComponent": "shopVariantGalleryPuckRscComponent", "layoutTypes": ["shopProductDetail"] }
   ],
-  "layoutTypes": {},
   "memberExtensions": {
     "activityTypes": [],
     "notificationCategories": [],
