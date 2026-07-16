@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { useAdminPath } from '@/components/admin/AdminPathContext'
+import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
 import type { SvrAddon } from '@/modules/shop-variations/lib/types'
 
@@ -366,25 +367,46 @@ function BulkControls({ currency, onSetPrice, onSetStock, disabled }: { currency
   )
 }
 
+// Picks from the same shared media library (with upload) as the main product
+// gallery, rather than asking the admin to paste a URL. A variant only ever has
+// one image, so the first of a multi-select wins.
 function ImageCell({ url, onSet }: { url: string | null; onSet: (url: string | null) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(url ?? '')
-  if (editing) {
-    return (
-      <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-        <input placeholder="Image URL" value={value} onChange={(e) => setValue(e.target.value)} style={{ padding: '0.25rem 0.5rem', borderRadius: 6, border: '1px solid var(--color-border)', width: 160, fontSize: '0.8125rem' }} />
-        <button className="btn btn-secondary btn-sm" onClick={() => { onSet(value || null); setEditing(false) }}>Save</button>
-      </span>
-    )
-  }
+  const [picking, setPicking] = useState(false)
   return (
-    <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} aria-label="Set variant image">
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }} />
-      ) : (
-        <span style={{ width: 36, height: 36, borderRadius: 6, border: '1px dashed var(--color-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
+    <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
+      <button
+        type="button"
+        onClick={() => setPicking(true)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex' }}
+        aria-label={url ? 'Change variant image' : 'Add variant image'}
+      >
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }} />
+        ) : (
+          <span style={{ width: 36, height: 36, borderRadius: 6, border: '1px dashed var(--color-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
+        )}
+      </button>
+      {url && (
+        <button
+          type="button"
+          onClick={() => onSet(null)}
+          aria-label="Remove variant image"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0.125rem', color: 'var(--color-text-muted)', fontSize: '1rem', lineHeight: 1 }}
+        >
+          ×
+        </button>
       )}
-    </button>
+      {picking && (
+        <MediaPickerModal
+          onClose={() => setPicking(false)}
+          onAdd={(items) => {
+            const first = items[0]
+            if (first) onSet(first.url)
+            setPicking(false)
+          }}
+        />
+      )}
+    </span>
   )
 }
