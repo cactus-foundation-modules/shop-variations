@@ -7,8 +7,8 @@ import { VariationsTabs } from '@/modules/shop-variations/components/admin/Varia
 type Row = { id: string; name: string; slug: string; variantCount: number; addonCount: number }
 
 // Lists every product that has options, variants or add-ons and links into the
-// deep editor. Products gain variations from their own editor (via the inline
-// section), so this is a management overview rather than a create screen.
+// product editor's Variations tab, which is where they are actually edited. This
+// is a cross-product overview rather than an editor in its own right.
 export function VariationsListScreen() {
   const adminPath = useAdminPath()
   const [rows, setRows] = useState<Row[]>([])
@@ -30,8 +30,8 @@ export function VariationsListScreen() {
 
       {!loaded ? null : rows.length === 0 ? (
         <p style={{ color: 'var(--color-text-muted)' }}>
-          No products have variations yet. Open a product in the shop and use the
-          &ldquo;Variations &amp; personalisation&rdquo; section to add options or personalisation fields.
+          No products have variations yet. Open any product under Shop &rsaquo; Products and use its
+          Variations tab to add options or personalisation fields.
         </p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -50,7 +50,7 @@ export function VariationsListScreen() {
                 <td style={{ padding: '0.5rem' }}>{r.variantCount}</td>
                 <td style={{ padding: '0.5rem' }}>{r.addonCount}</td>
                 <td style={{ padding: '0.5rem', textAlign: 'right' }}>
-                  <a className="btn btn-secondary btn-sm" href={`/${adminPath}/m/shop-variations/products/${r.id}`}>Manage</a>
+                  <a className="btn btn-secondary btn-sm" href={`/${adminPath}/m/shop/products/${r.id}?tab=variations-inline`}>Manage</a>
                 </td>
               </tr>
             ))}
