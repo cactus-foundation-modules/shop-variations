@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
+import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 // On the live page each part is handed the slug and the payload its RSC half
@@ -257,10 +258,15 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
 }
 
 // ---- Variant-aware gallery ----------------------------------------------
-export function VariantGalleryPart({ preview, slug: explicitSlug, initial }: PartProps) {
+// `extras` are items another module contributed through shop's `shop.gallery-media`
+// point, resolved by this block's RSC half. This block covers shop's Gallery slot,
+// so it is the only strip on the page and owns showing them - see the note in
+// variant-parts.rsc.tsx.
+export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extras = [] }: PartProps & { extras?: ShopGalleryExtra[] }) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
+  const [picked, setPicked] = useState<{ id: string; key: string } | null>(null)
   const variantImage = sel.variant?.imageUrl ?? null
 
   // When the chosen variant brings its own image, snap the main view to it.
@@ -274,19 +280,51 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial }: Par
   const main = override ?? sel.image ?? base[0]?.url ?? null
   const thumbs = [...(variantImage ? [{ url: variantImage, alt: 'Selected variant' }] : []), ...base]
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
+  const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
+  const activeProductId = sel.variant?.childProductId ?? null
 
-  if (!main) return null
+  // A product whose only picture is a contributed item still has a gallery worth
+  // drawing, so this bails only when there is nothing at all to show.
+  if (!main && extras.length === 0) return null
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={main} alt={sel.payload.productName} style={{ width: '100%', borderRadius: 10, objectFit: 'cover', aspectRatio: '1 / 1', border: '1px solid var(--color-border)' }} />
-      {thumbs.length > 1 && (
+      {/* This block styles itself inline, but a contributed thumbnail is rendered
+          by the module that supplied it and can only be handed class names. These
+          two mirror the image thumbnails' inline style above, so a 3D thumbnail
+          sits in the strip looking like the pictures either side of it rather
+          than like an unstyled button. */}
+      {extras.length > 0 && (
+        <style dangerouslySetInnerHTML={{ __html: `
+.svr-gallery-thumb{padding:0;border:2px solid var(--color-border);border-radius:8px;cursor:pointer;background:none;width:56px;height:56px;overflow:hidden;display:block;position:relative}
+.svr-gallery-thumb.on{border-color:var(--color-primary)}
+` }} />
+      )}
+      {activeExtra && picked ? (
+        <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+          <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
+        </div>
+      ) : main ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img src={main} alt={sel.payload.productName} style={{ width: '100%', borderRadius: 10, objectFit: 'cover', aspectRatio: '1 / 1', border: '1px solid var(--color-border)' }} />
+      ) : null}
+      {thumbs.length + extras.length > 1 && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {thumbs.map((t) => (
-            <button key={t.url} type="button" onClick={() => setOverride(t.url)} style={{ padding: 0, border: `2px solid ${main === t.url ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
+            <button key={t.url} type="button" onClick={() => { setOverride(t.url); setPicked(null) }} style={{ padding: 0, border: `2px solid ${main === t.url && !picked ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={t.url} alt={t.alt} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
             </button>
+          ))}
+          {extras.map((extra) => (
+            <extra.Thumbs
+              key={extra.id}
+              payload={extra.payload}
+              activeProductId={activeProductId}
+              activeKey={picked?.id === extra.id ? picked.key : null}
+              onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
+              thumbClass="svr-gallery-thumb"
+              thumbOnClass="svr-gallery-thumb on"
+            />
           ))}
         </div>
       )}

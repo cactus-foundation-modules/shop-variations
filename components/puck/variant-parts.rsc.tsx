@@ -2,6 +2,7 @@ import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
 } from '@/modules/shop-variations/components/public/VariantParts'
 import { bootstrapForCurrentProduct, currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
+import { resolveShopGalleryExtras } from '@/modules/shop/lib/gallery-media'
 import {
   shopVariantOptionsPuckComponent,
   shopVariantPersonalisationPuckComponent,
@@ -48,5 +49,15 @@ export async function ShopVariantAddToCartRsc(props: ShopVariantAddToCartProps) 
 export const shopVariantAddToCartPuckRscComponent = { ...shopVariantAddToCartPuckComponent, render: ShopVariantAddToCartRsc }
 
 // --- Variant-aware gallery ---
-export async function ShopVariantGalleryRsc() { return <VariantGalleryPart {...await bootstrapProps()} /> }
+// This block declares Gallery in `coveredSlots`, so where a layout carries it,
+// shop's own Gallery part renders nothing at all. That makes this the only strip
+// on the page, and therefore the only place a module's contributed gallery media
+// (shop's `shop.gallery-media` point) can appear - resolve it here or installing
+// such a module would do nothing on exactly the layouts that use this block.
+export async function ShopVariantGalleryRsc() {
+  const props = await bootstrapProps()
+  const productId = props.initial?.payload.productId ?? null
+  const extras = productId ? await resolveShopGalleryExtras(productId) : []
+  return <VariantGalleryPart {...props} extras={extras} />
+}
 export const shopVariantGalleryPuckRscComponent = { ...shopVariantGalleryPuckComponent, render: ShopVariantGalleryRsc }

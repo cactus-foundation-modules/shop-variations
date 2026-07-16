@@ -16,7 +16,7 @@
 // options and the chosen combination's price are in the page's HTML rather than
 // a fetch behind it. Its absence is survivable, not fatal - the store falls back
 // to fetching, which is what these islands used to do unconditionally.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import type {
   ShopDetailGallerySlotProps,
@@ -30,40 +30,152 @@ type Seeded<P> = P & { initial: VariationBootstrap | null }
 
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
+// How far the magnifier goes in. Kept level with shop's own gallery on purpose:
+// a product with options must magnify by exactly as much as one without, or the
+// shop-wide setting means two different things depending on the product.
+const ZOOM_SCALE = 2.5
+
+function pct(offset: number, size: number): string {
+  return `${Math.min(100, Math.max(0, (offset / size) * 100))}%`
+}
+
 // ---- Gallery -------------------------------------------------------------
 // Shop's images render immediately from its server data; once a chosen variant
 // carries its own image we lead with that.
-export function VariantSlotGalleryClient({ slug, productName, images, shape, classNames, initial }: Seeded<ShopDetailGallerySlotProps>) {
+//
+// The `zoom` prop is shop's shop-wide "magnify the image under the pointer"
+// setting, and this gallery has to honour it itself: shop's Gallery part hands
+// the whole job over for a claimed product, so a shopper on a product with
+// options would otherwise find the setting quietly does nothing.
+//
+// The behaviour is shop's, reimplemented rather than imported. Shop's version
+// lives inside its ProductGallery component, which we can't reuse (it has no
+// notion of a variant image), and the two modifier classes behind it -
+// `zoomable` and `zoomed` - are shop's own CSS, which the classNames contract
+// deliberately doesn't hand over. Those classes carry two declarations between
+// them (the cursor, and touch-action while magnified), so they go on inline
+// here instead and the fix stays inside this module.
+export function VariantSlotGalleryClient({ slug, productName, images, shape, zoom, classNames, initial, extras = [] }: Seeded<ShopDetailGallerySlotProps>) {
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
+  const [hovering, setHovering] = useState(false)
+  const [tapped, setTapped] = useState(false)
+  const [origin, setOrigin] = useState('50% 50%')
+  // Which contributed item (see shop's lib/gallery-media.ts) is on the stage, as
+  // { provider id, item key }, or null while an image is showing. Replacing
+  // shop's gallery means we inherit its job of rendering these: ignore them and
+  // installing a module that contributes gallery media would quietly do nothing
+  // on exactly the products we claimed.
+  const [picked, setPicked] = useState<{ id: string; key: string } | null>(null)
   const variantImage = sel.variant?.imageUrl ?? null
+  // The product actually being bought: the chosen combination's child, or null
+  // while nothing is chosen. This is the bit shop cannot know and we can, so a
+  // contributed item can narrow itself to the shopper's current choice.
+  const activeProductId = sel.variant?.childProductId ?? null
 
-  // A new variant image resets the shopper's manual thumbnail pick.
+  // A new variant image resets the shopper's manual thumbnail pick, and drops a
+  // held tap-zoom with it: the magnified point was chosen on the old picture and
+  // means nothing on the new one.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the override in response to a variant change is the intended reset, not derived render state
-  useEffect(() => { setOverride(null) }, [variantImage])
+  useEffect(() => { setOverride(null); setTapped(false) }, [variantImage])
 
   const aspect = shape === 'portrait' ? '3 / 4' : shape === 'landscape' ? '4 / 3' : '1 / 1'
   const thumbs = [...(variantImage ? [{ url: variantImage, alt: productName }] : []), ...images]
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   const main = override ?? variantImage ?? images[0]?.url ?? null
+  const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
+
+  // Magnifying is shop's behaviour for shop's image. A contributed stage owns its
+  // whole box (a 3D viewer does its own zooming), so the pointer must reach it
+  // untouched rather than through a transform of ours.
+  const zoomable = Boolean(zoom) && main !== null && !activeExtra
+  const magnified = zoomable && (hovering || tapped)
+
+  function track(e: ReactPointerEvent<HTMLDivElement>) {
+    const box = e.currentTarget.getBoundingClientRect()
+    setOrigin(`${pct(e.clientX - box.left, box.width)} ${pct(e.clientY - box.top, box.height)}`)
+  }
+
+  // Mouse: the magnifier follows the pointer while it's over the stage. Touch: a
+  // tap magnifies at the tapped point and a drag then moves the magnified area
+  // around, a second tap zooms back out. Touch deliberately isn't wired to
+  // pointerenter/leave - a passing finger would magnify and drop the image on
+  // every scroll past it.
+  const zoomHandlers = zoomable
+    ? {
+        onPointerEnter: (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (e.pointerType === 'touch') return
+          track(e)
+          setHovering(true)
+        },
+        onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (e.pointerType === 'touch' && !tapped) return
+          track(e)
+        },
+        onPointerLeave: (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (e.pointerType === 'touch') return
+          setHovering(false)
+        },
+        onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => {
+          if (e.pointerType !== 'touch') return
+          track(e)
+          setTapped((t) => !t)
+        },
+      }
+    : {}
+
+  const stageStyle: CSSProperties = {
+    aspectRatio: aspect,
+    ...(zoomable ? { cursor: magnified ? 'zoom-out' : 'zoom-in' } : {}),
+    // touch-action only while magnified, so a finger passing over a plain image
+    // still scrolls the page.
+    ...(magnified ? { touchAction: 'none' } : {}),
+  }
 
   return (
     <div className={classNames.col}>
-      <div className={classNames.stage} style={{ aspectRatio: aspect }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- mirrors shop's own gallery, which serves already-sized media URLs */}
-        {main && <img className={classNames.image} src={main} alt={productName} />}
+      <div className={classNames.stage} style={stageStyle} {...zoomHandlers}>
+        {activeExtra && picked ? (
+          <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
+        ) : main ? (
+          // eslint-disable-next-line @next/next/no-img-element -- mirrors shop's own gallery, which serves already-sized media URLs
+          <img
+            className={classNames.image}
+            src={main}
+            alt={productName}
+            draggable={false}
+            // Origin stays put while zoomed out, so releasing settles back into
+            // the spot the shopper was looking at rather than snapping to centre.
+            style={zoomable ? { transformOrigin: origin, transform: magnified ? `scale(${ZOOM_SCALE})` : undefined } : undefined}
+          />
+        ) : null}
       </div>
-      {thumbs.length > 1 && (
+      {/* One image plus one contributed item is still two things to pick between. */}
+      {thumbs.length + extras.length > 1 && (
         <div className={classNames.thumbs}>
           {thumbs.map((t) => (
             <button
-              key={t.url} type="button" onClick={() => setOverride(t.url)}
-              className={main === t.url ? classNames.thumbOn : classNames.thumb}
+              key={t.url} type="button" onClick={() => { setOverride(t.url); setTapped(false); setPicked(null) }}
+              className={main === t.url && !picked ? classNames.thumbOn : classNames.thumb}
               aria-label={`Show ${t.alt}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- as above */}
               <img src={t.url} alt={t.alt} />
             </button>
+          ))}
+          {extras.map((extra) => (
+            <extra.Thumbs
+              key={extra.id}
+              payload={extra.payload}
+              activeProductId={activeProductId}
+              activeKey={picked?.id === extra.id ? picked.key : null}
+              onPick={(key) => {
+                setPicked(key === null ? null : { id: extra.id, key })
+                setTapped(false)
+              }}
+              thumbClass={classNames.thumb}
+              thumbOnClass={classNames.thumbOn}
+            />
           ))}
         </div>
       )}
