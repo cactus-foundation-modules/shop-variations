@@ -55,7 +55,7 @@ function pct(offset: number, size: number): string {
 // deliberately doesn't hand over. Those classes carry two declarations between
 // them (the cursor, and touch-action while magnified), so they go on inline
 // here instead and the fix stays inside this module.
-export function VariantSlotGalleryClient({ slug, productName, images, shape, zoom, classNames, initial, extras = [] }: Seeded<ShopDetailGallerySlotProps>) {
+export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [] }: Seeded<ShopDetailGallerySlotProps>) {
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
   const [hovering, setHovering] = useState(false)
@@ -79,7 +79,6 @@ export function VariantSlotGalleryClient({ slug, productName, images, shape, zoo
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the override in response to a variant change is the intended reset, not derived render state
   useEffect(() => { setOverride(null); setTapped(false) }, [variantImage])
 
-  const aspect = shape === 'portrait' ? '3 / 4' : shape === 'landscape' ? '4 / 3' : '1 / 1'
   const thumbs = [...(variantImage ? [{ url: variantImage, alt: productName }] : []), ...images]
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   const main = override ?? variantImage ?? images[0]?.url ?? null
@@ -124,8 +123,10 @@ export function VariantSlotGalleryClient({ slug, productName, images, shape, zoo
       }
     : {}
 
+  // No aspectRatio here: the stage is square for every product now, and that
+  // comes from shop's own `.spd-stage` class, which arrives via classNames. One
+  // ratio, defined once, rather than two modules agreeing to keep saying 1/1.
   const stageStyle: CSSProperties = {
-    aspectRatio: aspect,
     ...(zoomable ? { cursor: magnified ? 'zoom-out' : 'zoom-in' } : {}),
     // touch-action only while magnified, so a finger passing over a plain image
     // still scrolls the page.
