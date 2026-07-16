@@ -44,7 +44,27 @@ export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: Par
       {sel.payload.options.map((option) => (
         <OptionControl key={option.id} option={option} sel={sel} />
       ))}
+      <ResetOptionsLink sel={sel} />
     </div>
+  )
+}
+
+// Sits below the last option, in both hosts (see DetailSlotPartsClient), and puts
+// the shopper back to an unchosen page. A button rather than an anchor: it goes
+// nowhere, and a keyboard or screen reader shopper should be told as much.
+export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+  if (!sel.anyOptionChosen) return null
+  return (
+    <button
+      type="button" onClick={() => sel.resetOptions()}
+      style={{
+        justifySelf: 'start', padding: 0, background: 'none', border: 'none',
+        color: 'var(--color-text-muted)', fontSize: '0.8125rem',
+        textDecoration: 'underline', cursor: 'pointer',
+      }}
+    >
+      Reset options
+    </button>
   )
 }
 
@@ -212,7 +232,10 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   return (
     <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
       {money(sel.price, sel.currencySymbol)}
-      {sel.hasOptions && !sel.inStock && <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--color-danger)', marginLeft: '0.5rem' }}>Out of stock</span>}
+      {/* Only once there's a combination to be out of stock. Nothing chosen is
+          not the same as nothing available, and saying so over the parent's
+          price would turn every options product into a sold-out one. */}
+      {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--color-danger)', marginLeft: '0.5rem' }}>Out of stock</span>}
     </div>
   )
 }

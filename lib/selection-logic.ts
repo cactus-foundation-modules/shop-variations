@@ -48,17 +48,8 @@ export function isValueAvailable(payload: VariantSelectorPayload, selection: Opt
   })
 }
 
-// The combination to pre-highlight on load: the first buyable variant's values,
-// so a real price shows immediately. Falls back to the first enabled variant,
-// then to nothing.
-export function firstPreselect(payload: VariantSelectorPayload): OptionSelection {
-  const v2o = valueToOptionMap(payload)
-  const pick = payload.variants.find(isBuyable) ?? payload.variants.find((v) => v.enabled)
-  if (!pick) return {}
-  const selection: OptionSelection = {}
-  for (const o of payload.options) {
-    const val = variantValueForOption(pick, o.id, v2o)
-    if (val) selection[o.id] = val
-  }
-  return selection
-}
+// A product page opens with nothing chosen: every option is the shopper's to
+// pick, and a combination they never asked for must not be sat in the controls
+// (nor, worse, in the price) as though they had. Hence no preselect function
+// here - the opening selection is the empty one, and `resolveVariant` above
+// already treats that as "no variant yet".

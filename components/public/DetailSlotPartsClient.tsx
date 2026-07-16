@@ -24,7 +24,7 @@ import type {
   ShopDetailPurchaseSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
-import { AddonControl, OptionControl } from '@/modules/shop-variations/components/public/VariantParts'
+import { AddonControl, OptionControl, ResetOptionsLink } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: VariationBootstrap | null }
 
@@ -245,6 +245,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
           {sel.payload.options.map((option) => (
             <OptionControl key={option.id} option={option} sel={sel} />
           ))}
+          <ResetOptionsLink sel={sel} />
         </div>
       )}
       {!addonsPlaced && sel.payload.addons.length > 0 && (

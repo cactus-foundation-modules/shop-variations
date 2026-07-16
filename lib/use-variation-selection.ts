@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, firstPreselect, isValueAvailable, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -49,12 +49,12 @@ function newEntry(slug: string): Entry {
   return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, subs: new Set() }
 }
 
-// An entry that already holds everything the server resolved: no fetch to do, no
-// empty first render, and the shopper's opening combination preselected.
+// An entry that already holds everything the server resolved: no fetch to do and
+// no empty first render. The options open unchosen (see selection-logic), so the
+// controls arrive in the HTML with nothing picked in them.
 function seededEntry(slug: string, bootstrap: VariationBootstrap): Entry {
   const entry = newEntry(slug)
   entry.payload = bootstrap.payload
-  entry.optionValues = firstPreselect(bootstrap.payload)
   entry.currencySymbol = bootstrap.currencySymbol
   entry.loaded = true
   return entry
@@ -83,7 +83,6 @@ async function ensureLoaded(entry: Entry): Promise<void> {
   try {
     const res = await fetch(`/api/m/shop-variations/public/by-slug/${encodeURIComponent(entry.slug)}/variations`)
     entry.payload = res.ok ? await res.json() : null
-    if (entry.payload) entry.optionValues = firstPreselect(entry.payload)
   } catch {
     entry.payload = null
   } finally {
@@ -120,6 +119,17 @@ function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): vo
 export function setOptionValue(slug: string, optionId: string, valueId: string): void {
   const entry = getEntry(slug)
   entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
+  notify(entry)
+}
+
+// Back to the opening state: every option unchosen, so the price falls back to
+// the parent's and the buy button waits to be told what to sell. Personalisation
+// is left alone - it's the shopper's own typing, not a pick they can redo in a
+// click, and binning it because they changed their mind about a colour would be
+// its own small outrage.
+export function resetOptionValues(slug: string): void {
+  const entry = getEntry(slug)
+  entry.optionValues = {}
   notify(entry)
 }
 
@@ -174,6 +184,9 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   const variant = payload ? resolveVariant(payload, optionValues) : null
   const addonPricing = payload ? computeAddonPricing(payload.addons, addonValues) : { priceAdjust: 0, valid: true, fields: [] }
   const hasOptions = (payload?.options.length ?? 0) > 0
+  // Whether there's anything to reset - the link has no business appearing over
+  // a set of controls the shopper hasn't touched.
+  const anyOptionChosen = payload ? payload.options.some((o) => !!optionValues[o.id]) : false
   const basePrice = variant ? variant.price : payload?.basePrice ?? 0
   const price = basePrice + addonPricing.priceAdjust
   const image = variant?.imageUrl ?? payload?.baseImages[0]?.url ?? null
@@ -213,6 +226,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     inStock,
     hasOptions,
     allOptionsChosen,
+    anyOptionChosen,
     addonPricing,
     canAdd,
     // A seeded entry carries the shop's symbol; the module-level one is the
@@ -220,6 +234,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // printing the default symbol and then hydrating into the real one.
     currencySymbol: entry?.currencySymbol ?? currencySymbol,
     setOption: (optionId: string, valueId: string) => slug && setOptionValue(slug, optionId, valueId),
+    resetOptions: () => slug && resetOptionValues(slug),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),
     isAvailable: (optionId: string, valueId: string) => (payload ? isValueAvailable(payload, optionValues, optionId, valueId) : false),
     add,
