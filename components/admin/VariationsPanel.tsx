@@ -1,7 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
+import { uploadOneFile } from '@/lib/media/upload-client'
+import { preflightUploadError } from '@/lib/media/limits'
 import {
   useProductEditorCurrency, useProductEditorSave, useProductEditorTabBadge,
 } from '@/modules/shop/components/admin/product-editor/context'
@@ -567,27 +569,84 @@ function BulkControls({ currency, onSetPrice, onSetStock, disabled }: {
   )
 }
 
+// A drag carrying files reports 'Files' among its types. The product editor also
+// drags its own gallery images about for reordering, and those must not light
+// this box up as a drop target - they carry no files.
+function isFileDrag(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer.types ?? []).includes('Files')
+}
+
 // Picks from the same shared media library (with upload) as the main product
 // gallery, rather than asking the admin to paste a URL. A variant only ever has
-// one image, so the first of a multi-select wins.
+// one image, so the first of a multi-select wins - and a dropped file is the
+// same thing by a shorter route: upload it, then point the variant at the row it
+// created. Dropping onto a variant that already has an image replaces it.
 function ImageCell({ url, onSet }: { url: string | null; onSet: (url: string | null) => void }) {
   const [picking, setPicking] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function receiveDrop(e: DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    // Same rules the library itself applies, checked here so a wrong file type or
+    // an oversized photo says so at once instead of after the round trip.
+    const reason = preflightUploadError(file)
+    if (reason) { setError(reason); return }
+    setError(null)
+    setUploading(true)
+    try {
+      const media = await uploadOneFile(file, null)
+      onSet(media.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That image would not upload.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const boxBase: CSSProperties = {
+    width: 36, height: 36, borderRadius: 'var(--radius-md)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  }
+
   return (
-    <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-      <button
-        type="button"
-        onClick={() => setPicking(true)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex' }}
-        aria-label={url ? 'Change variant image' : 'Add variant image'}
-      >
-        {url ? (
-          // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
-          <img src={url} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }} />
-        ) : (
-          <span style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
+    <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'flex-start' }}>
+      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          onDragEnter={(e) => { if (isFileDrag(e)) { e.preventDefault(); setDragOver(true) } }}
+          onDragOver={(e) => { if (isFileDrag(e)) { e.preventDefault(); setDragOver(true) } }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { if (isFileDrag(e)) void receiveDrop(e) }}
+          disabled={uploading}
+          style={{
+            background: dragOver ? 'var(--color-primary-subtle)' : 'none',
+            border: 'none', padding: 0, display: 'inline-flex',
+            borderRadius: 'var(--radius-md)',
+            cursor: uploading ? 'progress' : 'pointer',
+          }}
+          aria-label={url ? 'Change variant image, or drop an image here' : 'Add variant image, or drop an image here'}
+          title="Click to choose from the library, or drop an image here"
+        >
+          {uploading ? (
+            <span style={{ ...boxBase, border: '1px dashed var(--color-primary)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>…</span>
+          ) : url ? (
+            // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
+            <img src={url} alt="" style={{ ...boxBase, objectFit: 'cover', border: dragOver ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+          ) : (
+            <span style={{ ...boxBase, border: dragOver ? '2px solid var(--color-primary)' : '1px dashed var(--color-border)', color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
+          )}
+        </button>
+        {error && (
+          <span role="alert" style={{ color: 'var(--color-danger)', fontSize: '0.6875rem', maxWidth: 180, lineHeight: 1.3 }}>{error}</span>
         )}
-      </button>
-      {url && (
+      </span>
+      {url && !uploading && (
         <button type="button" onClick={() => onSet(null)} aria-label="Remove variant image" className="spe-icon-btn spe-icon-btn-danger">×</button>
       )}
       {picking && (
