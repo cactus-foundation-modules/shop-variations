@@ -14,7 +14,7 @@ import {
   VariantSlotPrice,
   VariantSlotPurchase,
 } from '@/modules/shop-variations/components/public/DetailSlotParts'
-import type { ShopDetailPartsProvider } from '@/modules/shop/lib/detail-slot'
+import type { ShopDetailPartsProvider, ShopDetailSlotName } from '@/modules/shop/lib/detail-slot'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 
 export const shopVariationsDetailParts: ShopDetailPartsProvider = {
@@ -28,6 +28,26 @@ export const shopVariationsDetailParts: ShopDetailPartsProvider = {
     const [options, addons] = await Promise.all([getOptionsWithValues(product.id), getAddons(product.id)])
     return options.length > 0 || addons.length > 0
   },
+
+  // A layout written before shop's own parts learned to handle options does the
+  // job with our granular blocks by hand - the default Deskwell product page
+  // carries ShopVariantPrice and ShopVariantOptions next to shop's Price and Add
+  // to Cart. Claiming those slots on top of that is what put two prices and two
+  // option pickers on the page. Where the author has already placed our block
+  // for a job, we do not claim shop's part for it as well; shop then renders
+  // nothing there and our block is the single source of that answer.
+  //
+  // Options and personalisation are not slots of shop's - they have no static
+  // counterpart to replace - so they cannot be handled here. VariantSlotPurchase
+  // drops them itself when the layout places them, via layoutBlockTypes.
+  coveredSlots(blockTypes) {
+    const covered: ShopDetailSlotName[] = []
+    if (blockTypes.has('ShopVariantGallery')) covered.push('Gallery')
+    if (blockTypes.has('ShopVariantPrice')) covered.push('Price')
+    if (blockTypes.has('ShopVariantAddToCart')) covered.push('PurchaseArea')
+    return covered
+  },
+
   Gallery: VariantSlotGallery,
   Price: VariantSlotPrice,
   PurchaseArea: VariantSlotPurchase,

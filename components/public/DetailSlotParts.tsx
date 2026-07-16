@@ -87,10 +87,16 @@ export function VariantSlotPrice({ slug, basePrice, compareAtPrice, savePct, cur
 // Shop's buy row, plus the option controls and personalisation fields above it.
 // This owns availability for a claimed product: stock lives on the chosen
 // combination, not on the parent row shop can see.
-export function VariantSlotPurchase({ slug, showStepper, label, classNames }: ShopDetailPurchaseSlotProps) {
+export function VariantSlotPurchase({ slug, showStepper, label, classNames, layoutBlockTypes }: ShopDetailPurchaseSlotProps) {
   const sel = useVariationSelection(slug)
   const [qty, setQty] = useState(1)
   const [added, setAdded] = useState(false)
+  // Options and personalisation ride along in this slot because shop has no part
+  // of its own for them. When the author has already placed our granular block
+  // for either, that block owns it and we must not draw it a second time - the
+  // shopper would get two option pickers wired to the same selection.
+  const optionsPlaced = layoutBlockTypes.includes('ShopVariantOptions')
+  const addonsPlaced = layoutBlockTypes.includes('ShopVariantPersonalisation')
 
   // Until the selection loads we still render the buy row, with the button held
   // disabled. Returning null here instead would blink the page's main call to
@@ -111,14 +117,14 @@ export function VariantSlotPurchase({ slug, showStepper, label, classNames }: Sh
 
   return (
     <div>
-      {sel.payload.options.length > 0 && (
+      {!optionsPlaced && sel.payload.options.length > 0 && (
         <div style={{ display: 'grid', gap: '1rem', marginTop: '18px' }}>
           {sel.payload.options.map((option) => (
             <OptionControl key={option.id} option={option} sel={sel} />
           ))}
         </div>
       )}
-      {sel.payload.addons.length > 0 && (
+      {!addonsPlaced && sel.payload.addons.length > 0 && (
         <div style={{ display: 'grid', gap: '0.875rem', marginTop: '18px' }}>
           {sel.payload.addons.map((addon) => (
             <AddonControl
