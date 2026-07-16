@@ -26,6 +26,18 @@ type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'we
 
 const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills' }
 
+const DEFAULT_SWATCH = '#000000'
+
+// Accepts what someone actually pastes out of a brand guide - with or without
+// the hash, three digits or six, any case - and returns the one form the swatch
+// is stored and rendered in. Anything else is not a colour, so: null.
+function normaliseHex(raw: string): string | null {
+  const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(raw.trim())
+  if (!match?.[1]) return null
+  const body = match[1].toLowerCase()
+  return `#${body.length === 3 ? body.replace(/./g, (c) => c + c) : body}`
+}
+
 /**
  * The Variations tab on the shop's product editor.
  *
@@ -87,7 +99,7 @@ export function VariationsPanel({ productId }: { productId: string }) {
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
   const [newOptionValues, setNewOptionValues] = useState('')
 
-  async function rename(url: string, patch: Record<string, string>, fallback: string): Promise<boolean> {
+  async function patchAndRefresh(url: string, patch: Record<string, string>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     if (!res.ok) {
@@ -99,8 +111,9 @@ export function VariationsPanel({ productId }: { productId: string }) {
     return true
   }
 
-  const renameOption = (id: string, name: string) => rename(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
-  const renameValue = (id: string, label: string) => rename(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
+  const renameOption = (id: string, name: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
+  const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
+  const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
 
   async function addOption() {
     if (!newOptionName.trim()) return
@@ -212,7 +225,9 @@ export function VariationsPanel({ productId }: { productId: string }) {
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
                   {opt.values.map((v) => (
                     <span key={v.id} style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center', background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-full)', padding: '0.125rem 0.5rem', fontSize: '0.8125rem' }}>
-                      {opt.controlType === 'SWATCH' && v.swatch && <span aria-hidden style={{ width: 12, height: 12, borderRadius: 'var(--radius-full)', background: v.swatch, border: '1px solid var(--color-border)' }} />}
+                      {opt.controlType === 'SWATCH' && (
+                        <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
+                      )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
@@ -411,6 +426,88 @@ function InlineRename({ value, onSave, disabled, ariaLabel, inputWidth, textStyl
   )
 }
 
+// The colour picker and its hex box are two views of one draft string, never two
+// states kept in step. The draft is whatever was typed, so a half-finished "#ff0"
+// stays as typed instead of being expanded to "#ffff00" under the cursor; the
+// picker just reads the nearest valid colour out of it.
+function SwatchFields({ value, onChange, disabled, labelPrefix, autoFocus }: {
+  value: string
+  onChange: (next: string) => void
+  disabled?: boolean
+  labelPrefix: string
+  autoFocus?: boolean
+}) {
+  const hex = normaliseHex(value)
+  return (
+    <>
+      <input
+        type="color" aria-label={`${labelPrefix} colour picker`} disabled={disabled}
+        value={hex ?? DEFAULT_SWATCH}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'none', flexShrink: 0 }}
+      />
+      <input
+        autoFocus={autoFocus} spellCheck={false} placeholder={DEFAULT_SWATCH} disabled={disabled}
+        aria-label={`${labelPrefix} hex code`} aria-invalid={hex ? undefined : true}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ padding: '0.25rem 0.375rem', borderRadius: 'var(--radius-md)', border: `1px solid ${hex ? 'var(--color-border)' : 'var(--color-destructive)'}`, width: 82, fontSize: '0.8125rem', fontFamily: 'monospace', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+      />
+    </>
+  )
+}
+
+// The colour behind a swatch value, changeable after the fact. Click the dot to
+// open the picker and the hex box; brand colours turn up written down far more
+// often than they turn up as a point on a colour wheel, so both ways in matter.
+// Saving is on the tick or Enter rather than on blur, because moving between the
+// picker and the hex box is a blur and would otherwise save half an edit.
+function InlineSwatch({ value, label, onSave, disabled }: {
+  value: string | null
+  label: string
+  onSave: (next: string) => Promise<boolean>
+  disabled: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value ?? DEFAULT_SWATCH)
+  const [saving, setSaving] = useState(false)
+  const hex = normaliseHex(draft)
+
+  async function commit() {
+    if (!hex) return
+    if (hex === value) { setEditing(false); return }
+    setSaving(true)
+    const ok = await onSave(hex)
+    setSaving(false)
+    if (ok) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <span
+        style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); void commit() }
+          if (e.key === 'Escape') { setDraft(value ?? DEFAULT_SWATCH); setEditing(false) }
+        }}
+      >
+        <SwatchFields value={draft} onChange={setDraft} disabled={saving} labelPrefix={`${label} swatch`} autoFocus />
+        <button type="button" className="spe-icon-btn" aria-label={`Save the colour for ${label}`} disabled={saving || !hex} onClick={() => void commit()}>✓</button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={value ? `Change the colour for ${label}` : `Set a colour for ${label}`}
+      disabled={disabled}
+      onClick={() => { setDraft(value ?? DEFAULT_SWATCH); setEditing(true) }}
+      style={{ width: 14, height: 14, padding: 0, flexShrink: 0, borderRadius: 'var(--radius-full)', cursor: 'pointer', background: value ?? 'transparent', border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)' }}
+    />
+  )
+}
+
 function AddValueInline({ optionId, isSwatch, onAdd, disabled }: {
   optionId: string
   isSwatch: boolean
@@ -418,17 +515,30 @@ function AddValueInline({ optionId, isSwatch, onAdd, disabled }: {
   disabled: boolean
 }) {
   const [label, setLabel] = useState('')
-  const [swatch, setSwatch] = useState('#000000')
+  const [swatch, setSwatch] = useState(DEFAULT_SWATCH)
+  const hex = normaliseHex(swatch)
+  const canAdd = !disabled && label.trim() !== '' && (!isSwatch || hex != null)
+
+  function add() {
+    if (!canAdd) return
+    onAdd(optionId, label, isSwatch ? hex : null)
+    setLabel('')
+  }
+
   return (
     <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
       <input
         placeholder="Add value" value={label} onChange={(e) => setLabel(e.target.value)}
         aria-label="New option value"
-        onKeyDown={(e) => { if (e.key === 'Enter') { onAdd(optionId, label, isSwatch ? swatch : null); setLabel('') } }}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
         style={{ padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: 110, fontSize: '0.8125rem', background: 'var(--color-bg)', color: 'var(--color-text)' }}
       />
-      {isSwatch && <input type="color" aria-label="Swatch colour" value={swatch} onChange={(e) => setSwatch(e.target.value)} style={{ width: 28, height: 28, padding: 0, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }} />}
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => { onAdd(optionId, label, isSwatch ? swatch : null); setLabel('') }} disabled={disabled || !label.trim()}>+</button>
+      {isSwatch && (
+        <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}>
+          <SwatchFields value={swatch} onChange={setSwatch} labelPrefix="New value" />
+        </span>
+      )}
+      <button type="button" className="btn btn-secondary btn-sm" onClick={add} disabled={!canAdd}>+</button>
     </span>
   )
 }
