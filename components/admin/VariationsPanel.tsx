@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
 import { uploadOneFile } from '@/lib/media/upload-client'
 import { preflightUploadError } from '@/lib/media/limits'
@@ -26,6 +26,22 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrl'>>
 
+/**
+ * A column another module has hung on the variants table through the
+ * `shop-variations.variant-columns` point, resolved for us by
+ * ProductVariationsSection (only a server component can read the manifests).
+ *
+ * The cell owns its own saving. Nothing here is wired into the editor's Save
+ * button, and that is deliberate: the columns this exists for carry uploads, and
+ * an upload has either happened or it has not - holding one in memory as a
+ * pending edit would be a lie that costs the admin their file.
+ */
+export type VariantColumn = {
+  id: string
+  label: string
+  Cell: ComponentType<{ productId: string; variantId: string; childProductId: string; label: string }>
+}
+
 const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills' }
 
 const DEFAULT_SWATCH = '#000000'
@@ -50,7 +66,7 @@ function normaliseHex(raw: string): string | null {
  * fields, so they are held locally and written by the product editor's own Save
  * button alongside everything else.
  */
-export function VariationsPanel({ productId }: { productId: string }) {
+export function VariationsPanel({ productId, columns = [] }: { productId: string; columns?: VariantColumn[] }) {
   const currency = useProductEditorCurrency()
   const [data, setData] = useState<Payload | null>(null)
   const [edits, setEdits] = useState<Record<string, VariantEdit>>({})
@@ -298,6 +314,7 @@ export function VariationsPanel({ productId }: { productId: string }) {
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
                     <th style={{ padding: '0.5rem' }}>Variant</th>
                     <th style={{ padding: '0.5rem' }}>Image</th>
+                    {columns.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>Price</th>
                     <th style={{ padding: '0.5rem' }}>SKU</th>
                     <th style={{ padding: '0.5rem' }}>Stock</th>
@@ -315,6 +332,11 @@ export function VariationsPanel({ productId }: { productId: string }) {
                         <td style={{ padding: '0.5rem' }}>
                           <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} />
                         </td>
+                        {columns.map(({ id, Cell }) => (
+                          <td key={id} style={{ padding: '0.5rem' }}>
+                            <Cell productId={productId} variantId={v.variantId} childProductId={v.childProductId} label={v.label} />
+                          </td>
+                        ))}
                         <td style={{ padding: '0.5rem' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                             {currency}
