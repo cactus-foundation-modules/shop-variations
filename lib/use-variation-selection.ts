@@ -1,15 +1,22 @@
 'use client'
 
-// Client selection store + hook shared by the composite block and every
-// granular part. Keyed by product slug so parts dropped independently into a
-// layout still sync (there's no guaranteed common React ancestor to hold a
-// context). One payload fetch per slug; a tiny pub/sub keeps islands in step -
-// the same approach the cart uses for cross-island updates.
+// Selection store + hook shared by the composite block and every granular part.
+// Keyed by product slug so parts dropped independently into a layout still sync
+// (there's no guaranteed common React ancestor to hold a context). A tiny pub/sub
+// keeps islands in step - the same approach the cart uses for cross-island
+// updates.
+//
+// The payload arrives one of two ways. Normally an RSC block half resolves it
+// while the page renders and passes it in as `initial`, and the controls are in
+// the HTML the shopper's browser receives. Where the server couldn't work out
+// which product it is, the hook falls back to fetching it after mount, which is
+// what it used to do in every case - and what made the options turn up a beat
+// after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import { resolveVariant, firstPreselect, isValueAvailable, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
-import type { VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
+import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 type Entry = {
   slug: string
@@ -18,6 +25,10 @@ type Entry = {
   fetching: boolean
   optionValues: OptionSelection
   addonValues: Record<string, AddonValue>
+  // Set when the entry was seeded from a server-resolved payload, which carries
+  // the shop's symbol with it. Null on the fetch path, where the symbol is a
+  // page-wide lookup rather than a per-product one - hence the fallback below.
+  currencySymbol: string | null
   subs: Set<() => void>
 }
 
@@ -25,10 +36,34 @@ const store = new Map<string, Entry>()
 let currencySymbol = '£'
 let currencyFetched = false
 
+// This module's state is per-tab in the browser and per-process on the server,
+// where it outlives the request and is shared by every shopper the instance
+// serves. So nothing here may be written during a server render: an entry seeded
+// into `store` on the server would still be sat there, marked loaded, for the
+// next render of that product - handing out whatever price and stock this render
+// happened to see until the instance recycled. Server renders therefore work off
+// a throwaway entry (see `useVariationSelection`) and touch none of the above.
+const isServer = typeof window === 'undefined'
+
+function newEntry(slug: string): Entry {
+  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, subs: new Set() }
+}
+
+// An entry that already holds everything the server resolved: no fetch to do, no
+// empty first render, and the shopper's opening combination preselected.
+function seededEntry(slug: string, bootstrap: VariationBootstrap): Entry {
+  const entry = newEntry(slug)
+  entry.payload = bootstrap.payload
+  entry.optionValues = firstPreselect(bootstrap.payload)
+  entry.currencySymbol = bootstrap.currencySymbol
+  entry.loaded = true
+  return entry
+}
+
 function getEntry(slug: string): Entry {
   let entry = store.get(slug)
   if (!entry) {
-    entry = { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, subs: new Set() }
+    entry = newEntry(slug)
     store.set(slug, entry)
   }
   return entry
@@ -58,6 +93,30 @@ async function ensureLoaded(entry: Entry): Promise<void> {
   }
 }
 
+// Puts a server-resolved payload into the browser's store, so the first render
+// after hydration has the options, the price and the preselected combination
+// already in hand and ensureLoaded finds nothing left to fetch.
+//
+// Runs during render rather than in an effect, and deliberately: an effect fires
+// after paint, which is the pause this whole exercise is about. Safe to call on
+// every render - the first seed for a slug wins, so a re-render can never
+// discard a selection the shopper has since made.
+function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): void {
+  const existing = store.get(slug)
+  if (existing && (existing.loaded || existing.fetching)) return
+  const entry = seededEntry(slug, bootstrap)
+  // Carry over anything an unseeded island already collected for this slug.
+  if (existing) {
+    entry.addonValues = existing.addonValues
+    for (const cb of existing.subs) entry.subs.add(cb)
+  }
+  store.set(slug, entry)
+  // The shop's symbol came down with the payload, so the config fetch is moot.
+  // Setting the flag too stops an unseeded island firing it off regardless.
+  currencySymbol = bootstrap.currencySymbol
+  currencyFetched = true
+}
+
 export function setOptionValue(slug: string, optionId: string, valueId: string): void {
   const entry = getEntry(slug)
   entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
@@ -79,19 +138,35 @@ function stableKey(childId: string, values: Record<string, AddonValue>): string 
 
 export type VariationSelection = ReturnType<typeof useVariationSelection>
 
-export function useVariationSelection(slug: string | null) {
+// `initial` is the server-resolved payload, passed down by an RSC block half.
+// Given one, this hook never fetches and never renders an empty state: the
+// options are in the entry before the first read below. Without one (a layout
+// that renders our blocks somewhere the server couldn't identify the product)
+// it behaves exactly as it always has, fetching after mount.
+export function useVariationSelection(slug: string | null, initial?: VariationBootstrap | null) {
   const [, force] = useState(0)
+
+  // Server: a throwaway entry, so the HTML is rendered from this request's own
+  // payload and the shared store is left untouched (see `isServer` above).
+  // Browser: seed the shared store, so every island on the page reads the same
+  // selection and stays in step as the shopper changes it.
+  let entry: Entry | undefined
+  if (slug && isServer) {
+    entry = initial ? seededEntry(slug, initial) : undefined
+  } else if (slug) {
+    if (initial) seedVariationSelection(slug, initial)
+    entry = store.get(slug)
+  }
 
   useEffect(() => {
     if (!slug) return
-    const entry = getEntry(slug)
+    const live = getEntry(slug)
     const cb = () => force((n) => n + 1)
-    entry.subs.add(cb)
-    ensureLoaded(entry)
-    return () => { entry.subs.delete(cb) }
+    live.subs.add(cb)
+    ensureLoaded(live)
+    return () => { live.subs.delete(cb) }
   }, [slug])
 
-  const entry = slug ? store.get(slug) : undefined
   const payload = entry?.payload ?? null
   const optionValues = entry?.optionValues ?? {}
   const addonValues = entry?.addonValues ?? {}
@@ -140,7 +215,10 @@ export function useVariationSelection(slug: string | null) {
     allOptionsChosen,
     addonPricing,
     canAdd,
-    currencySymbol,
+    // A seeded entry carries the shop's symbol; the module-level one is the
+    // fetch path's. Preferring the entry's is what keeps a server render from
+    // printing the default symbol and then hydrating into the real one.
+    currencySymbol: entry?.currencySymbol ?? currencySymbol,
     setOption: (optionId: string, valueId: string) => slug && setOptionValue(slug, optionId, valueId),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),
     isAvailable: (optionId: string, valueId: string) => (payload ? isValueAvailable(payload, optionValues, optionId, valueId) : false),

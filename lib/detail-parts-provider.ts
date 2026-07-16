@@ -9,6 +9,7 @@
 // shop.cart-line-resolver -> lib/line-resolver.ts.
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
+import { rememberProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
 import {
   VariantSlotGallery,
   VariantSlotPrice,
@@ -25,6 +26,14 @@ export const shopVariationsDetailParts: ShopDetailPartsProvider = {
   // products that don't use it.
   async claimsProduct(product: ShpProduct): Promise<boolean> {
     if (product.catalogueHidden) return false
+    // Shop calls this once per product page, before any block renders, and it is
+    // the only place shop hands us the product server-side. Recording the slug
+    // here is what lets our granular blocks (which Puck gives nothing but their
+    // own saved props) resolve their payload while the page is still being built
+    // rather than fetching it after hydration. Noted before the claim is
+    // decided: a layout can carry our blocks whether or not we claim shop's
+    // parts, and an unclaimed product simply has no payload to find.
+    rememberProductSlug(product.slug)
     const [options, addons] = await Promise.all([getOptionsWithValues(product.id), getAddons(product.id)])
     return options.length > 0 || addons.length > 0
   },

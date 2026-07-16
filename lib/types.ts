@@ -109,3 +109,12 @@ export type VariantSelectorPayload = {
   variants: VariantSelectorVariant[]
   addons: SvrAddon[]
 }
+
+// The same payload, plus the currency symbol, resolved on the server and handed
+// to a storefront island as a plain prop. Seeding the selection store with this
+// is what lets the option controls arrive in the page's first HTML instead of
+// appearing a round-trip later - see lib/variation-bootstrap.ts.
+export type VariationBootstrap = {
+  payload: VariantSelectorPayload
+  currencySymbol: string
+}

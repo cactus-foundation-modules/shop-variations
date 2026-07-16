@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
-import type { SvrAddon, SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
+import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
-// Each part resolves the product slug from the URL itself, so a granular part
-// dropped on its own works with no plumbing; all parts on a page resolve the same
-// slug and therefore share one selection store entry.
-type PartProps = { preview?: boolean; slug?: string | null }
+// On the live page each part is handed the slug and the payload its RSC half
+// already resolved, so the controls are in the server's HTML from the off.
+// Failing that (a layout we can't identify the product from server-side) a part
+// still resolves the slug from the URL after mount and fetches, so one dropped
+// somewhere unexpected keeps working - all parts on a page land on the same slug
+// and therefore share one selection store entry either way.
+type PartProps = { preview?: boolean; slug?: string | null; initial?: VariationBootstrap | null }
 
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
@@ -26,11 +29,13 @@ function Skeleton({ label }: { label: string }) {
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
 // ---- Options -------------------------------------------------------------
-export function VariantOptionsPart({ preview, slug: explicitSlug }: PartProps) {
+export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: PartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
-  const sel = useVariationSelection(slug)
-  if (preview || !slug) return <Skeleton label="Variant options" />
-  if (!sel.loaded) return null
+  const sel = useVariationSelection(slug, initial)
+  // The skeleton is the editor's placeholder and belongs nowhere near a shopper:
+  // on the live page an unresolved slug renders nothing at all until it resolves.
+  if (preview) return <Skeleton label="Variant options" />
+  if (!slug || !sel.loaded) return null
   if (!sel.payload || sel.payload.options.length === 0) return null
 
   return (
@@ -105,11 +110,11 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
 }
 
 // ---- Personalisation -----------------------------------------------------
-export function VariantPersonalisationPart({ preview, slug: explicitSlug }: PartProps) {
+export function VariantPersonalisationPart({ preview, slug: explicitSlug, initial }: PartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
-  const sel = useVariationSelection(slug)
-  if (preview || !slug) return <Skeleton label="Personalisation fields" />
-  if (!sel.loaded) return null
+  const sel = useVariationSelection(slug, initial)
+  if (preview) return <Skeleton label="Personalisation fields" />
+  if (!slug || !sel.loaded) return null
   if (!sel.payload || sel.payload.addons.length === 0) return null
 
   return (
@@ -198,11 +203,11 @@ function FileUpload({ addon, value, onChange, slug }: { addon: SvrAddon; value: 
 }
 
 // ---- Live price ----------------------------------------------------------
-export function VariantPricePart({ preview, slug: explicitSlug }: PartProps) {
+export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
-  const sel = useVariationSelection(slug)
-  if (preview || !slug) return <Skeleton label="Variant price" />
-  if (!sel.loaded || !sel.payload) return null
+  const sel = useVariationSelection(slug, initial)
+  if (preview) return <Skeleton label="Variant price" />
+  if (!slug || !sel.loaded || !sel.payload) return null
   return (
     <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
       {money(sel.price, sel.currencySymbol)}
@@ -212,13 +217,13 @@ export function VariantPricePart({ preview, slug: explicitSlug }: PartProps) {
 }
 
 // ---- Add to cart ---------------------------------------------------------
-export function VariantAddToCartPart({ preview, slug: explicitSlug, label }: PartProps & { label?: string }) {
+export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, label }: PartProps & { label?: string }) {
   const slug = useProductSlug(explicitSlug ?? null)
-  const sel = useVariationSelection(slug)
+  const sel = useVariationSelection(slug, initial)
   const [qty, setQty] = useState(1)
   const [added, setAdded] = useState(false)
-  if (preview || !slug) return <Skeleton label="Add to cart" />
-  if (!sel.loaded || !sel.payload) return null
+  if (preview) return <Skeleton label="Add to cart" />
+  if (!slug || !sel.loaded || !sel.payload) return null
 
   const reason = !sel.allOptionsChosen ? 'Choose your options'
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
@@ -252,9 +257,9 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, label }: Par
 }
 
 // ---- Variant-aware gallery ----------------------------------------------
-export function VariantGalleryPart({ preview, slug: explicitSlug }: PartProps) {
+export function VariantGalleryPart({ preview, slug: explicitSlug, initial }: PartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
-  const sel = useVariationSelection(slug)
+  const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
   const variantImage = sel.variant?.imageUrl ?? null
 
@@ -262,8 +267,8 @@ export function VariantGalleryPart({ preview, slug: explicitSlug }: PartProps) {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the manual thumbnail override in response to a variant change is the intended reset, not derived render state
   useEffect(() => { setOverride(null) }, [variantImage])
 
-  if (preview || !slug) return <Skeleton label="Variant gallery" />
-  if (!sel.loaded || !sel.payload) return null
+  if (preview) return <Skeleton label="Variant gallery" />
+  if (!slug || !sel.loaded || !sel.payload) return null
 
   const base = sel.payload.baseImages
   const main = override ?? sel.image ?? base[0]?.url ?? null

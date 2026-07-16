@@ -2,7 +2,10 @@ import { VariantPurchaseClient } from '@/modules/shop-variations/components/publ
 
 // Composite storefront block (the default most owners use). Server wrapper -> the
 // VariantPurchaseClient island, so Puck's <Render> only crosses plain props.
-// Editor render is preview (labelled skeletons, no fetch); the RSC render is live.
+//
+// Editor half only: labelled skeletons, no fetch, no product. The live RSC half
+// is in ShopVariantPurchase.rsc (the manifest's `rscImport`), keeping its payload
+// lookup out of the editor's client bundle.
 
 export type ShopVariantPurchaseProps = { showGallery?: string; heading?: string; addToCartLabel?: string }
 
@@ -21,13 +24,4 @@ export const shopVariantPurchasePuckComponent = {
   },
   defaultProps: { showGallery: 'yes', heading: '', addToCartLabel: 'Add to cart' } as ShopVariantPurchaseProps,
   render: ShopVariantPurchase,
-}
-
-export function ShopVariantPurchaseRsc(props: ShopVariantPurchaseProps) {
-  return <VariantPurchaseClient showGallery={props.showGallery !== 'no'} heading={props.heading} addToCartLabel={props.addToCartLabel} />
-}
-
-export const shopVariantPurchasePuckRscComponent = {
-  ...shopVariantPurchasePuckComponent,
-  render: ShopVariantPurchaseRsc,
 }

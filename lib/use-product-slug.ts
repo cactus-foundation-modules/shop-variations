@@ -14,12 +14,16 @@ export function productSlugFromPath(pathname: string): string | null {
   return next ? decodeURIComponent(next) : null
 }
 
+// An explicit slug (resolved server-side and passed down by an RSC block half)
+// is used as-is on the first render, so the server's HTML already carries the
+// real controls. Only when there isn't one do we fall back to reading the URL
+// after mount - which costs a render, and is why the explicit path exists.
 export function useProductSlug(explicit?: string | null): string | null {
   const [slug, setSlug] = useState<string | null>(explicit ?? null)
   useEffect(() => {
+    if (explicit) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- window is only readable after mount; deriving the slug from the URL must happen here to avoid a hydration mismatch
-    if (explicit) { setSlug(explicit); return }
     setSlug(productSlugFromPath(window.location.pathname))
   }, [explicit])
-  return slug
+  return explicit ?? slug
 }
