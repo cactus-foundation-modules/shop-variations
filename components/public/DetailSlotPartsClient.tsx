@@ -18,6 +18,7 @@
 // to fetching, which is what these islands used to do unconditionally.
 import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
+import { GalleryThumbStrip } from '@/modules/shop/components/public/GalleryThumbStrip'
 import type {
   ShopDetailGallerySlotProps,
   ShopDetailPriceSlotProps,
@@ -55,7 +56,7 @@ function pct(offset: number, size: number): string {
 // deliberately doesn't hand over. Those classes carry two declarations between
 // them (the cursor, and touch-action while magnified), so they go on inline
 // here instead and the fix stays inside this module.
-export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [] }: Seeded<ShopDetailGallerySlotProps>) {
+export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [], thumbPosition }: Seeded<ShopDetailGallerySlotProps>) {
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
   const [hovering, setHovering] = useState(false)
@@ -153,10 +154,20 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
       </div>
       {/* One image plus one contributed item is still two things to pick between. */}
       {thumbs.length + extras.length > 1 && (
-        <div className={classNames.thumbs}>
+        // Shop's strip wrapper, wearing the strip class shop handed us. Replacing
+        // shop's gallery meant we were quietly opting out of it: shop scopes the
+        // arrows and edge fades to the wrapper, and we rendered .spd-thumbs
+        // straight into the column with no wrapper to hang them off. A shopper on
+        // a product with options - which on a real shop is the interesting half of
+        // the catalogue - got a bare sideways-scrolling row with nothing to say
+        // there were nine more photos past its right edge, and no way to walk it
+        // along without a wheel or a trackpad. `role="tab"` on the buttons below
+        // is the wrapper's tablist earning its children.
+        <GalleryThumbStrip beside={thumbPosition === 'beside'} className={classNames.thumbs}>
           {thumbs.map((t) => (
             <button
-              key={t.url} type="button" onClick={() => { setOverride(t.url); setTapped(false); setPicked(null) }}
+              key={t.url} type="button" role="tab" onClick={() => { setOverride(t.url); setTapped(false); setPicked(null) }}
+              aria-selected={main === t.url && !picked}
               className={main === t.url && !picked ? classNames.thumbOn : classNames.thumb}
               aria-label={`Show ${t.alt}`}
             >
@@ -178,7 +189,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               thumbOnClass={classNames.thumbOn}
             />
           ))}
-        </div>
+        </GalleryThumbStrip>
       )}
     </div>
   )
