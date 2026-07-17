@@ -118,7 +118,26 @@ function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): vo
 
 export function setOptionValue(slug: string, optionId: string, valueId: string): void {
   const entry = getEntry(slug)
-  entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
+  const options = entry.payload?.options ?? []
+  const changedIndex = options.findIndex((o) => o.id === optionId)
+  // Without a resolved payload we've no display order to reason about, so just
+  // record the pick and leave the rest alone.
+  if (changedIndex === -1) {
+    entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
+    notify(entry)
+    return
+  }
+  // Changing an option resets every option BELOW it in display order: a
+  // downstream value was chosen against the old pick and has no business
+  // surviving the change (it may now be unreachable, and leaving it sat there is
+  // what let a later pick wrongly filter this one). Picks above are untouched.
+  const next: OptionSelection = {}
+  for (let i = 0; i < changedIndex; i++) {
+    const id = options[i]?.id
+    if (id && entry.optionValues[id] != null) next[id] = entry.optionValues[id]
+  }
+  next[optionId] = valueId
+  entry.optionValues = next
   notify(entry)
 }
 

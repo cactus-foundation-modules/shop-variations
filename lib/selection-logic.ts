@@ -32,15 +32,22 @@ export function resolveVariant(payload: VariantSelectorPayload, selection: Optio
   return payload.variants.find((v) => [...v.optionValueIds].sort().join('|') === chosen) ?? null
 }
 
-// Whether an option value is still reachable: at least one buyable variant
-// carries this value AND is consistent with every OTHER already-chosen option.
+// Whether an option value is still reachable, filtered DIRECTIONALLY: at least
+// one buyable variant carries this value AND is consistent with every option
+// chosen ABOVE this one in display order. Options below it are deliberately
+// ignored - a later pick must never hide an earlier option's choices, so the
+// shopper can always change an upstream option even when the exact full
+// combination they had isn't buyable. The last option, having every other
+// option above it, is still filtered to only genuinely buyable finals.
 export function isValueAvailable(payload: VariantSelectorPayload, selection: OptionSelection, optionId: string, valueId: string): boolean {
   const v2o = valueToOptionMap(payload)
+  const targetIndex = payload.options.findIndex((o) => o.id === optionId)
   return payload.variants.some((variant) => {
     if (!isBuyable(variant)) return false
     if (variantValueForOption(variant, optionId, v2o) !== valueId) return false
-    for (const o of payload.options) {
-      if (o.id === optionId) continue
+    for (let i = 0; i < targetIndex; i++) {
+      const o = payload.options[i]
+      if (!o) continue
       const sel = selection[o.id]
       if (sel && variantValueForOption(variant, o.id, v2o) !== sel) return false
     }
