@@ -7,6 +7,7 @@ const PatchBody = z.object({
   name: z.string().min(1).max(80).optional(),
   controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).optional(),
   position: z.number().int().optional(),
+  requiresPreviousOption: z.boolean().optional(),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

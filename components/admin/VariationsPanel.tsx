@@ -11,7 +11,7 @@ import { PersonalisationEditor } from '@/modules/shop-variations/components/admi
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 
 type OptionValue = { id: string; label: string; swatch: string | null; position: number }
-type Option = { id: string; name: string; controlType: SvrControlType; position: number; values: OptionValue[] }
+type Option = { id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean; values: OptionValue[] }
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
   enabled: boolean; price: number; sku: string | null; barcode: string | null
@@ -117,7 +117,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
   const [newOptionValues, setNewOptionValues] = useState('')
 
-  async function patchAndRefresh(url: string, patch: Record<string, string | null>, fallback: string): Promise<boolean> {
+  async function patchAndRefresh(url: string, patch: Record<string, string | boolean | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     if (!res.ok) {
@@ -130,6 +130,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   }
 
   const renameOption = (id: string, name: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
+  const setRequiresPrevious = (id: string, requiresPreviousOption: boolean) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { requiresPreviousOption }, 'Could not change that setting.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
@@ -229,6 +230,17 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     await refresh(); setBusy(false)
   }
 
+  // Remove one variant. Generating hundreds at once leaves rows you never sell,
+  // and rebuilding would only make them again - so each is deletable on its own.
+  // Any unsaved edit to that row is dropped along with it.
+  async function removeVariant(variantId: string) {
+    if (!window.confirm('Delete this variant? Its stock count and price go with it.')) return
+    setBusy(true)
+    await fetch(`/api/m/shop-variations/admin/variants/${variantId}`, { method: 'DELETE' })
+    setEdits((prev) => { const next = { ...prev }; delete next[variantId]; return next })
+    await refresh(); setBusy(false)
+  }
+
   // --- Per-variant edits ---------------------------------------------------
   const editVariant = useCallback((variantId: string, patch: VariantEdit) => {
     setEdits((prev) => ({ ...prev, [variantId]: { ...prev[variantId], ...patch } }))
@@ -253,11 +265,22 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     [data],
   )
   const matrixStale = data != null && expectedCount > 0 && expectedCount !== data.variants.length
+  // Fewer rows than the options call for - a big matrix that has not finished
+  // building yet. The build is resumable (generateMatrix only fills the gap), so
+  // this is a "keep going" state, not a "start over" one.
+  const incomplete = data != null && expectedCount > data.variants.length
 
   if (!data) return null
 
   const input: CSSProperties = { padding: '0.375rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: '100%', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.875rem' }
   const numInput: CSSProperties = { ...input, width: 90 }
+  // The first column stays put while the rest of the grid scrolls sideways, so
+  // you never lose track of which variant a row is. It needs a solid background
+  // (the section's own) so scrolled cells do not show through, and a right border
+  // to mark where the frozen column ends. Body cells override the background per
+  // row so an edited row's amber tint carries across.
+  const stickyCol: CSSProperties = { padding: '0.5rem', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
+  const stickyColHead: CSSProperties = { ...stickyCol, zIndex: 2 }
 
   return (
     <div className="spe-panel">
@@ -304,6 +327,19 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
+                {/* Only the second option onward can wait on the one before it; the
+                    first has nothing above it to wait for. */}
+                {oi > 0 && (
+                  <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                    <input
+                      type="checkbox"
+                      checked={opt.requiresPreviousOption}
+                      disabled={busy}
+                      onChange={(e) => setRequiresPrevious(opt.id, e.target.checked)}
+                    />
+                    Only show once “{data.options[oi - 1]?.name}” is chosen
+                  </label>
+                )}
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
                   {opt.values.map((v, vi) => (
                     <span
@@ -370,16 +406,27 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
             <button type="button" className="btn btn-primary btn-sm" onClick={generate} disabled={busy || data.options.length === 0}>
-              {data.variants.length === 0 ? 'Generate variants' : 'Rebuild from options'}
+              {data.variants.length === 0
+                ? 'Generate variants'
+                : incomplete ? 'Continue building options' : 'Rebuild from options'}
             </button>
             {data.variants.length > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={clearAll} disabled={busy}>Delete all</button>}
           </div>
         </div>
 
-        {matrixStale && (
+        {matrixStale && data.variants.length > 0 && (
           <div className="alert alert-warning" role="status" style={{ marginBottom: '0.75rem' }}>
-            Your options make {expectedCount} combination{expectedCount === 1 ? '' : 's'} but there {data.variants.length === 1 ? 'is' : 'are'} {data.variants.length} here.
-            Rebuild from options to catch up.
+            {incomplete ? (
+              <>
+                Your options make {expectedCount} combinations but only {data.variants.length} {data.variants.length === 1 ? 'is' : 'are'} built so far.
+                Large sets build a batch at a time, so keep pressing “Continue building options” until the two numbers meet.
+              </>
+            ) : (
+              <>
+                Your options make {expectedCount} combination{expectedCount === 1 ? '' : 's'} but there {data.variants.length === 1 ? 'is' : 'are'} {data.variants.length} here.
+                Rebuild from options to line them back up.
+              </>
+            )}
           </div>
         )}
         {message && <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '0 0 0.75rem' }}>{message}</p>}
@@ -399,7 +446,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ padding: '0.5rem' }}>Variant</th>
+                    <th style={stickyColHead}>Variant</th>
                     <th style={{ padding: '0.5rem' }}>Image</th>
                     {columns.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>Price</th>
@@ -407,6 +454,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     <th style={{ padding: '0.5rem' }}>Weight</th>
                     <th style={{ padding: '0.5rem' }}>On sale</th>
+                    <th style={{ padding: '0.5rem' }} aria-label="Delete" />
                   </tr>
                 </thead>
                 <tbody>
@@ -415,7 +463,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     const changed = edits[v.variantId] != null
                     return (
                       <tr key={v.variantId} style={{ borderBottom: '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
-                        <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>{v.label || '—'}</td>
+                        <td style={{ ...stickyCol, background: changed ? 'var(--color-warning-subtle)' : 'var(--color-surface)' }}>{v.label || '—'}</td>
                         <td style={{ padding: '0.5rem' }}>
                           <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} />
                         </td>
@@ -466,6 +514,15 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                             checked={enabled}
                             onChange={(e) => editVariant(v.variantId, { enabled: e.target.checked })}
                           />
+                        </td>
+                        <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                          <button
+                            type="button" className="btn btn-secondary btn-sm"
+                            aria-label={`Delete variant ${v.label}`}
+                            onClick={() => removeVariant(v.variantId)} disabled={busy}
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     )

@@ -9,6 +9,7 @@ function mapOption(r: Record<string, unknown>): SvrOption {
     name: r.name as string,
     controlType: r.control_type as SvrControlType,
     position: r.position as number,
+    requiresPreviousOption: (r.requires_previous_option as boolean | null) ?? false,
   }
 }
 
@@ -46,11 +47,12 @@ export async function createOption(productId: string, name: string, controlType:
   return rows[0]
 }
 
-export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number }): Promise<void> {
+export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean }): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.name !== undefined) sets.push(Prisma.sql`"name" = ${fields.name}`)
   if (fields.controlType !== undefined) sets.push(Prisma.sql`"control_type" = ${fields.controlType}`)
   if (fields.position !== undefined) sets.push(Prisma.sql`"position" = ${fields.position}`)
+  if (fields.requiresPreviousOption !== undefined) sets.push(Prisma.sql`"requires_previous_option" = ${fields.requiresPreviousOption}`)
   if (sets.length === 0) return
   await prisma.$executeRaw`UPDATE "svr_options" SET ${Prisma.join(sets, ', ')} WHERE "id" = ${id}`
 }

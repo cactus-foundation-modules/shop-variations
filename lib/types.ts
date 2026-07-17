@@ -15,6 +15,10 @@ export type SvrOption = {
   name: string
   controlType: SvrControlType
   position: number
+  // When true the storefront holds this option back until the option before it
+  // (in display order) has a value chosen. Dormant on the first option, which
+  // has nothing before it - see isOptionVisible in selection-logic.ts.
+  requiresPreviousOption: boolean
 }
 
 export type SvrOptionValue = {

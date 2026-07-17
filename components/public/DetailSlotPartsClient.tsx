@@ -261,8 +261,8 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
     <div>
       {!optionsPlaced && sel.payload.options.length > 0 && (
         <div style={{ display: 'grid', gap: '1rem', marginTop: '18px' }}>
-          {sel.payload.options.map((option) => (
-            <OptionControl key={option.id} option={option} sel={sel} />
+          {sel.payload.options.map((option, index) => (
+            sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
           ))}
         </div>
       )}

@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     "name" TEXT NOT NULL,
     "control_type" TEXT NOT NULL DEFAULT 'DROPDOWN',
     "position" INTEGER NOT NULL DEFAULT 0,
+    -- When true the storefront keeps this option hidden until the option before
+    -- it (by position) has a value chosen, so dependent options reveal in order.
+    -- Dormant on the first option, which has nothing before it to wait on.
+    "requires_previous_option" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,

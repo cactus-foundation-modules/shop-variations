@@ -41,8 +41,8 @@ export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: Par
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
-      {sel.payload.options.map((option) => (
-        <OptionControl key={option.id} option={option} sel={sel} />
+      {sel.payload.options.map((option, index) => (
+        sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
       ))}
     </div>
   )
