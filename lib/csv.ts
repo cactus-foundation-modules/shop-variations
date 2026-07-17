@@ -191,7 +191,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         }
         if (optionValueIds.length === 0) { result.errors.push({ row: gr.rowNum, reason: 'No options on this row' }); continue }
 
-        const { created, childProductId } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
+        const { created, changed: fieldsChanged, childProductId } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
           price: priceCol >= 0 ? num(gr.cols[priceCol]) : undefined,
           sku: skuCol >= 0 ? (gr.cols[skuCol]?.trim() || null) : undefined,
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
@@ -214,6 +214,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         // cell clears it (the sheet is the truth); a non-url is flagged, not
         // stored. Only touched when the sheet actually carries an Image column, so
         // a legacy sheet from before this column existed leaves images alone.
+        let imageChanged = false
         if (imageCol >= 0) {
           const raw = (gr.cols[imageCol] ?? '').trim()
           const current = currentImageByChild.get(childProductId) ?? ''
@@ -221,18 +222,24 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
             // Unchanged - skip the media rewrite and its provider re-file entirely.
           } else if (raw === '') {
             await setProductMedia(childProductId, [])
+            imageChanged = true
           } else if (isHttpUrl(raw)) {
             await setProductMedia(childProductId, [{ type: 'IMAGE', url: raw, isPrimary: true }])
             // File it in the parent's media-library folder, as the edit endpoint does.
             await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
             currentImageByChild.set(childProductId, raw)
+            imageChanged = true
           } else {
             result.errors.push({ row: gr.rowNum, reason: `Invalid image URL: ${raw}` })
           }
         }
 
+        // "Updated" means this row actually changed something - not every row the
+        // sheet happened to list. A provider-only change (a 3D file, an attribute
+        // value) isn't counted here since those already skip their own no-op
+        // writes; this count reflects the variant's own fields and image.
         if (created) result.created += 1
-        else result.updated += 1
+        else if (fieldsChanged || imageChanged) result.updated += 1
       } catch (err) {
         result.errors.push({ row: gr.rowNum, reason: err instanceof Error ? err.message : 'Row failed' })
       }

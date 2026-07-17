@@ -516,7 +516,7 @@ export async function upsertVariantForCombination(
   valueLabels: string[],
   fields: { price?: number; sku?: string | null; barcode?: string | null; stockCount?: number | null; weight?: number | null },
   ctx?: VariantUpsertContext,
-): Promise<{ variantId: string; childProductId: string; created: boolean }> {
+): Promise<{ variantId: string; childProductId: string; created: boolean; changed: boolean }> {
   const parent = ctx?.parent ?? await getProductById(parentId)
   if (!parent) throw new Error('Parent not found')
 
@@ -552,12 +552,32 @@ export async function upsertVariantForCombination(
     }
   }
 
-  await updateProduct(childId, {
-    ...(fields.price !== undefined ? { price: fields.price } : {}),
-    ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
-    ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
-    ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
-    ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
-  })
-  return { variantId, childProductId: childId, created }
+  // A freshly created child always needs this write (creation only set price,
+  // stock and trackInventory off the parent - sku/barcode/weight never land any
+  // other way). An existing one is compared against its current row first: a
+  // CSV re-import supplies every column on every row regardless of whether the
+  // owner actually touched it, and writing that back unconditionally on a
+  // catalogue with hundreds of variants was the other half (alongside the image
+  // rewrite) of what pushed a Pull past the request budget.
+  let changed = created
+  if (!created) {
+    const currentChild = await getProductById(childId)
+    changed = !currentChild
+      || (fields.price !== undefined && Number(currentChild.price) !== fields.price)
+      || (fields.sku !== undefined && (currentChild.sku ?? null) !== (fields.sku ?? null))
+      || (fields.barcode !== undefined && (currentChild.barcode ?? null) !== (fields.barcode ?? null))
+      || (fields.stockCount !== undefined && currentChild.stockCount !== fields.stockCount)
+      || (fields.weight !== undefined && (currentChild.weight == null ? null : Number(currentChild.weight)) !== fields.weight)
+  }
+
+  if (changed) {
+    await updateProduct(childId, {
+      ...(fields.price !== undefined ? { price: fields.price } : {}),
+      ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
+      ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
+      ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
+      ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
+    })
+  }
+  return { variantId, childProductId: childId, created, changed }
 }
