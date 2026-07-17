@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { updateProduct, setProductMedia } from '@/modules/shop/lib/db/products'
+import { updateProduct, setProductMedia, deleteProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
 import { getVariantById, setVariantEnabled } from '@/modules/shop-variations/lib/db/variants'
 
@@ -53,6 +53,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)
+
+  return NextResponse.json({ ok: true })
+}
+
+// Delete a single variant. The row a shopper never picks (one of hundreds a big
+// matrix throws up) can go on its own, without rebuilding the lot. Deleting the
+// hidden child product cascades the svr_variants + svr_variant_values rows away,
+// the same path clear-variants takes per row. Gated on shop.products.
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireShopUser('shop.products')
+  if (gate.error) return gate.error
+  const { id } = await params
+
+  const variant = await getVariantById(id)
+  if (!variant) return NextResponse.json({ error: 'Variant not found' }, { status: 404 })
+
+  await deleteProduct(variant.childProductId)
 
   return NextResponse.json({ ok: true })
 }
