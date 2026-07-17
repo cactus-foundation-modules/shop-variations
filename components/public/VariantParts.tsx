@@ -383,12 +383,9 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
       ) : null}
       {thumbs.length + extras.length > 1 && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {thumbs.map((t) => (
-            <button key={t.url} type="button" onClick={() => { setOverride(t.url); setPicked(null) }} style={{ padding: 0, border: `2px solid ${main === t.url && !picked ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.url} alt={t.alt} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
-            </button>
-          ))}
+          {/* Contributed media (a 3D model, say) leads the strip, so the richer
+              view sits first rather than trailing behind the photos - it is also
+              what the stage opens on, and the two should agree. */}
           {extras.map((extra) => (
             <extra.Thumbs
               key={extra.id}
@@ -399,6 +396,12 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               thumbClass="svr-gallery-thumb"
               thumbOnClass="svr-gallery-thumb on"
             />
+          ))}
+          {thumbs.map((t) => (
+            <button key={t.url} type="button" onClick={() => { setOverride(t.url); setPicked(null) }} style={{ padding: 0, border: `2px solid ${main === t.url && !picked ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={t.url} alt={t.alt} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+            </button>
           ))}
         </div>
       )}
