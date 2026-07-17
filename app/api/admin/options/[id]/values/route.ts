@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { createOptionValue, getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
+import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 import { prisma } from '@/lib/db/prisma'
 
-const Body = z.object({ label: z.string().min(1).max(80), swatch: z.string().max(200).nullable().optional() })
+const Body = z.object({ label: z.string().min(1).max(80), swatch: z.string().max(SWATCH_MAX_LENGTH).nullable().optional() })
 
 // Add a value to an option. Position is appended after existing values.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

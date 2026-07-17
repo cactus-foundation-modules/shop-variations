@@ -3,10 +3,11 @@ import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateOptionValue, deleteOptionValue, getOptionValueOwner, optionValueLabelTaken } from '@/modules/shop-variations/lib/db/options'
 import { syncVariantChildNames } from '@/modules/shop-variations/lib/variants-service'
+import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 
 const PatchBody = z.object({
   label: z.string().min(1).max(80).optional(),
-  swatch: z.string().max(200).nullable().optional(),
+  swatch: z.string().max(SWATCH_MAX_LENGTH).nullable().optional(),
   position: z.number().int().optional(),
 })
 

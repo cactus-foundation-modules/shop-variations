@@ -2,7 +2,12 @@
 // migrations/001_initial.sql are the source of truth; these describe the
 // camelCase shape callers see.
 
-export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL'
+export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL' | 'IMAGE'
+
+// Cap on the swatch column at the API edge. Roomy because an IMAGE swatch stores
+// a media-library url, and the hosted ones carry a folder path and a cache-busting
+// suffix - a limit sized for "#ff0000" would reject perfectly ordinary pictures.
+export const SWATCH_MAX_LENGTH = 1000
 
 export type SvrOption = {
   id: string
@@ -16,7 +21,9 @@ export type SvrOptionValue = {
   id: string
   optionId: string
   label: string
-  // hex colour or media id for SWATCH controls; null otherwise
+  // What the control shows beside the label: a hex colour for SWATCH, an image
+  // url for IMAGE. Null for DROPDOWN/PILL, and for a SWATCH/IMAGE value nobody
+  // has given one to yet - both of those render as the bare label.
   swatch: string | null
   position: number
 }

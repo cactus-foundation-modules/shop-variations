@@ -95,8 +95,12 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
     )
   }
 
-  // SWATCH and PILL both render as a row of buttons; SWATCH adds a colour dot.
+  // SWATCH, IMAGE and PILL all render as a row of buttons. SWATCH adds a colour
+  // dot, IMAGE a thumbnail; both keep the label alongside, because a picture of a
+  // fabric answers "which one is that?" and the label answers "what is it called?"
+  // - and a shopper who cannot see the picture is left with only the second.
   const isSwatch = option.controlType === 'SWATCH'
+  const isImage = option.controlType === 'IMAGE'
   return (
     <div>
       {label}
@@ -112,7 +116,7 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
               aria-pressed={active}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
-                padding: isSwatch ? '0.375rem 0.5rem' : '0.375rem 0.75rem',
+                padding: isSwatch || isImage ? '0.375rem 0.5rem' : '0.375rem 0.75rem',
                 borderRadius: 999,
                 border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 background: active ? 'var(--color-bg-subtle)' : 'var(--color-surface)',
@@ -124,6 +128,10 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
               }}
             >
               {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
+              {isImage && v.swatch && (
+                /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
+                <img src={v.swatch} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
+              )}
               {v.label}
             </button>
           )

@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { createOption, createOptionValue, getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
+import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 
 const Body = z.object({
   name: z.string().min(1).max(80),
-  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL']).default('DROPDOWN'),
-  values: z.array(z.object({ label: z.string().min(1).max(80), swatch: z.string().max(200).nullable().optional() })).optional(),
+  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).default('DROPDOWN'),
+  values: z.array(z.object({ label: z.string().min(1).max(80), swatch: z.string().max(SWATCH_MAX_LENGTH).nullable().optional() })).optional(),
 })
 
 // Create an option (optionally with its initial values) on a parent product.

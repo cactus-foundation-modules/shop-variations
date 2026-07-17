@@ -5,7 +5,7 @@ import { updateOption, deleteOption, getOptionProductId, optionNameTaken } from 
 
 const PatchBody = z.object({
   name: z.string().min(1).max(80).optional(),
-  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL']).optional(),
+  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).optional(),
   position: z.number().int().optional(),
 })
 

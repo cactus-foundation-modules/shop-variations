@@ -6,7 +6,10 @@ Adds product options to the Cactus shop:
   hidden child product with its own price, SKU, barcode, stock, weight and
   image. The basket, checkout, orders, inventory and refunds all work unchanged
   because a variant is just an ordinary product row that never appears in the
-  catalogue.
+  catalogue. Each option picks how it looks on the page: a dropdown, a row of
+  pills, colour swatches, or **image swatches** - a thumbnail per value, chosen
+  or uploaded from the shared media library, for the choices a colour can't
+  describe (a wood grain, a fabric weave, a printed pattern).
 - **Personalisation add-ons** (engraving text, gift messages, priced dropdowns,
   dates, file/artwork uploads) captured on the product page, priced
   server-side, and carried through to the order, emails and the member account

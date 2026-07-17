@@ -18,12 +18,12 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,
-    CONSTRAINT "svr_options_control_type_check" CHECK ("control_type" IN ('DROPDOWN', 'SWATCH', 'PILL'))
+    CONSTRAINT "svr_options_control_type_check" CHECK ("control_type" IN ('DROPDOWN', 'SWATCH', 'PILL', 'IMAGE'))
 );
 CREATE INDEX IF NOT EXISTS "svr_options_product_id_idx" ON "svr_options" ("product_id");
 
--- A value of an option, e.g. "XL" or "Red". swatch holds a hex colour or a media
--- id for swatch-style controls; null otherwise.
+-- A value of an option, e.g. "XL" or "Red". swatch holds a hex colour for SWATCH
+-- controls and an image url for IMAGE ones; null otherwise.
 CREATE TABLE IF NOT EXISTS "svr_option_values" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "option_id" TEXT NOT NULL,

@@ -8,10 +8,10 @@ import {
   useProductEditorCurrency, useProductEditorSave, useProductEditorTabBadge,
 } from '@/modules/shop/components/admin/product-editor/context'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
-import type { SvrAddon } from '@/modules/shop-variations/lib/types'
+import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 
 type OptionValue = { id: string; label: string; swatch: string | null; position: number }
-type Option = { id: string; name: string; controlType: 'DROPDOWN' | 'SWATCH' | 'PILL'; position: number; values: OptionValue[] }
+type Option = { id: string; name: string; controlType: SvrControlType; position: number; values: OptionValue[] }
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
   enabled: boolean; price: number; sku: string | null; barcode: string | null
@@ -42,7 +42,7 @@ export type VariantColumn = {
   Cell: ComponentType<{ productId: string; variantId: string; childProductId: string; label: string }>
 }
 
-const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills' }
+const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch' }
 
 const DEFAULT_SWATCH = '#000000'
 
@@ -117,7 +117,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
   const [newOptionValues, setNewOptionValues] = useState('')
 
-  async function patchAndRefresh(url: string, patch: Record<string, string>, fallback: string): Promise<boolean> {
+  async function patchAndRefresh(url: string, patch: Record<string, string | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     if (!res.ok) {
@@ -132,6 +132,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const renameOption = (id: string, name: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
+  const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
 
   async function addOption() {
     if (!newOptionName.trim()) return
@@ -246,6 +247,9 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                       {opt.controlType === 'SWATCH' && (
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
+                      {opt.controlType === 'IMAGE' && (
+                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} />
+                      )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
@@ -265,6 +269,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
               <option value="DROPDOWN">Dropdown</option>
               <option value="PILL">Pills</option>
               <option value="SWATCH">Colour swatch</option>
+              <option value="IMAGE">Image swatch</option>
             </select>
             <input placeholder="Values, separated by commas: S, M, L" value={newOptionValues} onChange={(e) => setNewOptionValues(e.target.value)} style={{ ...input, flex: 1, minWidth: 200 }} />
             <button type="button" className="btn btn-primary btn-sm" onClick={addOption} disabled={busy || !newOptionName.trim()}>Add option</button>
@@ -529,6 +534,73 @@ function InlineSwatch({ value, label, onSave, disabled }: {
       onClick={() => { setDraft(value ?? DEFAULT_SWATCH); setEditing(true) }}
       style={{ width: 14, height: 14, padding: 0, flexShrink: 0, borderRadius: 'var(--radius-full)', cursor: 'pointer', background: value ?? 'transparent', border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)' }}
     />
+  )
+}
+
+// The picture behind an image-swatch value: the same job as InlineSwatch, in a
+// different medium. Clicking the thumbnail opens the shared media library, which
+// carries its own upload button, so a picture nobody has uploaded yet and one
+// that is already filed are the same two clicks apart.
+//
+// There is no hand-typed equivalent of the hex box here, and so no draft to
+// hold: the library hands back a url or the admin cancels. Saving therefore
+// happens on the pick itself rather than behind a tick.
+//
+// A value with no picture shows a dotted square, matching the dotted dot an
+// uncoloured swatch shows, and the storefront falls back to the bare label.
+function InlineImageSwatch({ value, label, onSave, disabled }: {
+  value: string | null
+  label: string
+  onSave: (next: string) => Promise<boolean>
+  disabled: boolean
+}) {
+  const [picking, setPicking] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  async function choose(url: string) {
+    setPicking(false)
+    if (url === value) return
+    setSaving(true)
+    await onSave(url)
+    setSaving(false)
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={value ? `Change the picture for ${label}` : `Set a picture for ${label}`}
+        disabled={disabled || saving}
+        onClick={() => setPicking(true)}
+        style={{
+          width: 22, height: 22, padding: 0, flexShrink: 0, overflow: 'hidden',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: 'var(--radius-md)', background: 'none',
+          cursor: disabled || saving ? 'progress' : 'pointer',
+          border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)',
+        }}
+      >
+        {value ? (
+          // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
+          <img src={value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-muted)' }}>＋</span>
+        )}
+      </button>
+      {picking && (
+        <MediaPickerModal
+          onClose={() => setPicking(false)}
+          onAdd={(items) => {
+            // One value, one picture: the library picks in multiples, so the
+            // first of a multi-select wins - as it does for the variant images
+            // in the grid below.
+            const first = items[0]
+            if (first) void choose(first.url)
+            else setPicking(false)
+          }}
+        />
+      )}
+    </>
   )
 }
 
