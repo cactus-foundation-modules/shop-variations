@@ -9,7 +9,6 @@ import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, createVariant } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
-import { getSettings } from '@/modules/shop-variations/lib/db/settings'
 import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
 // Stable key for a combination: its option-value ids, sorted, joined. Two
@@ -34,15 +33,11 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
   if (parent.catalogueHidden) throw new Error('Cannot add variations to a variant child product')
 
   const options = (await getOptionsWithValues(parentId)).filter((o) => o.values.length > 0)
-  const settings = await getSettings()
 
   // The full cartesian product of one value per option.
   const valueMatrix = cartesian(options.map((o) => o.values.map((v) => v.id)))
   // An empty options set yields [[]] - treat as "no matrix".
   const combos = options.length === 0 ? [] : valueMatrix
-  if (combos.length > settings.maxVariants) {
-    throw new Error(`This combination would create ${combos.length} variants, above the limit of ${settings.maxVariants}. Reduce the options or raise the limit in settings.`)
-  }
 
   const valueLabel = new Map<string, string>()
   for (const o of options) for (const v of o.values) valueLabel.set(v.id, v.label)

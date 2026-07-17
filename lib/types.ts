@@ -73,7 +73,6 @@ export type SvrSettings = {
   maxUploadMb: number
   allowedUploadTypes: string
   uploadRetentionDays: number
-  maxVariants: number
 }
 
 export type SvrUpload = {
