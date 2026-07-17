@@ -2,6 +2,8 @@
 // per variant: the parent (by slug), the option/value pairs that define it, and
 // the per-variant fields. Re-importing updates in place (variants matched by
 // their exact value-set), so the export round-trips.
+import { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/db/prisma'
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
 import { getProductBySlug, setProductMedia } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
@@ -158,6 +160,24 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // used to be O(rows x variants) and could not finish inside the request budget.
     const upsertCtx = { parent, existing: await getVariants(parent.id), valueMap: await getVariantValueMap(parent.id) }
 
+    // Each variant's current primary image, prefetched once for the whole parent.
+    // The image write below re-files media through the storage provider (a network
+    // round-trip per image), so doing it on every row every import - even when the
+    // cell has not changed - is what pushed a large Pull past the request budget and
+    // left the later rows (and their 3D files) unprocessed. With this we skip the
+    // write entirely when the cell already matches what is stored.
+    const currentImageByChild = new Map<string, string>()
+    if (imageCol >= 0) {
+      const childIds = upsertCtx.existing.map((v) => v.childProductId)
+      if (childIds.length > 0) {
+        const media = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
+          SELECT "product_id", "url" FROM "shp_product_media"
+          WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE' AND "is_primary" = true
+        `
+        for (const m of media) currentImageByChild.set(m.product_id, m.url)
+      }
+    }
+
     for (const gr of groupRows) {
       try {
         const optionValueIds: string[] = []
@@ -196,12 +216,16 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         // a legacy sheet from before this column existed leaves images alone.
         if (imageCol >= 0) {
           const raw = (gr.cols[imageCol] ?? '').trim()
-          if (raw === '') {
+          const current = currentImageByChild.get(childProductId) ?? ''
+          if (raw === current) {
+            // Unchanged - skip the media rewrite and its provider re-file entirely.
+          } else if (raw === '') {
             await setProductMedia(childProductId, [])
           } else if (isHttpUrl(raw)) {
             await setProductMedia(childProductId, [{ type: 'IMAGE', url: raw, isPrimary: true }])
             // File it in the parent's media-library folder, as the edit endpoint does.
             await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
+            currentImageByChild.set(childProductId, raw)
           } else {
             result.errors.push({ row: gr.rowNum, reason: `Invalid image URL: ${raw}` })
           }
