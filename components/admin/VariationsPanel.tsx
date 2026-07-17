@@ -73,10 +73,17 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [optionError, setOptionError] = useState<string | null>(null)
+  // A failed load must not leave a blank tab with no way back: once we have data
+  // we keep showing it, but before the first successful load a failure shows an
+  // error with a Retry rather than rendering nothing.
+  const [loadFailed, setLoadFailed] = useState(false)
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/m/shop-variations/admin/products/${productId}`)
-    if (res.ok) setData(await res.json())
+    try {
+      const res = await fetch(`/api/m/shop-variations/admin/products/${productId}`)
+      if (res.ok) { setData(await res.json()); setLoadFailed(false) }
+      else setLoadFailed(true)
+    } catch { setLoadFailed(true) }
   }, [productId])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- delegating to an async helper; setData only runs after an await, never synchronously in the effect body
@@ -212,14 +219,30 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   }
 
   // --- Matrix --------------------------------------------------------------
+  // A big matrix is built a batch at a time on the server (each variant is a real
+  // hidden product, so hundreds cannot be made inside one request). We keep asking
+  // for the next batch until the server says it is done, refreshing between each so
+  // the count climbs in view. One press builds the lot; closing the tab part-way
+  // just leaves a resumable gap the next press fills.
   async function generate() {
     setBusy(true); setMessage(null)
-    const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/generate-matrix`, { method: 'POST' })
-    const body = await res.json().catch(() => ({}))
-    setMessage(res.ok
-      ? `${body.total} variant${body.total === 1 ? '' : 's'} now (${body.created} added, ${body.removed} removed).`
-      : body.error ?? 'Could not work out the variants.')
-    await refresh(); setBusy(false)
+    try {
+      while (true) {
+        const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/generate-matrix`, { method: 'POST' })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) { setMessage(body.error ?? 'Could not work out the variants.'); break }
+        await refresh()
+        if (body.done) {
+          setMessage(`${body.total} variant${body.total === 1 ? '' : 's'} now.`)
+          break
+        }
+        // No progress and not done should not happen, but guard against spinning.
+        if (!body.created && !body.removed) { setMessage('The variant build stalled - please try again.'); break }
+        setMessage(`Building variants… ${body.total} so far.`)
+      }
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function clearAll() {
@@ -270,7 +293,17 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   // this is a "keep going" state, not a "start over" one.
   const incomplete = data != null && expectedCount > data.variants.length
 
-  if (!data) return null
+  if (!data) {
+    if (!loadFailed) return null
+    return (
+      <div className="spe-panel">
+        <p className="spe-error" role="alert" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span><span aria-hidden>⚠</span> The variations for this product could not be loaded.</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { void refresh() }}>Try again</button>
+        </p>
+      </div>
+    )
+  }
 
   const input: CSSProperties = { padding: '0.375rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: '100%', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.875rem' }
   const numInput: CSSProperties = { ...input, width: 90 }

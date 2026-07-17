@@ -21,13 +21,26 @@ function cartesian(arrays: string[][]): string[][] {
   return arrays.reduce<string[][]>((acc, arr) => acc.flatMap((combo) => arr.map((v) => [...combo, v])), [[]])
 }
 
-export type GenerateMatrixResult = { created: number; removed: number; total: number }
+export type GenerateMatrixResult = { created: number; removed: number; total: number; done: boolean }
+
+// Each variant is a real child product built one round-trip at a time, so a big
+// matrix (hundreds of combinations) cannot finish inside a single serverless
+// invocation before it is killed - a half-built matrix and stray child products
+// were the result. So generation works to a time budget: it builds what it can
+// in the time it has, reports whether it finished, and the caller calls again to
+// pick up where it left off (resumption is a cheap in-memory skip of what already
+// exists). The budget sits well under the route's 60s ceiling so the request
+// always returns cleanly rather than timing out mid-combo.
+const MATRIX_BATCH_MS = 30_000
 
 // (Re)build the variant matrix for a parent product. Existing variants whose
 // exact value-set still appears are preserved (keeping their per-variant price,
 // stock, etc.); combinations no longer possible are removed along with their
 // child product; genuinely new combinations get a fresh hidden child product.
+// Returns done: false when the time budget ran out with work still to do - call
+// again to continue.
 export async function generateMatrix(parentId: string): Promise<GenerateMatrixResult> {
+  const startedAt = Date.now()
   const parent = await getProductById(parentId)
   if (!parent) throw new Error('Product not found')
   if (parent.catalogueHidden) throw new Error('Cannot add variations to a variant child product')
@@ -50,10 +63,17 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
   const wantedKeys = new Set(combos.map((c) => comboKey(c)))
 
   let created = 0
+  let hitBudget = false
   let position = existing.length
   for (const combo of combos) {
     const key = comboKey(combo)
     if (existingByKey.has(key)) continue
+    // Only actual creation work counts against the budget; skipping combinations
+    // that already exist is an in-memory no-op, so resuming a part-built matrix
+    // spends its whole budget on the combinations still missing. Checked before
+    // creating, and only between combos, so a combo is never left half-made
+    // (a child product without its variant row).
+    if (Date.now() - startedAt > MATRIX_BATCH_MS) { hitBudget = true; break }
     // Compose the child in the option order the admin defined.
     const labels = options.map((o) => {
       const chosen = combo.find((id) => o.values.some((v) => v.id === id))
@@ -81,17 +101,25 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
   }
 
   // Remove variants whose combination is no longer possible; deleting the child
-  // product cascades the svr_variants + svr_variant_values rows away.
+  // product cascades the svr_variants + svr_variant_values rows away. Held back
+  // until the creation phase has finished so a resumed build fills the gaps
+  // before it starts pruning, and budgeted the same way so a large prune cannot
+  // overrun the request either.
   let removed = 0
-  for (const v of existing) {
-    const key = comboKey(existingValues[v.id] ?? [])
-    if (!wantedKeys.has(key)) {
-      await deleteProduct(v.childProductId)
-      removed += 1
+  if (!hitBudget) {
+    for (const v of existing) {
+      if (Date.now() - startedAt > MATRIX_BATCH_MS) { hitBudget = true; break }
+      const key = comboKey(existingValues[v.id] ?? [])
+      if (!wantedKeys.has(key)) {
+        await deleteProduct(v.childProductId)
+        removed += 1
+      }
     }
   }
 
-  return { created, removed, total: combos.length }
+  // total is the count that exists now, not the matrix's eventual size, so the
+  // caller can show honest progress while a big build is still catching up.
+  return { created, removed, total: existing.length + created - removed, done: !hitBudget }
 }
 
 // Re-compose every variant child product's name from the current option value
