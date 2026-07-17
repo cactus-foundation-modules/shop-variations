@@ -307,6 +307,24 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     await refresh(); setBusy(false)
   }
 
+  // Add one hand-picked combination without building the whole matrix. The server
+  // reorders every row afterwards, so the new variant appears in the same place a
+  // full generate would have put it. Returns an error string to show inline, or
+  // null on success.
+  const addSingleVariant = useCallback(async (optionValueIds: string[]): Promise<string | null> => {
+    setBusy(true); setMessage(null)
+    try {
+      const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/variants`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ optionValueIds }),
+      })
+      if (!res.ok) return (await res.json().catch(() => ({}))).error ?? 'Could not add that variant.'
+      await refresh()
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }, [productId, refresh])
+
   // --- Per-variant edits ---------------------------------------------------
   const editVariant = useCallback((variantId: string, patch: VariantEdit) => {
     setEdits((prev) => ({ ...prev, [variantId]: { ...prev[variantId], ...patch } }))
@@ -645,6 +663,8 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
             </div>
           </>
         )}
+
+        <AddSingleVariant options={data.options} disabled={busy} onAdd={addSingleVariant} />
       </section>
 
       <PersonalisationEditor productId={productId} addons={data.addons} currency={currency} onChange={refresh} />
@@ -961,6 +981,62 @@ function AddValueInline({ optionId, isSwatch, onAdd, disabled }: {
       )}
       <button type="button" className="btn btn-secondary btn-sm" onClick={add} disabled={!canAdd}>+</button>
     </span>
+  )
+}
+
+// Build one variant from a hand-picked value per option, rather than generating
+// the whole matrix. Only options that actually have values can take part; each
+// gets a dropdown defaulting to its first value, so the control is ready to add
+// the moment there is something to add. The server owns the real rules (complete
+// combination, no duplicate) and its rejection surfaces here inline.
+function AddSingleVariant({ options, disabled, onAdd }: {
+  options: Option[]
+  disabled: boolean
+  onAdd: (optionValueIds: string[]) => Promise<string | null>
+}) {
+  const usable = options.filter((o) => o.values.length > 0)
+  const [sel, setSel] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  if (usable.length === 0) return null
+
+  const valueFor = (o: Option) => sel[o.id] ?? o.values[0]?.id ?? ''
+
+  async function add() {
+    const ids = usable.map((o) => valueFor(o)).filter(Boolean)
+    if (ids.length !== usable.length) return
+    setSaving(true); setError(null)
+    const err = await onAdd(ids)
+    setSaving(false)
+    if (err) setError(err)
+  }
+
+  const busy = disabled || saving
+  return (
+    <div style={{ border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
+      <strong style={{ fontSize: '0.875rem' }}>Add a single variant</strong>
+      <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
+        Pick one value for each option to add just that combination. It slots into the same place a full generate would put it.
+      </p>
+      {error && <p className="spe-error" role="alert"><span aria-hidden>⚠</span>{error}</p>}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        {usable.map((o) => (
+          <label key={o.id} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8125rem' }}>
+            <span style={{ color: 'var(--color-text-muted)' }}>{o.name}</span>
+            <select
+              value={valueFor(o)}
+              disabled={busy}
+              onChange={(e) => setSel((prev) => ({ ...prev, [o.id]: e.target.value }))}
+              style={{ padding: '0.375rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.875rem', minWidth: 120 }}
+            >
+              {o.values.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+          </label>
+        ))}
+        <button type="button" className="btn btn-primary btn-sm" onClick={add} disabled={busy}>Add variant</button>
+      </div>
+    </div>
   )
 }
 

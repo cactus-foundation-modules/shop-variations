@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client'
 import { createProduct, updateProduct, deleteProduct, getProductById, getProductBySlug, getProductMedia } from '@/modules/shop/lib/db/products'
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
-import { getVariants, getVariantValueMap, createVariant } from '@/modules/shop-variations/lib/db/variants'
+import { getVariants, getVariantValueMap, createVariant, setVariantPositions } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
 import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -120,6 +120,111 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
   // total is the count that exists now, not the matrix's eventual size, so the
   // caller can show honest progress while a big build is still catching up.
   return { created, removed, total: existing.length + created - removed, done: !hitBudget }
+}
+
+// Put every variant of a parent back into the order the full matrix would build
+// them in. generateMatrix walks the options in display order, last option moving
+// fastest - so each combination has one canonical slot, the way the digits of an
+// odometer do. We recompute that slot for every variant and renumber positions to
+// match, which is why an individually-created variant lands exactly where an
+// auto-generated matrix would have placed it rather than on the end.
+export async function resequenceVariantPositions(parentId: string): Promise<void> {
+  const options = (await getOptionsWithValues(parentId)).filter((o) => o.values.length > 0)
+  const variants = await getVariants(parentId)
+  if (variants.length === 0) return
+  const valueMap = await getVariantValueMap(parentId)
+
+  // valueId -> its option's display index and the value's index within that option.
+  const coord = new Map<string, { oi: number; vi: number }>()
+  options.forEach((o, oi) => o.values.forEach((v, vi) => coord.set(v.id, { oi, vi })))
+
+  // Each option's place value = the product of the value-counts of every option
+  // after it, so the last option counts in ones and the first in the largest step.
+  const counts = options.map((o) => o.values.length)
+  const radix: number[] = []
+  let step = 1
+  for (let i = counts.length - 1; i >= 0; i -= 1) {
+    radix[i] = step
+    step *= counts[i] ?? 1
+  }
+
+  const canonicalIndex = (variantId: string): number => {
+    let idx = 0
+    for (const vid of valueMap[variantId] ?? []) {
+      const c = coord.get(vid)
+      if (c) idx += c.vi * (radix[c.oi] ?? 0)
+    }
+    return idx
+  }
+
+  // getVariants already comes back in current display order, so the incoming index
+  // is a stable tie-break for any two variants that map to the same slot (an
+  // orphaned value left by a since-changed option, say) rather than a reshuffle.
+  const ordered = variants
+    .map((v, tie) => ({ id: v.id, idx: canonicalIndex(v.id), tie }))
+    .sort((a, b) => a.idx - b.idx || a.tie - b.tie)
+
+  await setVariantPositions(ordered.map((o, position) => ({ id: o.id, position })))
+}
+
+// Create one variant for a single hand-picked combination (the admin's "add a
+// variant" control), as opposed to generateMatrix building the whole cartesian
+// product at once. The combination must name exactly one value for every option
+// that has values - a partial combination is not a cell the matrix would ever
+// build - and must not already exist. The new variant is a hidden child product
+// like any other, then resequenceVariantPositions drops it into matrix order.
+export async function createSingleVariant(parentId: string, optionValueIds: string[]): Promise<{ variantId: string }> {
+  const parent = await getProductById(parentId)
+  if (!parent) throw new Error('Product not found')
+  if (parent.catalogueHidden) throw new Error('Cannot add variations to a variant child product')
+
+  const options = (await getOptionsWithValues(parentId)).filter((o) => o.values.length > 0)
+  if (options.length === 0) throw new Error('Add an option with at least one value first')
+
+  const valueToOption = new Map<string, string>()
+  const labelByValueId = new Map<string, string>()
+  for (const o of options) for (const v of o.values) { valueToOption.set(v.id, o.id); labelByValueId.set(v.id, v.label) }
+
+  // One value per option, every option covered - anything else is not a matrix cell.
+  const chosenByOption = new Map<string, string>()
+  for (const vid of optionValueIds) {
+    const optId = valueToOption.get(vid)
+    if (!optId) throw new Error('That option value does not belong to this product')
+    if (chosenByOption.has(optId)) throw new Error('Choose only one value per option')
+    chosenByOption.set(optId, vid)
+  }
+  if (chosenByOption.size !== options.length) throw new Error('Choose one value for every option')
+
+  // Compose the combination in option (display) order, matching generateMatrix.
+  const combo = options.map((o) => chosenByOption.get(o.id) as string)
+  const key = comboKey(combo)
+
+  const existing = await getVariants(parentId)
+  const existingValues = await getVariantValueMap(parentId)
+  if (existing.some((v) => comboKey(existingValues[v.id] ?? []) === key)) {
+    throw new Error('That combination already exists')
+  }
+
+  const labels = combo.map((id) => labelByValueId.get(id)).filter(Boolean)
+  const name = `${parent.name} - ${labels.join(' / ')}`
+  const slug = await ensureUniqueProductSlug(slugify(name))
+  const child = await createProduct({
+    name,
+    slug,
+    type: parent.type,
+    status: 'ACTIVE',
+    description: null,
+    price: Number(parent.price),
+    taxClassId: parent.taxClassId,
+    trackInventory: parent.trackInventory,
+    stockCount: parent.trackInventory ? 0 : null,
+    outOfStockBehaviour: parent.outOfStockBehaviour,
+    weight: parent.weight != null ? Number(parent.weight) : null,
+    catalogueHidden: true,
+  })
+  const created = await createVariant(parentId, child.id, combo, existing.length)
+  await resequenceVariantPositions(parentId)
+  return { variantId: created.id }
 }
 
 // Re-compose every variant child product's name from the current option value

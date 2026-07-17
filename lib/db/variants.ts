@@ -62,6 +62,20 @@ export async function createVariant(productId: string, childProductId: string, o
   })
 }
 
+// Rewrite the display position of a set of variants in one statement. Used by the
+// resequencer, which recomputes every variant's canonical slot at once - a loop of
+// single UPDATEs would be one round trip per variant on a full matrix.
+export async function setVariantPositions(positions: { id: string; position: number }[]): Promise<void> {
+  if (positions.length === 0) return
+  const tuples = positions.map((p) => Prisma.sql`(${p.id}::text, ${p.position}::int)`)
+  await prisma.$executeRaw`
+    UPDATE "svr_variants" AS v
+    SET "position" = c.pos
+    FROM (VALUES ${Prisma.join(tuples)}) AS c(id, pos)
+    WHERE v."id" = c.id
+  `
+}
+
 export async function setVariantEnabled(id: string, enabled: boolean): Promise<void> {
   await prisma.$executeRaw`UPDATE "svr_variants" SET "enabled" = ${enabled} WHERE "id" = ${id}`
 }
