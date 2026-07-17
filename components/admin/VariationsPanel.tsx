@@ -168,6 +168,48 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     await refresh(); setBusy(false)
   }
 
+  // --- Drag to reorder -----------------------------------------------------
+  // Options reorder as whole cards; values reorder within their own option, so a
+  // value drag is pinned to its option id and never crosses into another.
+  const [optionDrag, setOptionDrag] = useState<number | null>(null)
+  const [optionOver, setOptionOver] = useState<number | null>(null)
+  const [valueDrag, setValueDrag] = useState<{ optionId: string; index: number } | null>(null)
+  const [valueOver, setValueOver] = useState<{ optionId: string; index: number } | null>(null)
+
+  // Write back only the rows whose position actually moved. The editor grid and
+  // the storefront both read options and values in "position" order, so a refresh
+  // straightens the display out; a rejected write falls back to the server truth.
+  async function persistPositions(url: (id: string) => string, ordered: { id: string; position: number }[]) {
+    setBusy(true)
+    const moved = ordered.map((row, index) => ({ row, index })).filter(({ row, index }) => row.position !== index)
+    await Promise.all(moved.map(({ row, index }) => fetch(url(row.id), {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: index }),
+    })))
+    await refresh(); setBusy(false)
+  }
+
+  function moveOption(from: number, to: number) {
+    if (!data || from === to) return
+    const next = [...data.options]
+    const [moved] = next.splice(from, 1)
+    if (!moved) return
+    next.splice(to, 0, moved)
+    setData({ ...data, options: next })
+    void persistPositions((id) => `/api/m/shop-variations/admin/options/${id}`, next)
+  }
+
+  function moveValue(optionId: string, from: number, to: number) {
+    if (!data || from === to) return
+    const opt = data.options.find((o) => o.id === optionId)
+    if (!opt) return
+    const nextValues = [...opt.values]
+    const [moved] = nextValues.splice(from, 1)
+    if (!moved) return
+    nextValues.splice(to, 0, moved)
+    setData({ ...data, options: data.options.map((o) => (o.id === optionId ? { ...o, values: nextValues } : o)) })
+    void persistPositions((id) => `/api/m/shop-variations/admin/option-values/${id}`, nextValues)
+  }
+
   // --- Matrix --------------------------------------------------------------
   async function generate() {
     setBusy(true); setMessage(null)
@@ -223,7 +265,8 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
         <h3 className="spe-section-head">Options</h3>
         <p className="spe-section-blurb">
           The choices a shopper makes before buying, like Size or Colour. Add the options first, then generate the
-          combinations underneath.
+          combinations underneath. Drag the handles to put the options, and the values inside them, in the order shoppers
+          should see.
         </p>
 
         {optionError && <p className="spe-error" role="alert"><span aria-hidden>⚠</span>{optionError}</p>}
@@ -232,18 +275,57 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
           <p className="spe-empty">No options yet. Add one below and this product stays a plain single item.</p>
         ) : (
           <div style={{ display: 'grid', gap: '0.75rem' }}>
-            {data.options.map((opt) => (
-              <div key={opt.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem' }}>
+            {data.options.map((opt, oi) => (
+              <div
+                key={opt.id}
+                onDragOver={(e) => { if (optionDrag !== null) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOptionOver(oi) } }}
+                onDrop={(e) => { if (optionDrag !== null) { e.preventDefault(); moveOption(optionDrag, oi); setOptionDrag(null); setOptionOver(null) } }}
+                style={{
+                  border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
+                  opacity: optionDrag === oi ? 0.5 : 1,
+                  outline: optionOver === oi && optionDrag !== null && optionDrag !== oi ? '2px solid var(--color-primary)' : undefined,
+                  outlineOffset: 2,
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                  <InlineRename value={opt.name} ariaLabel={`Rename option ${opt.name}`} onSave={(name) => renameOption(opt.id, name)} disabled={busy} inputWidth={160} textStyle={{ fontWeight: 600 }} />
+                  <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', minWidth: 0 }}>
+                    {data.options.length > 1 && (
+                      <DragGrip
+                        label={`Drag to reorder option ${opt.name}`}
+                        disabled={busy}
+                        onDragStart={(e) => { setOptionDrag(oi); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', opt.id) } catch { /* Firefox refuses to start a drag without a payload */ } }}
+                        onDragEnd={() => { setOptionDrag(null); setOptionOver(null) }}
+                      />
+                    )}
+                    <InlineRename value={opt.name} ariaLabel={`Rename option ${opt.name}`} onSave={(name) => renameOption(opt.id, name)} disabled={busy} inputWidth={160} textStyle={{ fontWeight: 600 }} />
+                  </span>
                   <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{CONTROL_LABELS[opt.controlType]}</span>
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
-                  {opt.values.map((v) => (
-                    <span key={v.id} style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center', background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-full)', padding: '0.125rem 0.5rem', fontSize: '0.8125rem' }}>
+                  {opt.values.map((v, vi) => (
+                    <span
+                      key={v.id}
+                      onDragOver={(e) => { if (valueDrag?.optionId === opt.id) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setValueOver({ optionId: opt.id, index: vi }) } }}
+                      onDrop={(e) => { if (valueDrag?.optionId === opt.id) { e.preventDefault(); moveValue(opt.id, valueDrag.index, vi); setValueDrag(null); setValueOver(null) } }}
+                      style={{
+                        display: 'inline-flex', gap: '0.25rem', alignItems: 'center', background: 'var(--color-bg-subtle)',
+                        border: '1px solid var(--color-border)', borderRadius: 'var(--radius-full)', padding: '0.125rem 0.5rem', fontSize: '0.8125rem',
+                        opacity: valueDrag?.optionId === opt.id && valueDrag.index === vi ? 0.5 : 1,
+                        outline: valueOver?.optionId === opt.id && valueOver.index === vi && valueDrag?.optionId === opt.id && valueDrag.index !== vi ? '2px solid var(--color-primary)' : undefined,
+                        outlineOffset: 1,
+                      }}
+                    >
+                      {opt.values.length > 1 && (
+                        <DragGrip
+                          label={`Drag to reorder ${v.label}`}
+                          disabled={busy}
+                          onDragStart={(e) => { setValueDrag({ optionId: opt.id, index: vi }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', v.id) } catch { /* Firefox refuses to start a drag without a payload */ } }}
+                          onDragEnd={() => { setValueDrag(null); setValueOver(null) }}
+                        />
+                      )}
                       {opt.controlType === 'SWATCH' && (
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
@@ -397,6 +479,39 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
 
       <PersonalisationEditor productId={productId} addons={data.addons} currency={currency} onChange={refresh} />
     </div>
+  )
+}
+
+// The grab handle on an option card or a value pill. Only the handle is
+// draggable, so the inline rename, swatch and delete controls beside it keep
+// their ordinary click and text-select behaviour. Mouse-only, matching the
+// variant-image drop target above; the choices still read top-to-bottom for
+// anyone not using a pointer.
+function DragGrip({ label, disabled, onDragStart, onDragEnd }: {
+  label: string
+  disabled: boolean
+  onDragStart: (e: DragEvent) => void
+  onDragEnd: () => void
+}) {
+  return (
+    <span
+      aria-label={label}
+      title="Drag to reorder"
+      draggable={!disabled}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      style={{
+        cursor: disabled ? 'default' : 'grab',
+        color: 'var(--color-text-muted)',
+        fontSize: '0.875rem',
+        lineHeight: 1,
+        userSelect: 'none',
+        flexShrink: 0,
+        touchAction: 'none',
+      }}
+    >
+      ⠿
+    </span>
   )
 }
 
