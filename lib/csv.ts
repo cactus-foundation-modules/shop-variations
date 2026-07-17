@@ -5,7 +5,7 @@
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
 import { getProductBySlug } from '@/modules/shop/lib/db/products'
 import { getEditorPayload, upsertVariantForCombination } from '@/modules/shop-variations/lib/variants-service'
-import { getProductIdsWithVariations } from '@/modules/shop-variations/lib/db/variants'
+import { getProductIdsWithVariations, getVariants, getVariantValueMap } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
@@ -140,6 +140,12 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       return value.id
     }
 
+    // Pre-load this parent's variants + value-set map once. upsertVariantForCombination
+    // keeps this context current as it creates, so each row is O(1) DB work rather
+    // than re-reading every sibling variant - a parent with hundreds of variants
+    // used to be O(rows x variants) and could not finish inside the request budget.
+    const upsertCtx = { parent, existing: await getVariants(parent.id), valueMap: await getVariantValueMap(parent.id) }
+
     for (const gr of groupRows) {
       try {
         const optionValueIds: string[] = []
@@ -159,7 +165,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
-        })
+        }, upsertCtx)
 
         // Hand the whole row (keyed by header label) to each extra-field provider
         // so it can pick out its own columns and write them onto this variant.

@@ -500,17 +500,28 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
 // Create or update the single variant for a specific value combination (used by
 // CSV import). Existing variants are matched by their exact value-set, so a
 // re-import updates in place rather than duplicating.
+// A parent's variants + value-set map, pre-loaded once so a bulk caller (the CSV
+// importer) can upsert many combinations without re-reading every sibling variant
+// per row. Pass it and upsertVariantForCombination keeps it in step as it creates,
+// turning an O(rows x variants) import into O(rows).
+export type VariantUpsertContext = {
+  parent: NonNullable<Awaited<ReturnType<typeof getProductById>>>
+  existing: Awaited<ReturnType<typeof getVariants>>
+  valueMap: Awaited<ReturnType<typeof getVariantValueMap>>
+}
+
 export async function upsertVariantForCombination(
   parentId: string,
   optionValueIds: string[],
   valueLabels: string[],
   fields: { price?: number; sku?: string | null; barcode?: string | null; stockCount?: number | null; weight?: number | null },
+  ctx?: VariantUpsertContext,
 ): Promise<{ variantId: string; childProductId: string; created: boolean }> {
-  const parent = await getProductById(parentId)
+  const parent = ctx?.parent ?? await getProductById(parentId)
   if (!parent) throw new Error('Parent not found')
 
-  const existing = await getVariants(parentId)
-  const valueMap = await getVariantValueMap(parentId)
+  const existing = ctx?.existing ?? await getVariants(parentId)
+  const valueMap = ctx?.valueMap ?? await getVariantValueMap(parentId)
   const key = comboKey(optionValueIds)
   const match = existing.find((v) => comboKey(valueMap[v.id] ?? []) === key)
 
@@ -533,6 +544,12 @@ export async function upsertVariantForCombination(
     childId = child.id
     variantId = cv.id
     created = true
+    // Keep a caller-supplied context current so a later row naming the same
+    // combination matches this new variant instead of creating a duplicate.
+    if (ctx) {
+      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, position: existing.length })
+      ctx.valueMap[cv.id] = optionValueIds
+    }
   }
 
   await updateProduct(childId, {
