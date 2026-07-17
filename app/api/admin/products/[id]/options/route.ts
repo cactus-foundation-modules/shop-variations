@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { createOption, createOptionValue, getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
+import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 
 const Body = z.object({
@@ -24,7 +25,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (parsed.data.values) {
     let pos = 0
     for (const v of parsed.data.values) {
-      await createOptionValue(option.id, v.label, v.swatch ?? null, pos)
+      const value = await createOptionValue(option.id, v.label, v.swatch ?? null, pos)
+      // File an image-swatch picture in the product's colours folder (a no-op for
+      // a hex colour swatch or an externally-hosted url).
+      if (v.swatch) await fileSwatchImage(id, value.id, v.swatch)
       pos += 1
     }
   }

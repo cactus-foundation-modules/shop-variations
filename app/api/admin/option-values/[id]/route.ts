@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateOptionValue, deleteOptionValue, getOptionValueOwner, optionValueLabelTaken } from '@/modules/shop-variations/lib/db/options'
+import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { syncVariantChildNames } from '@/modules/shop-variations/lib/variants-service'
 import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 
@@ -30,6 +31,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   await updateOptionValue(id, { ...parsed.data, ...(label !== undefined ? { label } : {}) })
+
+  // An image-swatch picture (the only swatch that is a media url; a colour swatch
+  // is a bare hex) is filed in the product's colours folder. The helper is a
+  // no-op for a hex or externally-hosted value.
+  if (parsed.data.swatch) await fileSwatchImage(owner.productId, id, parsed.data.swatch)
 
   // A renamed value invalidates the name of every variant child that uses it, so
   // re-compose them all rather than tracking which ones changed.
