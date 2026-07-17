@@ -1,9 +1,9 @@
 {
   "name": "shop-variations",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
-  "requiresCoreVersion": "0.5.426",
+  "requiresCoreVersion": "0.5.493",
   "requiresModules": [
     { "name": "shop", "minVersion": "0.1.52" }
   ],
@@ -20,7 +20,8 @@
   "extensionPoints": [
     { "point": "shop.product-editor-sections", "id": "variations-inline", "label": "Variations", "order": 50, "permission": "shop.products", "import": "./components/admin/ProductVariationsSection", "component": "ProductVariationsSection" },
     { "point": "shop.cart-line-resolver", "id": "variations-addons", "import": "./lib/line-resolver", "component": "resolveVariationLineMeta" },
-    { "point": "shop.product-detail-parts", "id": "variations-detail-parts", "import": "./lib/detail-parts-provider", "component": "shopVariationsDetailParts" }
+    { "point": "shop.product-detail-parts", "id": "variations-detail-parts", "import": "./lib/detail-parts-provider", "component": "shopVariationsDetailParts" },
+    { "point": "core.media-reference-rewriters", "id": "shop-variations", "import": "./lib/media-reference-rewriter", "component": "shopVariationsMediaReferenceRewriter" }
   ],
   "puckBlocks": [
     { "type": "ShopVariantPurchase", "import": "./components/puck/ShopVariantPurchase", "component": "shopVariantPurchasePuckComponent", "rscComponent": "shopVariantPurchasePuckRscComponent", "rscImport": "./components/puck/ShopVariantPurchase.rsc", "layoutTypes": ["shopProduct"] },
