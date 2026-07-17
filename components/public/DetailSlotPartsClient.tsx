@@ -201,6 +201,11 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
       <span className={classNames.now}>{money(live, symbol)}</span>
       {atBase && compareAtPrice && <span className={classNames.was}>{money(Number(compareAtPrice), symbol)}</span>}
       {atBase && savePct != null && savePct > 0 && <span className={classNames.save}>Save {savePct}%</span>}
+      {/* The way back out of a chosen combination belongs with the price it moved,
+          not buried under the last option. Shop's price block is a wrapping flex
+          row, so on a narrow screen this drops to its own line rather than
+          squeezing the figure. */}
+      <ResetOptionsLink sel={sel} />
     </div>
   )
 }
@@ -245,7 +250,6 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
           {sel.payload.options.map((option) => (
             <OptionControl key={option.id} option={option} sel={sel} />
           ))}
-          <ResetOptionsLink sel={sel} />
         </div>
       )}
       {!addonsPlaced && sel.payload.addons.length > 0 && (
