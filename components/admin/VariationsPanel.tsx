@@ -39,7 +39,13 @@ type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'we
 export type VariantColumn = {
   id: string
   label: string
-  Cell: ComponentType<{ productId: string; variantId: string; childProductId: string; label: string }>
+  /**
+   * Set for a dynamic field-provider column: the opaque key that tells the
+   * provider's single Cell which of its columns this is. Absent for a static
+   * variant-column, whose Cell is the whole column and needs no key.
+   */
+  columnKey?: string
+  Cell: ComponentType<{ productId: string; variantId: string; childProductId: string; label: string; columnKey?: string }>
 }
 
 const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch' }
@@ -598,9 +604,9 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                         <td style={{ padding: '0.5rem' }}>
                           <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} />
                         </td>
-                        {columns.map(({ id, Cell }) => (
+                        {columns.map(({ id, Cell, columnKey }) => (
                           <td key={id} style={{ padding: '0.5rem' }}>
-                            <Cell productId={productId} variantId={v.variantId} childProductId={v.childProductId} label={v.label} />
+                            <Cell productId={productId} variantId={v.variantId} childProductId={v.childProductId} label={v.label} columnKey={columnKey} />
                           </td>
                         ))}
                         <td style={{ padding: '0.5rem' }}>

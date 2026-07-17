@@ -4,6 +4,7 @@ import { hasPermission } from '@/lib/permissions/check'
 import { prisma } from '@/lib/db/prisma'
 import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
 import { VariationsPanel, type VariantColumn } from '@/modules/shop-variations/components/admin/VariationsPanel'
+import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
 // The Variations tab on the shop product editor, contributed through the
 // shop.product-editor-sections point. Server component: it only decides whether
@@ -60,6 +61,29 @@ async function resolveVariantColumns(user: Awaited<ReturnType<typeof getSessionF
     })
 }
 
+/**
+ * Dynamic columns from field providers. Unlike the static variant-columns above,
+ * these depend on the product - a provider can return one column per attribute a
+ * product uses for its variations - so this needs the product id the static
+ * resolver does not. Each column reuses its provider's one Cell, told which
+ * column it is through `columnKey`.
+ */
+async function resolveFieldColumns(
+  user: Awaited<ReturnType<typeof getSessionFromCookie>>,
+  productId: string,
+): Promise<VariantColumn[]> {
+  if (!user) return []
+  const providers = await resolveVariantFieldProviders(user)
+  const columns: VariantColumn[] = []
+  for (const { id, provider } of providers) {
+    const list = await provider.listColumns(productId)
+    for (const c of list.sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
+      columns.push({ id: `${id}:${c.key}`, label: c.label, columnKey: c.key, Cell: provider.Cell })
+    }
+  }
+  return columns
+}
+
 export async function ProductVariationsSection({ productId }: { productId: string }) {
   const product = await getProductById(productId)
 
@@ -68,7 +92,10 @@ export async function ProductVariationsSection({ productId }: { productId: strin
   if (!product || product.catalogueHidden) return null
 
   const user = await getSessionFromCookie()
-  const columns = await resolveVariantColumns(user)
+  const [staticColumns, fieldColumns] = await Promise.all([
+    resolveVariantColumns(user),
+    resolveFieldColumns(user, productId),
+  ])
 
-  return <VariationsPanel productId={productId} columns={columns} />
+  return <VariationsPanel productId={productId} columns={[...staticColumns, ...fieldColumns]} />
 }

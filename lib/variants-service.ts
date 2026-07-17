@@ -505,7 +505,7 @@ export async function upsertVariantForCombination(
   optionValueIds: string[],
   valueLabels: string[],
   fields: { price?: number; sku?: string | null; barcode?: string | null; stockCount?: number | null; weight?: number | null },
-): Promise<{ variantId: string; created: boolean }> {
+): Promise<{ variantId: string; childProductId: string; created: boolean }> {
   const parent = await getProductById(parentId)
   if (!parent) throw new Error('Parent not found')
 
@@ -542,5 +542,5 @@ export async function upsertVariantForCombination(
     ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
     ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
   })
-  return { variantId, created }
+  return { variantId, childProductId: childId, created }
 }

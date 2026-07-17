@@ -7,17 +7,48 @@ import { getProductBySlug } from '@/modules/shop/lib/db/products'
 import { getEditorPayload, upsertVariantForCombination } from '@/modules/shop-variations/lib/variants-service'
 import { getProductIdsWithVariations } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
+import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
 export async function exportVariationsCsv(): Promise<string> {
   const ids = await getProductIdsWithVariations()
   const payloads = (await Promise.all(ids.map((id) => getEditorPayload(id)))).filter((p): p is NonNullable<typeof p> => !!p && p.variants.length > 0)
   const maxOptions = payloads.reduce((m, p) => Math.max(m, p.options.length), 1)
 
+  // Extra per-variant fields other modules hang on the grid (e.g. attribute
+  // values). Each provider's columns are gathered per product; the sheet header
+  // is the union of every column label seen, in first-seen order, appended after
+  // the module's own columns so an existing sheet's columns keep their place.
+  const providers = await resolveVariantFieldProviders()
+  const fieldColsByProduct = new Map<string, Array<{ key: string; label: string }>>()
+  const fieldValuesByProduct = new Map<string, Record<string, Record<string, string>>>()
+  const fieldHeaderOrder: string[] = []
+  for (const p of payloads) {
+    const childIds = p.variants.map((v) => v.childProductId)
+    const cols: Array<{ key: string; label: string }> = []
+    const values: Record<string, Record<string, string>> = {}
+    for (const { provider } of providers) {
+      const list = await provider.listColumns(p.product.id)
+      if (list.length === 0) continue
+      for (const c of list) {
+        cols.push({ key: c.key, label: c.label })
+        if (!fieldHeaderOrder.includes(c.label)) fieldHeaderOrder.push(c.label)
+      }
+      if (childIds.length > 0) {
+        const got = await provider.getValues(p.product.id, childIds)
+        for (const [child, rec] of Object.entries(got)) values[child] = { ...(values[child] ?? {}), ...rec }
+      }
+    }
+    fieldColsByProduct.set(p.product.id, cols)
+    fieldValuesByProduct.set(p.product.id, values)
+  }
+
   const optionCols: string[] = []
   for (let i = 0; i < maxOptions; i++) optionCols.push(`Option ${i + 1}`, `Value ${i + 1}`)
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Weight'])]
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Weight', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
+    const cols = fieldColsByProduct.get(p.product.id) ?? []
+    const values = fieldValuesByProduct.get(p.product.id) ?? {}
     for (const v of p.variants) {
       const pairs: string[] = []
       for (const option of p.options) {
@@ -25,9 +56,14 @@ export async function exportVariationsCsv(): Promise<string> {
         pairs.push(option.name, value?.label ?? '')
       }
       while (pairs.length < maxOptions * 2) pairs.push('')
+      const fieldCells = fieldHeaderOrder.map((label) => {
+        const col = cols.find((c) => c.label === label)
+        return col ? values[v.childProductId]?.[col.key] ?? '' : ''
+      })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
         v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '',
+        ...fieldCells,
       ]))
     }
   }
@@ -47,6 +83,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const result: ImportResult = { created: 0, updated: 0, errors: [] }
   if (rows.length < 2) { result.errors.push({ row: 0, reason: 'No data rows found' }); return result }
 
+  const providers = await resolveVariantFieldProviders()
   const header = (rows[0] ?? []).map((h) => h.trim())
   const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase())
   const slugCol = idx('Parent Slug')
@@ -116,13 +153,24 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         }
         if (optionValueIds.length === 0) { result.errors.push({ row: gr.rowNum, reason: 'No options on this row' }); continue }
 
-        const { created } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
+        const { created, childProductId } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
           price: priceCol >= 0 ? num(gr.cols[priceCol]) : undefined,
           sku: skuCol >= 0 ? (gr.cols[skuCol]?.trim() || null) : undefined,
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
         })
+
+        // Hand the whole row (keyed by header label) to each extra-field provider
+        // so it can pick out its own columns and write them onto this variant.
+        if (providers.length > 0) {
+          const rowRecord: Record<string, string> = {}
+          header.forEach((h, i) => { rowRecord[h] = (gr.cols[i] ?? '').trim() })
+          for (const { provider } of providers) {
+            await provider.applyImportedRow(parent.id, childProductId, rowRecord)
+          }
+        }
+
         if (created) result.created += 1
         else result.updated += 1
       } catch (err) {
