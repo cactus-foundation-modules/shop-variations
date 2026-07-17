@@ -70,6 +70,10 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const currency = useProductEditorCurrency()
   const [data, setData] = useState<Payload | null>(null)
   const [edits, setEdits] = useState<Record<string, VariantEdit>>({})
+  // Variant ids ticked for a bulk delete. Pruned to what still exists whenever
+  // the grid reloads (see the effect below), so a delete or rebuild can't leave
+  // a phantom id selected.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [optionError, setOptionError] = useState<string | null>(null)
@@ -88,6 +92,21 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- delegating to an async helper; setData only runs after an await, never synchronously in the effect body
   useEffect(() => { void refresh() }, [refresh])
+
+  // Drop any ticked id that no longer has a row - a deleted, rebuilt or cleared
+  // variant must not stay selected. The functional update returns the same set
+  // when nothing changed, so this can't loop.
+  useEffect(() => {
+    if (!data) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling the selection with reloaded data; returns the identical set (no re-render) unless a stale id was actually pruned
+    setSelected((prev) => {
+      if (prev.size === 0) return prev
+      const live = new Set(data.variants.map((v) => v.variantId))
+      const next = new Set<string>()
+      for (const id of prev) if (live.has(id)) next.add(id)
+      return next.size === prev.size ? prev : next
+    })
+  }, [data])
 
   // --- Register with the product editor's Save button -----------------------
   const dirty = Object.keys(edits).length > 0
@@ -264,6 +283,30 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     await refresh(); setBusy(false)
   }
 
+  // Tick or untick one variant for the bulk delete.
+  function toggleVariant(variantId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(variantId)) next.delete(variantId); else next.add(variantId)
+      return next
+    })
+  }
+
+  // Delete every ticked variant in one request. Unsaved edits to those rows are
+  // dropped with them, and the tick list is cleared before the grid reloads.
+  async function deleteSelected() {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    if (!window.confirm(`Delete ${ids.length} variant${ids.length === 1 ? '' : 's'}? Their stock counts and prices go with them.`)) return
+    setBusy(true)
+    await fetch(`/api/m/shop-variations/admin/products/${productId}/delete-variants`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantIds: ids }),
+    })
+    setEdits((prev) => { const next = { ...prev }; for (const id of ids) delete next[id]; return next })
+    setSelected(new Set())
+    await refresh(); setBusy(false)
+  }
+
   // --- Per-variant edits ---------------------------------------------------
   const editVariant = useCallback((variantId: string, patch: VariantEdit) => {
     setEdits((prev) => ({ ...prev, [variantId]: { ...prev[variantId], ...patch } }))
@@ -315,6 +358,11 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const stickyCol: CSSProperties = { padding: '0.5rem', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
   const stickyColHead: CSSProperties = { ...stickyCol, zIndex: 2 }
 
+  // Header tick state: fully ticked, or a mix (drawn as the indeterminate dash).
+  const allSelected = data.variants.length > 0 && data.variants.every((v) => selected.has(v.variantId))
+  const someSelected = selected.size > 0 && !allSelected
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(data.variants.map((v) => v.variantId)))
+
   return (
     <div className="spe-panel">
       <section className="spe-section">
@@ -360,8 +408,10 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
-                {/* Only the second option onward can wait on the one before it; the
-                    first has nothing above it to wait for. */}
+                {/* Only the second option onward can wait on the ones before it;
+                    the first has nothing above it to wait for. When ticked it
+                    stays hidden until every option above it has been chosen, not
+                    just the one directly before. */}
                 {oi > 0 && (
                   <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                     <input
@@ -370,7 +420,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                       disabled={busy}
                       onChange={(e) => setRequiresPrevious(opt.id, e.target.checked)}
                     />
-                    Only show once “{data.options[oi - 1]?.name}” is chosen
+                    Only show once every option above it is chosen
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
@@ -472,14 +522,33 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
           </p>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+              <div style={{ minHeight: 30, display: 'flex', alignItems: 'center' }}>
+                {selected.size > 0 && (
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={deleteSelected} disabled={busy}>
+                    Delete selected ({selected.size})
+                  </button>
+                )}
+              </div>
               <BulkControls currency={currency} onSetPrice={(v) => bulkSet('price', v)} onSetStock={(v) => bulkSet('stockCount', v)} disabled={busy} />
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={stickyColHead}>Variant</th>
+                    <th style={stickyColHead}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input
+                          type="checkbox"
+                          aria-label={allSelected ? 'Clear selection' : 'Select every variant'}
+                          checked={allSelected}
+                          ref={(el) => { if (el) el.indeterminate = someSelected }}
+                          disabled={busy}
+                          onChange={toggleAll}
+                        />
+                        Variant
+                      </span>
+                    </th>
                     <th style={{ padding: '0.5rem' }}>Image</th>
                     {columns.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>Price</th>
@@ -496,7 +565,18 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     const changed = edits[v.variantId] != null
                     return (
                       <tr key={v.variantId} style={{ borderBottom: '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
-                        <td style={{ ...stickyCol, background: changed ? 'var(--color-warning-subtle)' : 'var(--color-surface)' }}>{v.label || '—'}</td>
+                        <td style={{ ...stickyCol, background: changed ? 'var(--color-warning-subtle)' : 'var(--color-surface)' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${v.label || 'variant'}`}
+                              checked={selected.has(v.variantId)}
+                              disabled={busy}
+                              onChange={() => toggleVariant(v.variantId)}
+                            />
+                            {v.label || '—'}
+                          </span>
+                        </td>
                         <td style={{ padding: '0.5rem' }}>
                           <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} />
                         </td>

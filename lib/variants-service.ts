@@ -171,6 +171,24 @@ export async function clearVariants(parentId: string): Promise<number> {
   return existing.length
 }
 
+// Delete a chosen set of variants (the admin's bulk-select on the grid). Each id
+// is checked against this parent's own variants before anything is removed, so a
+// stray or already-deleted id is skipped rather than reaching across to another
+// product - the same deleteProduct cascade the single-row delete takes. Returns
+// how many were actually removed.
+export async function deleteVariants(parentId: string, variantIds: string[]): Promise<number> {
+  if (variantIds.length === 0) return 0
+  const own = new Map((await getVariants(parentId)).map((v) => [v.id, v]))
+  let removed = 0
+  for (const id of variantIds) {
+    const v = own.get(id)
+    if (!v) continue
+    await deleteProduct(v.childProductId)
+    removed += 1
+  }
+  return removed
+}
+
 type ChildRow = {
   id: string
   price: unknown

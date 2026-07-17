@@ -49,18 +49,17 @@ export function isValueAvailable(payload: VariantSelectorPayload, selection: Opt
 }
 
 // Whether an option should currently be shown to the shopper. An option flagged
-// `requiresPreviousOption` stays hidden until the option immediately before it
-// (in display order) has a value chosen, so dependent options reveal one at a
-// time. The first option is never gated - there is nothing before it to wait on
-// - so a flag left on an option later dragged to the front is simply dormant.
-// The gate chains naturally: if the option before is itself hidden and unchosen,
-// this one stays hidden too, until the shopper works down to it.
+// `requiresPreviousOption` stays hidden until *every* option before it (in
+// display order) has a value chosen - not merely the one immediately before, so
+// a dependent option only appears once the whole chain ahead of it is settled.
+// The first option is never gated - there is nothing before it to wait on - so a
+// flag left on an option later dragged to the front is simply dormant (an empty
+// slice is vacuously "all chosen"). A later option that leaves the flag off shows
+// straight away regardless of what is or isn't picked above it.
 export function isOptionVisible(payload: VariantSelectorPayload, selection: OptionSelection, index: number): boolean {
   const option = payload.options[index]
   if (!option || !option.requiresPreviousOption) return true
-  const previous = payload.options[index - 1]
-  if (!previous) return true
-  return !!selection[previous.id]
+  return payload.options.slice(0, index).every((prev) => !!selection[prev.id])
 }
 
 // A product page opens with nothing chosen: every option is the shopper's to

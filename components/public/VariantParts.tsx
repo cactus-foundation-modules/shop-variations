@@ -86,7 +86,11 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
           style={{ padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', minWidth: 180, background: 'var(--color-surface)', color: 'var(--color-text)' }}
         >
           <option value="" disabled>Choose {option.name.toLowerCase()}</option>
-          {option.values.map((v) => {
+          {/* A combination that can't be bought is simply left out rather than
+              shown greyed - the shopper never meets a dead end they can pick. The
+              currently chosen value is kept even if a change above it has just
+              made it unreachable, so the control never blanks out under them. */}
+          {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id).map((v) => {
             const available = sel.isAvailable(option.id, v.id)
             return <option key={v.id} value={v.id} disabled={!available}>{v.label}{available ? '' : ' - unavailable'}</option>
           })}
@@ -105,7 +109,11 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
     <div>
       {label}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-        {option.values.map((v) => {
+        {/* Unbuyable values drop out of the row entirely, so the shopper only ever
+            sees choices that lead somewhere. The one they've already picked stays
+            put even if a change above it has just made it unreachable - better a
+            struck-through button they can see than a control that empties itself. */}
+        {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id).map((v) => {
           const available = sel.isAvailable(option.id, v.id)
           const active = chosen === v.id
           return (
