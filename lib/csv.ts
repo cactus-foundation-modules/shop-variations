@@ -3,7 +3,8 @@
 // the per-variant fields. Re-importing updates in place (variants matched by
 // their exact value-set), so the export round-trips.
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
-import { getProductBySlug } from '@/modules/shop/lib/db/products'
+import { getProductBySlug, setProductMedia } from '@/modules/shop/lib/db/products'
+import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
 import { getEditorPayload, upsertVariantForCombination } from '@/modules/shop-variations/lib/variants-service'
 import { getProductIdsWithVariations, getVariants, getVariantValueMap } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
@@ -44,7 +45,7 @@ export async function exportVariationsCsv(): Promise<string> {
 
   const optionCols: string[] = []
   for (let i = 0; i < maxOptions; i++) optionCols.push(`Option ${i + 1}`, `Value ${i + 1}`)
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Weight', ...fieldHeaderOrder])]
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Weight', 'Image', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -62,7 +63,7 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '',
+        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', v.imageUrl ?? '',
         ...fieldCells,
       ]))
     }
@@ -78,6 +79,17 @@ const num = (s: string | undefined): number | undefined => {
   return Number.isFinite(n) ? n : undefined
 }
 
+// The Image column carries a media-library url. Only http(s) is accepted; a stray
+// value (a filename, a note) is rejected rather than stored as a broken picture.
+const isHttpUrl = (s: string): boolean => {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const rows = parseCsv(text)
   const result: ImportResult = { created: 0, updated: 0, errors: [] }
@@ -88,7 +100,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase())
   const slugCol = idx('Parent Slug')
   if (slugCol < 0) { result.errors.push({ row: 1, reason: 'Missing "Parent Slug" column' }); return result }
-  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), weightCol = idx('Weight')
+  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), weightCol = idx('Weight'), imageCol = idx('Image')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
   for (let i = 1; ; i++) {
@@ -174,6 +186,24 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
           header.forEach((h, i) => { rowRecord[h] = (gr.cols[i] ?? '').trim() })
           for (const { provider } of providers) {
             await provider.applyImportedRow(parent.id, childProductId, rowRecord)
+          }
+        }
+
+        // The variant's own image, stored as the hidden child product's primary
+        // media - the same write the per-variant edit endpoint makes. An empty
+        // cell clears it (the sheet is the truth); a non-url is flagged, not
+        // stored. Only touched when the sheet actually carries an Image column, so
+        // a legacy sheet from before this column existed leaves images alone.
+        if (imageCol >= 0) {
+          const raw = (gr.cols[imageCol] ?? '').trim()
+          if (raw === '') {
+            await setProductMedia(childProductId, [])
+          } else if (isHttpUrl(raw)) {
+            await setProductMedia(childProductId, [{ type: 'IMAGE', url: raw, isPrimary: true }])
+            // File it in the parent's media-library folder, as the edit endpoint does.
+            await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
+          } else {
+            result.errors.push({ row: gr.rowNum, reason: `Invalid image URL: ${raw}` })
           }
         }
 
