@@ -671,6 +671,8 @@ function InlineImageSwatch({ value, label, onSave, disabled }: {
 }) {
   const [picking, setPicking] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function choose(url: string) {
     setPicking(false)
@@ -680,28 +682,66 @@ function InlineImageSwatch({ value, label, onSave, disabled }: {
     setSaving(false)
   }
 
+  // A picture dropped straight onto the box is the library pick by a shorter
+  // route: upload it, then file the value at the row it created. Reordering drags
+  // carry no files, so isFileDrag keeps those from lighting the box up.
+  async function receiveDrop(e: DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    // Same rules the library itself applies, checked here so a wrong file type or
+    // an oversized photo says so at once instead of after the round trip.
+    const reason = preflightUploadError(file)
+    if (reason) { setError(reason); return }
+    setError(null)
+    setSaving(true)
+    try {
+      const media = await uploadOneFile(file, null)
+      await onSave(media.url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That image would not upload.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const busy = disabled || saving
   return (
-    <>
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
       <button
         type="button"
-        aria-label={value ? `Change the picture for ${label}` : `Set a picture for ${label}`}
-        disabled={disabled || saving}
+        aria-label={value ? `Change the picture for ${label}, or drop an image here` : `Set a picture for ${label}, or drop an image here`}
+        title="Click to choose from the library, or drop an image here"
+        disabled={busy}
         onClick={() => setPicking(true)}
+        onDragEnter={(e) => { if (!busy && isFileDrag(e)) { e.preventDefault(); setDragOver(true) } }}
+        onDragOver={(e) => { if (!busy && isFileDrag(e)) { e.preventDefault(); setDragOver(true) } }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { if (!busy && isFileDrag(e)) void receiveDrop(e) }}
         style={{
           width: 22, height: 22, padding: 0, flexShrink: 0, overflow: 'hidden',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          borderRadius: 'var(--radius-md)', background: 'none',
-          cursor: disabled || saving ? 'progress' : 'pointer',
-          border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)',
+          borderRadius: 'var(--radius-md)',
+          background: dragOver ? 'var(--color-primary-subtle)' : 'none',
+          cursor: busy ? 'progress' : 'pointer',
+          border: dragOver
+            ? '2px solid var(--color-primary)'
+            : value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)',
         }}
       >
-        {value ? (
+        {saving ? (
+          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-muted)' }}>…</span>
+        ) : value ? (
           // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
           <img src={value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
-          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-muted)' }}>＋</span>
+          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>＋</span>
         )}
       </button>
+      {error && (
+        <span role="alert" style={{ color: 'var(--color-danger)', fontSize: '0.6875rem', maxWidth: 160, lineHeight: 1.3 }}>{error}</span>
+      )}
       {picking && (
         <MediaPickerModal
           onClose={() => setPicking(false)}
@@ -715,7 +755,7 @@ function InlineImageSwatch({ value, label, onSave, disabled }: {
           }}
         />
       )}
-    </>
+    </span>
   )
 }
 

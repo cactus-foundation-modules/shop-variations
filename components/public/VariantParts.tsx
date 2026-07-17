@@ -128,16 +128,55 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
               }}
             >
               {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
-              {isImage && v.swatch && (
-                /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
-                <img src={v.swatch} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
-              )}
+              {isImage && v.swatch && <ImageSwatchThumb src={v.swatch} />}
               {v.label}
             </button>
           )
         })}
       </div>
     </div>
+  )
+}
+
+// The thumbnail beside an image-swatch value doubles as a peek control: hover it
+// (or, on a touchscreen, tap it) and the full picture pops above at 200x200, so a
+// shopper can see the fabric properly before choosing. The peek is deliberately
+// kept off the selecting button - the picture zooms, the label beside it chooses
+// - so a look never commits you to a colour by accident. On a touchscreen the
+// preview clears on the next tap anywhere, so a peek never lingers.
+function ImageSwatchThumb({ src }: { src: string }) {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [open])
+
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onClick={(e) => { e.stopPropagation(); e.preventDefault(); setOpen(true) }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
+      <img src={src} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 20, padding: 4, background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+            borderRadius: 8, boxShadow: 'var(--shadow-lg)', pointerEvents: 'none',
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
+          <img src={src} alt="" aria-hidden style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
+        </span>
+      )}
+    </span>
   )
 }
 
