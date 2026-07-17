@@ -164,17 +164,9 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
         // along without a wheel or a trackpad. `role="tab"` on the buttons below
         // is the wrapper's tablist earning its children.
         <GalleryThumbStrip beside={thumbPosition === 'beside'} className={classNames.thumbs}>
-          {thumbs.map((t) => (
-            <button
-              key={t.url} type="button" role="tab" onClick={() => { setOverride(t.url); setTapped(false); setPicked(null) }}
-              aria-selected={main === t.url && !picked}
-              className={main === t.url && !picked ? classNames.thumbOn : classNames.thumb}
-              aria-label={`Show ${t.alt}`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- as above */}
-              <img src={t.url} alt={t.alt} />
-            </button>
-          ))}
+          {/* Contributed media (a 3D model, say) leads the strip, so the richer
+              view sits first rather than trailing behind the photos - it is also
+              what the stage opens on, and the two should agree. */}
           {extras.map((extra) => (
             <extra.Thumbs
               key={extra.id}
@@ -188,6 +180,17 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               thumbClass={classNames.thumb}
               thumbOnClass={classNames.thumbOn}
             />
+          ))}
+          {thumbs.map((t) => (
+            <button
+              key={t.url} type="button" role="tab" onClick={() => { setOverride(t.url); setTapped(false); setPicked(null) }}
+              aria-selected={main === t.url && !picked}
+              className={main === t.url && !picked ? classNames.thumbOn : classNames.thumb}
+              aria-label={`Show ${t.alt}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- as above */}
+              <img src={t.url} alt={t.alt} />
+            </button>
           ))}
         </GalleryThumbStrip>
       )}
