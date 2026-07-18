@@ -13,8 +13,9 @@ const Body = z.object({
   stockCount: z.number().int().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
-  // A single media URL for this variant's image, or null to clear it.
-  imageUrl: z.string().url().nullable().optional(),
+  // Every media URL for this variant, in the order they should appear, or an
+  // empty array to clear them. The first is the variant's primary image.
+  imageUrls: z.array(z.string().url()).optional(),
 })
 
 // Per-variant edit. Scalar fields live on the hidden child product and go
@@ -41,15 +42,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (data.weight !== undefined) productFields.weight = data.weight
   if (Object.keys(productFields).length > 0) await updateProduct(variant.childProductId, productFields)
 
-  if (data.imageUrl !== undefined) {
-    await setProductMedia(variant.childProductId, data.imageUrl ? [{ type: 'IMAGE', url: data.imageUrl, isPrimary: true }] : [])
-    // File the variant's image in the parent product's media-library folder, so
+  if (data.imageUrls !== undefined) {
+    // Duplicates would show up twice in the storefront strip, and the picker can
+    // hand us one if the admin adds the same library item in two goes.
+    const urls = data.imageUrls.filter((u, i, arr) => arr.indexOf(u) === i)
+    await setProductMedia(variant.childProductId, urls.map((url, i) => ({ type: 'IMAGE' as const, url, isPrimary: i === 0 })))
+    // File the variant's images in the parent product's media-library folder, so
     // every image for a product - its own and its variants' - sits together.
     // The child is a hidden product with no categories of its own, so left to
     // itself it would land under "Uncategorised"; passing the parent as the
     // folder owner keeps the name (from the child's unique slug) but borrows the
     // parent's folder.
-    if (data.imageUrl) await reorganiseProductMedia(variant.childProductId, { folderProductId: variant.productId })
+    if (urls.length > 0) await reorganiseProductMedia(variant.childProductId, { folderProductId: variant.productId })
   }
 
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)

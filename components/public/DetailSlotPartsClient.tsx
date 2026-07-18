@@ -97,7 +97,11 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // installing a module that contributes gallery media would quietly do nothing
   // on exactly the products we claimed.
   const [picked, setPicked] = useState<{ id: string; key: string } | null>(null)
-  const variantImage = sel.variant?.imageUrl ?? null
+  const variantImages = sel.variantImages
+  const variantImage = variantImages[0] ?? null
+  // A stable key for the reset effect: the array is rebuilt every render, so
+  // depending on it directly would clear the override on every pass.
+  const variantImageKey = variantImages.join('|')
   // The product actually being bought: the chosen combination's child, or null
   // while nothing is chosen. This is the bit shop cannot know and we can, so a
   // contributed item can narrow itself to the shopper's current choice.
@@ -107,9 +111,12 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // held tap-zoom with it: the magnified point was chosen on the old picture and
   // means nothing on the new one.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the override in response to a variant change is the intended reset, not derived render state
-  useEffect(() => { setOverride(null); setTapped(false) }, [variantImage])
+  useEffect(() => { setOverride(null); setTapped(false) }, [variantImageKey])
 
-  const thumbs = [...(variantImage ? [{ url: variantImage, alt: productName }] : []), ...images]
+  // Every image the chosen variant owns leads the strip, in its own order, with
+  // the parent's gallery behind it. A variant photographed from four angles shows
+  // all four, not just the one the stage happens to be on.
+  const thumbs = [...variantImages.map((url) => ({ url, alt: productName })), ...images]
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   const main = override ?? variantImage ?? images[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null

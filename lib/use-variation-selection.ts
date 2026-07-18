@@ -211,7 +211,11 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   const anyOptionChosen = payload ? payload.options.some((o) => !!optionValues[o.id]) : false
   const basePrice = variant ? variant.price : payload?.basePrice ?? 0
   const price = basePrice + addonPricing.priceAdjust
-  const image = variant?.imageUrl ?? payload?.baseImages[0]?.url ?? null
+  // Every picture the chosen variant owns, and the one the main stage shows.
+  // An empty list means the variant brought none of its own, so the parent's
+  // gallery stands as it is.
+  const variantImages = variant?.imageUrls ?? []
+  const image = variantImages[0] ?? payload?.baseImages[0]?.url ?? null
   const allOptionsChosen = payload ? payload.options.every((o) => !!optionValues[o.id]) : true
 
   // In-stock: with options, the resolved variant must be buyable; with none, the
@@ -245,6 +249,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     price,
     basePrice,
     image,
+    variantImages,
     inStock,
     hasOptions,
     allOptionsChosen,

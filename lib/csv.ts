@@ -65,7 +65,7 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', v.imageUrl ?? '',
+        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', v.imageUrls[0] ?? '',
         ...fieldCells,
       ]))
     }

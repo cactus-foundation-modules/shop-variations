@@ -104,7 +104,10 @@ export type VariantSelectorVariant = {
   price: number
   inStock: boolean
   stockCount: number | null
-  imageUrl: string | null
+  // Every image this variant owns, in gallery order (primary first). A variant
+  // may carry a whole set of pictures, not one: the first is what the main stage
+  // snaps to when the combination is chosen, the rest join the thumbnail strip.
+  imageUrls: string[]
   sku: string | null
 }
 

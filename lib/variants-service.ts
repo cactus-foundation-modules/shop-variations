@@ -320,7 +320,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
 
   const childIds = variants.map((v) => v.childProductId)
   const childById = new Map<string, ChildRow>()
-  const imageByChild = new Map<string, string>()
+  const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
       SELECT "id", "price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku"
@@ -328,11 +328,16 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     `
     for (const r of childRows) childById.set(r.id, r)
     const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
-      SELECT DISTINCT ON ("product_id") "product_id", "url"
-      FROM "shp_product_media" WHERE "product_id" IN (${Prisma.join(childIds)})
+      SELECT "product_id", "url"
+      FROM "shp_product_media"
+      WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
       ORDER BY "product_id", "is_primary" DESC, "position" ASC
     `
-    for (const r of mediaRows) imageByChild.set(r.product_id, r.url)
+    for (const r of mediaRows) {
+      const list = imagesByChild.get(r.product_id)
+      if (list) list.push(r.url)
+      else imagesByChild.set(r.product_id, [r.url])
+    }
   }
 
   const selectorVariants: VariantSelectorVariant[] = variants.map((v) => {
@@ -348,7 +353,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       price: child ? Number(child.price) : Number(parent.price),
       inStock,
       stockCount: tracks ? stockCount : null,
-      imageUrl: imageByChild.get(v.childProductId) ?? null,
+      imageUrls: imagesByChild.get(v.childProductId) ?? [],
       sku: child?.sku ?? null,
     }
   })
@@ -423,7 +428,8 @@ export type VariantEditorRow = {
   trackInventory: boolean
   stockCount: number | null
   weight: number | null
-  imageUrl: string | null
+  // Every image on this variant's hidden child product, primary first.
+  imageUrls: string[]
 }
 
 export type EditorPayload = {
@@ -454,7 +460,7 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
 
   const childIds = variants.map((v) => v.childProductId)
   const childById = new Map<string, ChildEditRow>()
-  const imageByChild = new Map<string, string>()
+  const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildEditRow[]>`
       SELECT "id", "price", "sku", "barcode", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
@@ -462,11 +468,16 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
     `
     for (const r of childRows) childById.set(r.id, r)
     const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
-      SELECT DISTINCT ON ("product_id") "product_id", "url"
-      FROM "shp_product_media" WHERE "product_id" IN (${Prisma.join(childIds)})
+      SELECT "product_id", "url"
+      FROM "shp_product_media"
+      WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
       ORDER BY "product_id", "is_primary" DESC, "position" ASC
     `
-    for (const r of mediaRows) imageByChild.set(r.product_id, r.url)
+    for (const r of mediaRows) {
+      const list = imagesByChild.get(r.product_id)
+      if (list) list.push(r.url)
+      else imagesByChild.set(r.product_id, [r.url])
+    }
   }
 
   const rows: VariantEditorRow[] = variants.map((v) => {
@@ -485,7 +496,7 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
       trackInventory: child?.track_inventory ?? false,
       stockCount: child?.stock_count ?? null,
       weight: child?.weight != null ? Number(child.weight) : null,
-      imageUrl: imageByChild.get(v.childProductId) ?? null,
+      imageUrls: imagesByChild.get(v.childProductId) ?? [],
     }
   })
 

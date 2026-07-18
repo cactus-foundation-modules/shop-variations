@@ -398,18 +398,25 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
   const [picked, setPicked] = useState<{ id: string; key: string } | null>(null)
-  const variantImage = sel.variant?.imageUrl ?? null
+  const variantImages = sel.variantImages
+  // A stable key for the effect below: the array is rebuilt on every render, so
+  // depending on it directly would reset the override on every pass.
+  const variantImageKey = variantImages.join('|')
 
-  // When the chosen variant brings its own image, snap the main view to it.
+  // When the chosen variant brings its own images, snap the main view to the
+  // first of them.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the manual thumbnail override in response to a variant change is the intended reset, not derived render state
-  useEffect(() => { setOverride(null) }, [variantImage])
+  useEffect(() => { setOverride(null) }, [variantImageKey])
 
   if (preview) return <Skeleton label="Variant gallery" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
   const base = sel.payload.baseImages
   const main = override ?? sel.image ?? base[0]?.url ?? null
-  const thumbs = [...(variantImage ? [{ url: variantImage, alt: 'Selected variant' }] : []), ...base]
+  // Every image the chosen variant owns leads the strip, in its own order, with
+  // the parent's gallery behind it. A variant photographed from four angles shows
+  // all four, not just the one the stage happens to be on.
+  const thumbs = [...variantImages.map((url) => ({ url, alt: 'Selected variant' })), ...base]
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
   const activeProductId = sel.variant?.childProductId ?? null

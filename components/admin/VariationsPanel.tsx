@@ -15,7 +15,7 @@ type Option = { id: string; name: string; controlType: SvrControlType; position:
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
   enabled: boolean; price: number; sku: string | null; barcode: string | null
-  trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrl: string | null
+  trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
 }
 type Payload = {
   product: { id: string; name: string; price: number }
@@ -24,7 +24,7 @@ type Payload = {
   addons: SvrAddon[]
 }
 
-type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrl'>>
+type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'>>
 
 /**
  * A column another module has hung on the variants table through the
@@ -633,7 +633,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                           </span>
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
+                          <ImageCell urls={valueOf(v, 'imageUrls')} onSet={(urls) => editVariant(v.variantId, { imageUrls: urls })} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                         </td>
                         {columns.map(({ id, Cell, columnKey }) => (
                           <td key={id} style={{ padding: '0.5rem' }}>
@@ -1112,30 +1112,44 @@ function isFileDrag(e: DragEvent): boolean {
 }
 
 // Picks from the same shared media library (with upload) as the main product
-// gallery, rather than asking the admin to paste a URL. A variant only ever has
-// one image, so the first of a multi-select wins - and a dropped file is the
-// same thing by a shorter route: upload it, then point the variant at the row it
-// created. Dropping onto a variant that already has an image replaces it.
-function ImageCell({ url, onSet, resolveUploadFolderId, resolveBrowseFolderId }: { url: string | null; onSet: (url: string | null) => void; resolveUploadFolderId: () => Promise<string | null>; resolveBrowseFolderId: () => Promise<string | null> }) {
+// gallery, rather than asking the admin to paste a URL. A variant can carry a
+// whole set of pictures, so every item of a multi-select is kept - and a dropped
+// file is the same thing by a shorter route: upload it, then add the row it
+// created. The cell has one row's worth of space, so it shows the first image
+// with a "+N" badge for the rest rather than trying to draw them all; picking
+// again adds to the set, and the × clears the lot.
+function ImageCell({ urls, onSet, resolveUploadFolderId, resolveBrowseFolderId }: { urls: string[]; onSet: (urls: string[]) => void; resolveUploadFolderId: () => Promise<string | null>; resolveBrowseFolderId: () => Promise<string | null> }) {
   const [picking, setPicking] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const url = urls[0] ?? null
+  const extra = urls.length - 1
+
+  // Adding, not replacing: a set built up over several goes is rather the point
+  // of a cell that holds more than one. Duplicates are dropped, so the same
+  // library item chosen twice does not appear twice on the storefront strip.
+  function addUrls(added: string[]) {
+    onSet([...urls, ...added].filter((u, i, arr) => arr.indexOf(u) === i))
+  }
+
   async function receiveDrop(e: DragEvent) {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files?.[0]
-    if (!file) return
+    const files = Array.from(e.dataTransfer.files ?? [])
+    if (files.length === 0) return
     // Same rules the library itself applies, checked here so a wrong file type or
     // an oversized photo says so at once instead of after the round trip.
-    const reason = preflightUploadError(file)
+    const reason = files.map(preflightUploadError).find(Boolean)
     if (reason) { setError(reason); return }
     setError(null)
     setUploading(true)
     try {
-      const media = await uploadOneFile(file, await resolveUploadFolderId())
-      onSet(media.url)
+      const folderId = await resolveUploadFolderId()
+      const uploaded: string[] = []
+      for (const file of files) uploaded.push((await uploadOneFile(file, folderId)).url)
+      addUrls(uploaded)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That image would not upload.')
     } finally {
@@ -1165,14 +1179,28 @@ function ImageCell({ url, onSet, resolveUploadFolderId, resolveBrowseFolderId }:
             borderRadius: 'var(--radius-md)',
             cursor: uploading ? 'progress' : 'pointer',
           }}
-          aria-label={url ? 'Change variant image, or drop an image here' : 'Add variant image, or drop an image here'}
-          title="Click to choose from the library, or drop an image here"
+          aria-label={url ? `Add another variant image (${urls.length} so far), or drop images here` : 'Add variant image, or drop images here'}
+          title="Click to choose from the library, or drop images here"
         >
           {uploading ? (
             <span style={{ ...boxBase, border: '1px dashed var(--color-primary)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>…</span>
           ) : url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
-            <img src={url} alt="" style={{ ...boxBase, objectFit: 'cover', border: dragOver ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
+              <img src={url} alt="" style={{ ...boxBase, objectFit: 'cover', border: dragOver ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+              {extra > 0 && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: 'absolute', right: -4, bottom: -4,
+                    background: 'var(--color-primary)', color: 'var(--color-on-primary)',
+                    borderRadius: 999, padding: '0 0.25rem', minWidth: 16, textAlign: 'center',
+                    fontSize: '0.625rem', lineHeight: '16px', fontWeight: 600,
+                    border: '1px solid var(--color-surface)',
+                  }}
+                >+{extra}</span>
+              )}
+            </span>
           ) : (
             <span style={{ ...boxBase, border: dragOver ? '2px solid var(--color-primary)' : '1px dashed var(--color-border)', color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
           )}
@@ -1182,15 +1210,14 @@ function ImageCell({ url, onSet, resolveUploadFolderId, resolveBrowseFolderId }:
         )}
       </span>
       {url && !uploading && (
-        <button type="button" onClick={() => onSet(null)} aria-label="Remove variant image" className="spe-icon-btn spe-icon-btn-danger">×</button>
+        <button type="button" onClick={() => onSet([])} aria-label={extra > 0 ? `Remove all ${urls.length} variant images` : 'Remove variant image'} title={extra > 0 ? 'Remove all images from this variant' : 'Remove this variant image'} className="spe-icon-btn spe-icon-btn-danger">×</button>
       )}
       {picking && (
         <MediaPickerModal
           resolveInitialFolderId={resolveBrowseFolderId}
           onClose={() => setPicking(false)}
           onAdd={(items) => {
-            const first = items[0]
-            if (first) onSet(first.url)
+            addUrls(items.map((i) => i.url))
             setPicking(false)
           }}
         />
