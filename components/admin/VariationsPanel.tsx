@@ -162,6 +162,19 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     }
   }, [productId])
 
+  // Where the picker OPENS: same folder, but looked up rather than created
+  // (GET vs POST) so a browse-and-cancel leaves no empty folder behind. Falls
+  // back to the deepest ancestor that exists, or the root on any failure.
+  const resolveBrowseFolderId = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/m/shop/admin/products/${productId}/media-folder`)
+      if (!res.ok) return null
+      return (await res.json()).folderId ?? null
+    } catch {
+      return null
+    }
+  }, [productId])
+
   // --- Options -------------------------------------------------------------
   const [newOptionName, setNewOptionName] = useState('')
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
@@ -491,7 +504,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
                       {opt.controlType === 'IMAGE' && (
-                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} />
+                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                       )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
@@ -620,7 +633,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                           </span>
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} resolveUploadFolderId={resolveUploadFolderId} />
+                          <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                         </td>
                         {columns.map(({ id, Cell, columnKey }) => (
                           <td key={id} style={{ padding: '0.5rem' }}>
@@ -877,12 +890,13 @@ function InlineSwatch({ value, label, onSave, disabled }: {
 //
 // A value with no picture shows a dotted square, matching the dotted dot an
 // uncoloured swatch shows, and the storefront falls back to the bare label.
-function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolderId }: {
+function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolderId, resolveBrowseFolderId }: {
   value: string | null
   label: string
   onSave: (next: string) => Promise<boolean>
   disabled: boolean
   resolveUploadFolderId: () => Promise<string | null>
+  resolveBrowseFolderId: () => Promise<string | null>
 }) {
   const [picking, setPicking] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -959,6 +973,7 @@ function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolder
       )}
       {picking && (
         <MediaPickerModal
+          resolveInitialFolderId={resolveBrowseFolderId}
           onClose={() => setPicking(false)}
           onAdd={(items) => {
             // One value, one picture: the library picks in multiples, so the
@@ -1101,7 +1116,7 @@ function isFileDrag(e: DragEvent): boolean {
 // one image, so the first of a multi-select wins - and a dropped file is the
 // same thing by a shorter route: upload it, then point the variant at the row it
 // created. Dropping onto a variant that already has an image replaces it.
-function ImageCell({ url, onSet, resolveUploadFolderId }: { url: string | null; onSet: (url: string | null) => void; resolveUploadFolderId: () => Promise<string | null> }) {
+function ImageCell({ url, onSet, resolveUploadFolderId, resolveBrowseFolderId }: { url: string | null; onSet: (url: string | null) => void; resolveUploadFolderId: () => Promise<string | null>; resolveBrowseFolderId: () => Promise<string | null> }) {
   const [picking, setPicking] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1171,6 +1186,7 @@ function ImageCell({ url, onSet, resolveUploadFolderId }: { url: string | null; 
       )}
       {picking && (
         <MediaPickerModal
+          resolveInitialFolderId={resolveBrowseFolderId}
           onClose={() => setPicking(false)}
           onAdd={(items) => {
             const first = items[0]
