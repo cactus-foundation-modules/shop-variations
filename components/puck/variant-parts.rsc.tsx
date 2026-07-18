@@ -10,6 +10,7 @@ import {
   shopVariantAddToCartPuckComponent,
   shopVariantGalleryPuckComponent,
   type ShopVariantAddToCartProps,
+  type ShopVariantOptionsProps,
 } from '@/modules/shop-variations/components/puck/variant-parts'
 
 // Live (RSC) halves of the granular Product Detail blocks. Kept in their own file
@@ -31,7 +32,9 @@ async function bootstrapProps(): Promise<{ slug: string | null; initial: Awaited
 }
 
 // --- Options ---
-export async function ShopVariantOptionsRsc() { return <VariantOptionsPart {...await bootstrapProps()} /> }
+export async function ShopVariantOptionsRsc(props: ShopVariantOptionsProps) {
+  return <VariantOptionsPart {...await bootstrapProps()} labelPlacement={props.labelPlacement} />
+}
 export const shopVariantOptionsPuckRscComponent = { ...shopVariantOptionsPuckComponent, render: ShopVariantOptionsRsc }
 
 // --- Personalisation ---

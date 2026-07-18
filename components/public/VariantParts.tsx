@@ -16,6 +16,11 @@ import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/module
 // and therefore share one selection store entry either way.
 type PartProps = { preview?: boolean; slug?: string | null; initial?: VariationBootstrap | null }
 
+// Where an option's name sits relative to its choices. 'above' is the long-standing
+// look and stays the default everywhere; 'beside' is opt-in per block, for narrow
+// columns where a stack of name-then-choices runs the page long.
+export type OptionLabelPlacement = 'above' | 'beside'
+
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
 // block) or dropped independently (the granular Product Detail parts).
@@ -31,7 +36,7 @@ function Skeleton({ label }: { label: string }) {
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
 // ---- Options -------------------------------------------------------------
-export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: PartProps) {
+export function VariantOptionsPart({ preview, slug: explicitSlug, initial, labelPlacement }: PartProps & { labelPlacement?: OptionLabelPlacement }) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   // The skeleton is the editor's placeholder and belongs nowhere near a shopper:
@@ -45,7 +50,7 @@ export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: Par
     // (lib/use-sticky-mobile-gallery.ts); it carries no styling.
     <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem' }}>
       {sel.payload.options.map((option, index) => (
-        sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
+        sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} /> : null
       ))}
     </div>
   )
@@ -76,7 +81,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection> }) {
+export function OptionControl({ option, sel, labelPlacement = 'above' }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -86,11 +91,22 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
     const clash = sel.unavailableWith(option.id, v.id)
     return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
   }
-  const label = <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: '0.375rem' }}>{option.name}</span>
+  // Beside: the name and its choices share a row, so the gap under the name goes
+  // and the row takes over spacing them. It still wraps to two lines on a narrow
+  // column rather than crushing a swatch row into the margin.
+  const beside = labelPlacement === 'beside'
+  const label = (
+    <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: beside ? 0 : '0.375rem', flexShrink: 0 }}>
+      {option.name}
+    </span>
+  )
+  const rowStyle = beside
+    ? { display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' as const }
+    : undefined
 
   if (option.controlType === 'DROPDOWN') {
     return (
-      <label>
+      <label style={rowStyle}>
         {label}
         <select
           value={chosen ?? ''} onChange={(e) => sel.setOption(option.id, e.target.value)}
@@ -118,7 +134,7 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
   const isSwatch = option.controlType === 'SWATCH'
   const isImage = option.controlType === 'IMAGE'
   return (
-    <div>
+    <div style={rowStyle}>
       {label}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {/* Unbuyable values drop out of the row entirely, so the shopper only ever

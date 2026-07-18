@@ -1,5 +1,6 @@
 import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
+  type OptionLabelPlacement,
 } from '@/modules/shop-variations/components/public/VariantParts'
 
 // Granular storefront parts (mirror shop's ShopDetail* parts) for the Product
@@ -12,8 +13,23 @@ import {
 // and the prisma it drags in behind it - stays out of the editor's client bundle.
 
 // --- Options ---
-export function ShopVariantOptions() { return <VariantOptionsPart preview /> }
-export const shopVariantOptionsPuckComponent = { label: 'Shop: Variant Options', fields: {}, render: ShopVariantOptions }
+export type ShopVariantOptionsProps = { labelPlacement?: OptionLabelPlacement }
+export function ShopVariantOptions(props: ShopVariantOptionsProps) { return <VariantOptionsPart preview labelPlacement={props.labelPlacement} /> }
+export const shopVariantOptionsPuckComponent = {
+  label: 'Shop: Variant Options',
+  fields: {
+    labelPlacement: {
+      type: 'radio' as const,
+      label: 'Option name position',
+      options: [
+        { label: 'Above the choices', value: 'above' },
+        { label: 'Beside the choices', value: 'beside' },
+      ],
+    },
+  },
+  defaultProps: { labelPlacement: 'above' } as ShopVariantOptionsProps,
+  render: ShopVariantOptions,
+}
 
 // --- Personalisation ---
 export function ShopVariantPersonalisation() { return <VariantPersonalisationPart preview /> }
