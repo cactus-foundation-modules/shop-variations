@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -137,7 +137,10 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
     if (id && entry.optionValues[id] != null) next[id] = entry.optionValues[id]
   }
   next[optionId] = valueId
-  entry.optionValues = next
+  // A pick can leave a lower option with just one reachable value; settle those
+  // for the shopper (cascading downward) rather than making them click the only
+  // choice there is.
+  entry.optionValues = entry.payload ? withAutoSelected(entry.payload, next) : next
   notify(entry)
 }
 

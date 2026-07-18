@@ -69,6 +69,34 @@ export function isOptionVisible(payload: VariantSelectorPayload, selection: Opti
   return payload.options.slice(0, index).every((prev) => !!selection[prev.id])
 }
 
+// Once every option above it is settled, an option with a single reachable value
+// has nothing left for the shopper to decide - so choose it for them. This runs
+// after each pick and cascades top-down: settling option A may leave B with one
+// value, which settles C, and so on until nothing more resolves. It only ever
+// fires for an option whose every predecessor is already chosen, matching
+// isValueAvailable's directional filter and never pre-empting an upstream choice
+// the shopper still has to make. Pure - hands back a new selection, mutates
+// nothing.
+export function withAutoSelected(payload: VariantSelectorPayload, selection: OptionSelection): OptionSelection {
+  let next = selection
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let i = 0; i < payload.options.length; i++) {
+      const option = payload.options[i]
+      if (!option || next[option.id]) continue
+      if (!payload.options.slice(0, i).every((prev) => !!next[prev.id])) continue
+      const available = option.values.filter((v) => isValueAvailable(payload, next, option.id, v.id))
+      const only = available[0]
+      if (available.length === 1 && only) {
+        next = { ...next, [option.id]: only.id }
+        changed = true
+      }
+    }
+  }
+  return next
+}
+
 // A product page opens with nothing chosen: every option is the shopper's to
 // pick, and a combination they never asked for must not be sat in the controls
 // (nor, worse, in the price) as though they had. Hence no preselect function
