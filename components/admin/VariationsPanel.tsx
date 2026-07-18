@@ -144,6 +144,24 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   useProductEditorSave({ dirty, save })
   useProductEditorTabBadge(data && data.variants.length > 0 ? String(data.variants.length) : null)
 
+  // Where a freshly uploaded variation or swatch image is filed: the product's
+  // own library folder (Shop / <category> / <product>), resolved at the moment
+  // of upload so the picture lands there straight away instead of in the library
+  // root and waiting on the save to move it - the same up-front filing the main
+  // product gallery does. A picture that only ever reaches the root depends
+  // entirely on the save-time re-file, and if that one move hiccups the picture
+  // is stranded in the root with nothing to retry it. Null on failure, in which
+  // case the upload still works and falls back to the root as it always did.
+  const resolveUploadFolderId = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/m/shop/admin/products/${productId}/media-folder`, { method: 'POST' })
+      if (!res.ok) return null
+      return (await res.json()).folderId ?? null
+    } catch {
+      return null
+    }
+  }, [productId])
+
   // --- Options -------------------------------------------------------------
   const [newOptionName, setNewOptionName] = useState('')
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
@@ -473,7 +491,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
                       {opt.controlType === 'IMAGE' && (
-                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} />
+                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} />
                       )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
@@ -602,7 +620,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                           </span>
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} />
+                          <ImageCell url={valueOf(v, 'imageUrl')} onSet={(url) => editVariant(v.variantId, { imageUrl: url })} resolveUploadFolderId={resolveUploadFolderId} />
                         </td>
                         {columns.map(({ id, Cell, columnKey }) => (
                           <td key={id} style={{ padding: '0.5rem' }}>
@@ -859,11 +877,12 @@ function InlineSwatch({ value, label, onSave, disabled }: {
 //
 // A value with no picture shows a dotted square, matching the dotted dot an
 // uncoloured swatch shows, and the storefront falls back to the bare label.
-function InlineImageSwatch({ value, label, onSave, disabled }: {
+function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolderId }: {
   value: string | null
   label: string
   onSave: (next: string) => Promise<boolean>
   disabled: boolean
+  resolveUploadFolderId: () => Promise<string | null>
 }) {
   const [picking, setPicking] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -893,7 +912,7 @@ function InlineImageSwatch({ value, label, onSave, disabled }: {
     setError(null)
     setSaving(true)
     try {
-      const media = await uploadOneFile(file, null)
+      const media = await uploadOneFile(file, await resolveUploadFolderId())
       await onSave(media.url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That image would not upload.')
@@ -1082,7 +1101,7 @@ function isFileDrag(e: DragEvent): boolean {
 // one image, so the first of a multi-select wins - and a dropped file is the
 // same thing by a shorter route: upload it, then point the variant at the row it
 // created. Dropping onto a variant that already has an image replaces it.
-function ImageCell({ url, onSet }: { url: string | null; onSet: (url: string | null) => void }) {
+function ImageCell({ url, onSet, resolveUploadFolderId }: { url: string | null; onSet: (url: string | null) => void; resolveUploadFolderId: () => Promise<string | null> }) {
   const [picking, setPicking] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1100,7 +1119,7 @@ function ImageCell({ url, onSet }: { url: string | null; onSet: (url: string | n
     setError(null)
     setUploading(true)
     try {
-      const media = await uploadOneFile(file, null)
+      const media = await uploadOneFile(file, await resolveUploadFolderId())
       onSet(media.url)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That image would not upload.')
