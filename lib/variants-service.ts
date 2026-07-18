@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client'
 import { createProduct, updateProduct, deleteProduct, getProductById, getProductBySlug, getProductMedia } from '@/modules/shop/lib/db/products'
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
-import { getVariants, getVariantValueMap, createVariant, setVariantPositions } from '@/modules/shop-variations/lib/db/variants'
+import { getVariants, getVariantValueMap, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
 import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -508,6 +508,13 @@ export type VariantUpsertContext = {
   parent: NonNullable<Awaited<ReturnType<typeof getProductById>>>
   existing: Awaited<ReturnType<typeof getVariants>>
   valueMap: Awaited<ReturnType<typeof getVariantValueMap>>
+  // Every existing child's current fields, pre-loaded once. When present, change
+  // detection reads from here instead of a getProductById round-trip per row.
+  currentFields?: Map<string, ChildProductFields>
+  // When present, a changed existing child's field write is pushed here instead
+  // of awaited inline, so the caller can flush them all together (concurrently)
+  // rather than paying one round-trip per changed row in sequence.
+  pendingWrites?: Array<{ childId: string; update: Parameters<typeof updateProduct>[1] }>
 }
 
 export async function upsertVariantForCombination(
@@ -561,7 +568,9 @@ export async function upsertVariantForCombination(
   // rewrite) of what pushed a Pull past the request budget.
   let changed = created
   if (!created) {
-    const currentChild = await getProductById(childId)
+    // Prefer the pre-loaded field map; fall back to a direct read only when the
+    // caller didn't supply one (single-row callers like the variant edit endpoint).
+    const currentChild = ctx?.currentFields?.get(childId) ?? await getProductById(childId)
     changed = !currentChild
       || (fields.price !== undefined && Number(currentChild.price) !== fields.price)
       || (fields.sku !== undefined && (currentChild.sku ?? null) !== (fields.sku ?? null))
@@ -571,13 +580,18 @@ export async function upsertVariantForCombination(
   }
 
   if (changed) {
-    await updateProduct(childId, {
+    const update = {
       ...(fields.price !== undefined ? { price: fields.price } : {}),
       ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
       ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
       ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
       ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
-    })
+    }
+    // Batch caller: bank the write for a concurrent flush. Everyone else writes
+    // inline, exactly as before. A freshly created child is never deferred - its
+    // fields must land before any provider hook or image write touches the row.
+    if (ctx?.pendingWrites && !created) ctx.pendingWrites.push({ childId, update })
+    else await updateProduct(childId, update)
   }
   return { variantId, childProductId: childId, created, changed }
 }

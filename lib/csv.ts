@@ -5,10 +5,10 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db/prisma'
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
-import { getProductBySlug, setProductMedia } from '@/modules/shop/lib/db/products'
+import { getProductBySlug, setProductMedia, updateProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
-import { getEditorPayload, upsertVariantForCombination } from '@/modules/shop-variations/lib/variants-service'
-import { getProductIdsWithVariations, getVariants, getVariantValueMap } from '@/modules/shop-variations/lib/db/variants'
+import { getEditorPayload, upsertVariantForCombination, type VariantUpsertContext } from '@/modules/shop-variations/lib/variants-service'
+import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
@@ -92,6 +92,20 @@ const isHttpUrl = (s: string): boolean => {
   }
 }
 
+// Run fn over items with at most `limit` in flight at once. Used to flush the
+// deferred variant writes: the queries are independent, so overlapping them
+// hides the per-write round-trip latency that dominates a large Pull.
+async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor++]!
+      await fn(item)
+    }
+  })
+  await Promise.all(workers)
+}
+
 export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const rows = parseCsv(text)
   const result: ImportResult = { created: 0, updated: 0, errors: [] }
@@ -158,7 +172,18 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // keeps this context current as it creates, so each row is O(1) DB work rather
     // than re-reading every sibling variant - a parent with hundreds of variants
     // used to be O(rows x variants) and could not finish inside the request budget.
-    const upsertCtx = { parent, existing: await getVariants(parent.id), valueMap: await getVariantValueMap(parent.id) }
+    const existingVariants = await getVariants(parent.id)
+    const upsertCtx: VariantUpsertContext = {
+      parent,
+      existing: existingVariants,
+      valueMap: await getVariantValueMap(parent.id),
+      // Every existing child's fields in one query, so upsert diffs in memory
+      // instead of reading each child back per row - the bulk of a slow Pull.
+      currentFields: await getChildProductFields(existingVariants.map((v) => v.childProductId)),
+      // Changed-row writes collect here and flush together (concurrently) after
+      // the parent's rows are decided, rather than one round-trip per row.
+      pendingWrites: [],
+    }
 
     // Each variant's current primary image, prefetched once for the whole parent.
     // The image write below re-files media through the storage provider (a network
@@ -243,6 +268,25 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       } catch (err) {
         result.errors.push({ row: gr.rowNum, reason: err instanceof Error ? err.message : 'Row failed' })
       }
+    }
+
+    // Flush this parent's deferred field writes together. They're the changed
+    // rows only (unchanged rows never enqueue). Deduped by child id first - a
+    // sheet listing the same combination twice would otherwise queue two writes
+    // for one child and the pool could apply them out of order; last row wins,
+    // as it did when writes were inline. Distinct children never race, so a
+    // bounded concurrent pool safely collapses the round-trips.
+    const pending = upsertCtx.pendingWrites ?? []
+    if (pending.length > 0) {
+      const lastByChild = new Map<string, (typeof pending)[number]['update']>()
+      for (const w of pending) lastByChild.set(w.childId, w.update)
+      await runPool([...lastByChild], 8, async ([childId, update]) => {
+        try {
+          await updateProduct(childId, update)
+        } catch (err) {
+          result.errors.push({ row: 0, reason: `Failed to save variant ${childId}: ${err instanceof Error ? err.message : 'write failed'}` })
+        }
+      })
     }
   }
 

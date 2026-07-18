@@ -19,6 +19,38 @@ export async function getVariants(productId: string): Promise<SvrVariant[]> {
   return rows.map(mapVariant)
 }
 
+// The per-variant fields the CSV importer diffs against, keyed by the variant's
+// hidden child product id. Loaded once for a whole parent so change detection is
+// an in-memory lookup rather than a getProductById round-trip per row - which,
+// on a parent with hundreds of variants, was the bulk of a slow Google-Sheet
+// Pull (every row read its child back just to decide whether anything changed).
+export type ChildProductFields = {
+  price: number
+  sku: string | null
+  barcode: string | null
+  stockCount: number | null
+  weight: number | null
+}
+
+export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
+  const map = new Map<string, ChildProductFields>()
+  if (childProductIds.length === 0) return map
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sku: string | null; barcode: string | null; stock_count: number | null; weight: unknown }[]>`
+    SELECT "id", "price", "sku", "barcode", "stock_count", "weight"
+    FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
+  `
+  for (const r of rows) {
+    map.set(r.id, {
+      price: Number(r.price),
+      sku: r.sku ?? null,
+      barcode: r.barcode ?? null,
+      stockCount: r.stock_count == null ? null : Number(r.stock_count),
+      weight: r.weight == null ? null : Number(r.weight),
+    })
+  }
+  return map
+}
+
 export async function getVariantById(id: string): Promise<SvrVariant | null> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`SELECT * FROM "svr_variants" WHERE "id" = ${id} LIMIT 1`
   return rows[0] ? mapVariant(rows[0]) : null
