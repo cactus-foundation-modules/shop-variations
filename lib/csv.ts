@@ -203,6 +203,20 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       }
     }
 
+    // Let each extra-field provider preload its current state for this parent's
+    // existing children in one go, before any row is applied. It returns an
+    // opaque context threaded into every applyImportedRow below, so a provider
+    // that used to read a variant's current values per row now reads once per
+    // parent. A child created mid-import is absent from this snapshot; providers
+    // treat that context miss as empty current state (see VariantFieldProvider).
+    const providerCtx = new Map<string, unknown>()
+    if (providers.length > 0) {
+      const childIds = upsertCtx.existing.map((v) => v.childProductId)
+      for (const { id, provider } of providers) {
+        if (provider.beginImport) providerCtx.set(id, await provider.beginImport(parent.id, childIds))
+      }
+    }
+
     for (const gr of groupRows) {
       try {
         const optionValueIds: string[] = []
@@ -229,8 +243,8 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         if (providers.length > 0) {
           const rowRecord: Record<string, string> = {}
           header.forEach((h, i) => { rowRecord[h] = (gr.cols[i] ?? '').trim() })
-          for (const { provider } of providers) {
-            await provider.applyImportedRow(parent.id, childProductId, rowRecord)
+          for (const { id, provider } of providers) {
+            await provider.applyImportedRow(parent.id, childProductId, rowRecord, providerCtx.get(id))
           }
         }
 

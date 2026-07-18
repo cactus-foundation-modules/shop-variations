@@ -43,8 +43,26 @@ export type VariantFieldProvider = {
   listColumns(productId: string): Promise<VariantFieldColumn[]>
   /** Per child product, the value string for each of its column keys (for CSV export). */
   getValues(productId: string, childProductIds: string[]): Promise<Record<string, Record<string, string>>>
-  /** Apply one CSV row's provider columns to a variant's child product. `row` is keyed by header label. */
-  applyImportedRow(productId: string, childProductId: string, row: Record<string, string>): Promise<void>
+  /**
+   * Optional import lifecycle. Called once per parent, before any of that
+   * parent's rows, with the parent's existing child product ids. A provider that
+   * does per-row DB reads (loading a variant's current values to diff against)
+   * can preload them all here and return an opaque context, handed back to each
+   * `applyImportedRow`, so the read cost is O(parents) rather than O(rows).
+   *
+   * Entirely optional and back-compatible: a provider without `beginImport`
+   * still works, and `applyImportedRow` must cope with no context. A child
+   * created mid-import is not in `childProductIds` (it did not exist at preload
+   * time), so a provider MUST treat a context miss as "empty current state" - a
+   * brand-new variant still gets its values written.
+   */
+  beginImport?(productId: string, childProductIds: string[]): Promise<unknown>
+  /**
+   * Apply one CSV row's provider columns to a variant's child product. `row` is
+   * keyed by header label. `ctx` is whatever `beginImport` returned for this
+   * parent (undefined when the provider has no `beginImport`).
+   */
+  applyImportedRow(productId: string, childProductId: string, row: Record<string, string>, ctx?: unknown): Promise<void>
   /** The admin grid cell. A client component that renders one column's control and saves itself. */
   Cell: ComponentType<VariantFieldCellProps>
 }
