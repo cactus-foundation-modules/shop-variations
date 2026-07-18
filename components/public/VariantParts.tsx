@@ -91,27 +91,36 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
     const clash = sel.unavailableWith(option.id, v.id)
     return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
   }
-  // Beside: the name and its choices share a row, so the gap under the name goes
-  // and the row takes over spacing them.
+  // Beside: the name sits on the first row of choices rather than above them.
   //
-  // Top-aligned, not centred: a choice row long enough to wrap is a stack several
-  // lines tall, and centring left the name floating against the middle of it. The
-  // name's padding-top is the pill's own top padding plus its border, so the two
-  // lots of text sit on the same line - the name reads as the heading of the first
-  // row, which is where the eye starts.
+  // The name is FLOATED, not a flex item, and this is the whole trick. Flex would
+  // keep the choices in a column to the right of the name, so every wrapped row
+  // started under the first choice and the space beneath the name went to waste.
+  // A float is taken out of flow and only the line boxes beside it are shortened,
+  // so the first row clears the name and every row after it runs the full width -
+  // choices wrap around the name the way text wraps around an image.
+  //
+  // That also means the choices CANNOT be a flex container: a flex container is a
+  // block formatting context, and a BFC box is pushed aside by a float whole
+  // rather than flowing around it. So they stay inline-level (the buttons are
+  // already inline-flex) and space themselves with margins instead of `gap`.
+  //
+  // Containment is `flow-root`, deliberately not `overflow: hidden`: the image
+  // swatch's hover peek is absolutely positioned and escapes its button, and
+  // hidden would clip it.
   const beside = labelPlacement === 'beside'
   const label = (
     <span style={{
       fontWeight: 600, fontSize: '0.875rem', display: 'block',
-      marginBottom: beside ? 0 : '0.375rem', flexShrink: 0,
-      ...(beside ? { paddingTop: '0.5rem' } : null),
+      marginBottom: beside ? 0 : '0.375rem',
+      // Top padding is the pill's own top padding plus its border, so the name's
+      // text sits on the same line as the text of the choices beside it.
+      ...(beside ? { float: 'left' as const, marginRight: '0.75rem', paddingTop: '0.5rem' } : null),
     }}>
       {option.name}
     </span>
   )
-  const rowStyle = beside
-    ? { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' as const }
-    : undefined
+  const rowStyle = beside ? { display: 'flow-root' } : undefined
 
   if (option.controlType === 'DROPDOWN') {
     return (
@@ -145,15 +154,14 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
   return (
     <div style={rowStyle}>
       {label}
-      {/* Beside: `flex: 1 1 0` + `minWidth: 0` is what keeps the choices on the
-          name's line. A flex container breaks its lines from each item's
-          hypothetical size - content width, here the whole unwrapped row of
-          buttons - and only shrinks what already landed on the line, so left at
-          `auto` this div was measured at its full width, found not to fit, and
-          pushed onto a line of its own under the name. That put the name back
-          above its choices, which is the layout the setting exists to avoid.
-          Basing it at 0 makes it always fit, and it wraps inside itself instead. */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', ...(beside ? { flex: '1 1 0', minWidth: 0 } : null) }}>
+      {/* Beside drops out of flex entirely (see the note above the float): the
+          buttons lay out as inline boxes so their line boxes wrap around the
+          floated name. `gap` does nothing to inline layout, so the spacing moves
+          onto the buttons themselves, and the negative bottom margin swallows the
+          one the last row would otherwise add under the option. */}
+      <div style={beside
+        ? { marginBottom: '-0.5rem' }
+        : { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {/* Unbuyable values drop out of the row entirely, so the shopper only ever
             sees choices that lead somewhere. Two stay put: the current pick, and a
             pick an upstream change has just stranded (the ghost) - both shown as a
@@ -178,6 +186,11 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
                 opacity: available ? 1 : 0.4,
                 textDecoration: available ? 'none' : 'line-through',
                 fontSize: '0.875rem',
+                // Beside lays these out inline, so they carry their own spacing
+                // (the wrapper's `gap` only works on the flex path). `top` keeps a
+                // row level whatever height its tallest button is, rather than
+                // letting an image swatch's baseline drag the row about.
+                ...(beside ? { marginRight: '0.5rem', marginBottom: '0.5rem', verticalAlign: 'top' as const } : null),
               }}
             >
               {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
