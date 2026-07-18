@@ -92,16 +92,25 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
     return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
   }
   // Beside: the name and its choices share a row, so the gap under the name goes
-  // and the row takes over spacing them. It still wraps to two lines on a narrow
-  // column rather than crushing a swatch row into the margin.
+  // and the row takes over spacing them.
+  //
+  // Top-aligned, not centred: a choice row long enough to wrap is a stack several
+  // lines tall, and centring left the name floating against the middle of it. The
+  // name's padding-top is the pill's own top padding plus its border, so the two
+  // lots of text sit on the same line - the name reads as the heading of the first
+  // row, which is where the eye starts.
   const beside = labelPlacement === 'beside'
   const label = (
-    <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: beside ? 0 : '0.375rem', flexShrink: 0 }}>
+    <span style={{
+      fontWeight: 600, fontSize: '0.875rem', display: 'block',
+      marginBottom: beside ? 0 : '0.375rem', flexShrink: 0,
+      ...(beside ? { paddingTop: '0.5rem' } : null),
+    }}>
       {option.name}
     </span>
   )
   const rowStyle = beside
-    ? { display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' as const }
+    ? { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap' as const }
     : undefined
 
   if (option.controlType === 'DROPDOWN') {
@@ -136,7 +145,15 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
   return (
     <div style={rowStyle}>
       {label}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      {/* Beside: `flex: 1 1 0` + `minWidth: 0` is what keeps the choices on the
+          name's line. A flex container breaks its lines from each item's
+          hypothetical size - content width, here the whole unwrapped row of
+          buttons - and only shrinks what already landed on the line, so left at
+          `auto` this div was measured at its full width, found not to fit, and
+          pushed onto a line of its own under the name. That put the name back
+          above its choices, which is the layout the setting exists to avoid.
+          Basing it at 0 makes it always fit, and it wraps inside itself instead. */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', ...(beside ? { flex: '1 1 0', minWidth: 0 } : null) }}>
         {/* Unbuyable values drop out of the row entirely, so the shopper only ever
             sees choices that lead somewhere. Two stay put: the current pick, and a
             pick an upstream change has just stranded (the ghost) - both shown as a
