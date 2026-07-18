@@ -75,6 +75,14 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 // inside shop's own detail chrome - one control, two hosts.
 export function OptionControl({ option, sel }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection> }) {
   const chosen = sel.optionValues[option.id]
+  // A pick an upstream change has just made unreachable: shown struck through
+  // and disabled rather than dropped, so the shopper sees it was there and why
+  // it no longer fits. Null when the current pick still fits (or there isn't one).
+  const ghost = sel.ghostValue(option.id)
+  const unavailableTitle = (v: SvrOptionWithValues['values'][number]) => {
+    const clash = sel.unavailableWith(option.id, v.id)
+    return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
+  }
   const label = <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: '0.375rem' }}>{option.name}</span>
 
   if (option.controlType === 'DROPDOWN') {
@@ -86,13 +94,14 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
           style={{ padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', minWidth: 180, background: 'var(--color-surface)', color: 'var(--color-text)' }}
         >
           <option value="" disabled>Choose {option.name.toLowerCase()}</option>
-          {/* A combination that can't be bought is simply left out rather than
-              shown greyed - the shopper never meets a dead end they can pick. The
-              currently chosen value is kept even if a change above it has just
-              made it unreachable, so the control never blanks out under them. */}
-          {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id).map((v) => {
+          {/* An unbuyable combination is left out rather than shown greyed, so
+              the shopper never meets a dead end they can pick. The exceptions are
+              the current pick and a pick an upstream change has just stranded
+              (the ghost): both stay listed, disabled and flagged unavailable, so
+              the control never blanks out under the shopper. */}
+          {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
             const available = sel.isAvailable(option.id, v.id)
-            return <option key={v.id} value={v.id} disabled={!available}>{v.label}{available ? '' : ' - unavailable'}</option>
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{available ? '' : ' - unavailable'}</option>
           })}
         </select>
       </label>
@@ -110,17 +119,17 @@ export function OptionControl({ option, sel }: { option: SvrOptionWithValues; se
       {label}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {/* Unbuyable values drop out of the row entirely, so the shopper only ever
-            sees choices that lead somewhere. The one they've already picked stays
-            put even if a change above it has just made it unreachable - better a
-            struck-through button they can see than a control that empties itself. */}
-        {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id).map((v) => {
+            sees choices that lead somewhere. Two stay put: the current pick, and a
+            pick an upstream change has just stranded (the ghost) - both shown as a
+            struck-through, disabled button rather than letting the row empty out. */}
+        {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
           const available = sel.isAvailable(option.id, v.id)
           const active = chosen === v.id
           return (
             <button
               key={v.id} type="button" disabled={!available}
               onClick={() => sel.setOption(option.id, v.id)}
-              title={available ? v.label : `${v.label} - unavailable`}
+              title={available ? v.label : unavailableTitle(v)}
               aria-pressed={active}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.375rem',

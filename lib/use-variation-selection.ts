@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, effectiveSelection, unavailableWith, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -118,29 +118,16 @@ function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): vo
 
 export function setOptionValue(slug: string, optionId: string, valueId: string): void {
   const entry = getEntry(slug)
-  const options = entry.payload?.options ?? []
-  const changedIndex = options.findIndex((o) => o.id === optionId)
-  // Without a resolved payload we've no display order to reason about, so just
-  // record the pick and leave the rest alone.
-  if (changedIndex === -1) {
-    entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
-    notify(entry)
-    return
-  }
-  // Changing an option resets every option BELOW it in display order: a
-  // downstream value was chosen against the old pick and has no business
-  // surviving the change (it may now be unreachable, and leaving it sat there is
-  // what let a later pick wrongly filter this one). Picks above are untouched.
-  const next: OptionSelection = {}
-  for (let i = 0; i < changedIndex; i++) {
-    const id = options[i]?.id
-    if (id && entry.optionValues[id] != null) next[id] = entry.optionValues[id]
-  }
-  next[optionId] = valueId
-  // A pick can leave a lower option with just one reachable value; settle those
-  // for the shopper (cascading downward) rather than making them click the only
-  // choice there is.
-  entry.optionValues = entry.payload ? withAutoSelected(entry.payload, next) : next
+  // Set the changed option and keep every other pick exactly as it stands -
+  // above AND below. Nothing is wiped or settled here: this store holds only the
+  // shopper's own raw picks. A downstream pick the change has stranded stays put
+  // so the control can still show it struck through, and the single-choice
+  // auto-settle is derived when the hook reads this back (see
+  // useVariationSelection) rather than baked in here. Keeping it out of the store
+  // is deliberate: an auto-picked stand-in must never overwrite - and so erase -
+  // the stranded pick it is standing in for, or the shopper would lose sight of
+  // the choice that no longer fits.
+  entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
   notify(entry)
 }
 
@@ -200,7 +187,20 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   }, [slug])
 
   const payload = entry?.payload ?? null
-  const optionValues = entry?.optionValues ?? {}
+  // Raw holds every pick the shopper has made, including any left stranded (and
+  // unreachable) by a later change to an option above it. `selection` is the raw
+  // map pruned to just the picks still reachable - the one the maths reasons
+  // about. The gap between the two is a "ghost": a pick shown struck through so
+  // the shopper sees what was there and why it no longer fits, rather than a
+  // control silently emptying itself.
+  const rawOptionValues = entry?.optionValues ?? {}
+  // Prune the raw picks to the ones still reachable, then settle any option a
+  // pick has narrowed to a single choice (cascading downward). The auto-settle
+  // is gated on the shopper having actually picked something: an untouched page
+  // opens unchosen, showing the parent's price, and must not quietly pick a
+  // first option just because it happens to have one value.
+  const effective = payload ? effectiveSelection(payload, rawOptionValues) : rawOptionValues
+  const optionValues = payload && Object.keys(rawOptionValues).length > 0 ? withAutoSelected(payload, effective) : effective
   const addonValues = entry?.addonValues ?? {}
 
   const variant = payload ? resolveVariant(payload, optionValues) : null
@@ -259,6 +259,17 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     resetOptions: () => slug && resetOptionValues(slug),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),
     isAvailable: (optionId: string, valueId: string) => (payload ? isValueAvailable(payload, optionValues, optionId, valueId) : false),
+    // A pick left stranded by a change above it: present in the raw map but
+    // pruned from the reachable `optionValues`. Returned so the control can show
+    // it struck through and disabled. Null when the option's pick still fits (or
+    // there was never one).
+    ghostValue: (optionId: string) => {
+      const raw = rawOptionValues[optionId]
+      return raw && optionValues[optionId] !== raw ? raw : null
+    },
+    // Tooltip text for an unreachable value: which chosen upstream value(s)
+    // rule it out. Falls back to a generic line when no single pick is the culprit.
+    unavailableWith: (optionId: string, valueId: string) => (payload ? unavailableWith(payload, optionValues, optionId, valueId) : ''),
     // Whether the option at this display index is shown yet, or still held back
     // waiting on the option before it (see isOptionVisible in selection-logic).
     isOptionVisible: (index: number) => (payload ? isOptionVisible(payload, optionValues, index) : true),

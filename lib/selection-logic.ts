@@ -55,6 +55,50 @@ export function isValueAvailable(payload: VariantSelectorPayload, selection: Opt
   })
 }
 
+// Prune a raw selection down to the picks that are still reachable, walking
+// top-down so an upstream value going unreachable frees the options below it
+// rather than dragging them down as well. Each pick is kept only if it is still
+// available given the picks kept ABOVE it - matching isValueAvailable's
+// directional filter. The result is the selection the maths should reason about
+// (variant, price, availability); the raw one is kept alongside only so a
+// control can still show a now-unreachable pick struck through (see
+// `ghostValue` in use-variation-selection).
+export function effectiveSelection(payload: VariantSelectorPayload, raw: OptionSelection): OptionSelection {
+  const kept: OptionSelection = {}
+  for (const option of payload.options) {
+    const value = raw[option.id]
+    if (value && isValueAvailable(payload, kept, option.id, value)) kept[option.id] = value
+  }
+  return kept
+}
+
+// The chosen upstream value(s) that make a given option value unreachable, as a
+// human label for a tooltip ("Not available with Oak, Large"). An upstream pick
+// is a culprit when no buyable variant carries both it and the target value.
+// Empty string when the clash needs a combination of picks rather than any
+// single one - the caller falls back to a generic message.
+export function unavailableWith(payload: VariantSelectorPayload, selection: OptionSelection, optionId: string, valueId: string): string {
+  const v2o = valueToOptionMap(payload)
+  const targetIndex = payload.options.findIndex((o) => o.id === optionId)
+  const labels: string[] = []
+  for (let i = 0; i < targetIndex; i++) {
+    const o = payload.options[i]
+    if (!o) continue
+    const sel = selection[o.id]
+    if (!sel) continue
+    const coexists = payload.variants.some((variant) =>
+      isBuyable(variant) &&
+      variantValueForOption(variant, optionId, v2o) === valueId &&
+      variantValueForOption(variant, o.id, v2o) === sel,
+    )
+    if (!coexists) {
+      const lbl = o.values.find((x) => x.id === sel)?.label
+      if (lbl) labels.push(lbl)
+    }
+  }
+  return labels.join(', ')
+}
+
 // Whether an option should currently be shown to the shopper. An option flagged
 // `requiresPreviousOption` stays hidden until *every* option before it (in
 // display order) has a value chosen - not merely the one immediately before, so
