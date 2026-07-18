@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
@@ -40,7 +41,9 @@ export function VariantOptionsPart({ preview, slug: explicitSlug, initial }: Par
   if (!sel.payload || sel.payload.options.length === 0) return null
 
   return (
-    <div style={{ display: 'grid', gap: '1rem' }}>
+    // The class marks the option pickers' extent for the pinned mobile gallery
+    // (lib/use-sticky-mobile-gallery.ts); it carries no styling.
+    <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem' }}>
       {sel.payload.options.map((option, index) => (
         sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
       ))}

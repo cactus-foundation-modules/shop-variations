@@ -18,6 +18,7 @@
 // to fetching, which is what these islands used to do unconditionally.
 import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
+import { OPTIONS_AREA_CLASS, STICKY_GALLERY_CLASS, useStickyMobileGallery } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { GalleryThumbStrip } from '@/modules/shop/components/public/GalleryThumbStrip'
 import type {
   ShopDetailGallerySlotProps,
@@ -40,6 +41,31 @@ function pct(offset: number, size: number): string {
   return `${Math.min(100, Math.max(0, (offset / size) * 100))}%`
 }
 
+// The pinned-gallery strip a phone shows while the shopper scrolls the options
+// (see lib/use-sticky-mobile-gallery.ts, which decides when the class goes on).
+// It restyles shop's own classes, so the selectors ride on `.svr-mstick` to
+// outrank shop's equally-specific rules by coming later in the document - the
+// slot gallery always renders after shop's Gallery <style>.
+//
+// The stage takes the left half of the strip and the thumbnails the right, as a
+// two-across grid that borrows the stage's 1/1 ratio (so the halves stay level)
+// with rows each half its height - exactly four thumbnails show, and any beyond
+// that scroll vertically inside. The thumb-strip wrapper collapses to
+// display:contents so the same rules land whether the strip arrives wrapped
+// (thumbnails below) or bare (thumbnails beside); the sideways-scroll arrows
+// and fades make no sense on a grid, so they go.
+// `left` and `width` arrive inline from the hook, sized to the slot the gallery
+// vacated; top tracks the measured live header height, so a shrink-on-scroll
+// header keeps the strip tucked under itself.
+const stickyGalleryCss = `
+.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-stage{width:100%;min-width:0}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-wrap{display:contents}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/1;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumb{width:100%;height:100%}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-arrow,.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-fade{display:none}
+`
+
 // ---- Gallery -------------------------------------------------------------
 // Shop's images render immediately from its server data; once a chosen variant
 // carries its own image we lead with that.
@@ -58,6 +84,9 @@ function pct(offset: number, size: number): string {
 // here instead and the fix stays inside this module.
 export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [], thumbPosition }: Seeded<ShopDetailGallerySlotProps>) {
   const sel = useVariationSelection(slug, initial)
+  // Only a product with options earns the pinned mobile strip: the options list
+  // is what makes the buy column long enough to scroll the gallery away.
+  const { colRef: stickyColRef, spacerRef: stickySpacerRef } = useStickyMobileGallery((sel.payload?.options.length ?? 0) > 0)
   const [override, setOverride] = useState<string | null>(null)
   const [hovering, setHovering] = useState(false)
   const [tapped, setTapped] = useState(false)
@@ -135,7 +164,9 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   }
 
   return (
-    <div className={classNames.col}>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: stickyGalleryCss }} />
+      <div ref={stickyColRef} className={classNames.col}>
       <div className={classNames.stage} style={stageStyle} {...zoomHandlers}>
         {activeExtra && picked ? (
           <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
@@ -194,7 +225,11 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
           ))}
         </GalleryThumbStrip>
       )}
-    </div>
+      </div>
+      {/* Holds the gallery's place in the flow while the column is pinned, so
+          pinning never jumps the page. Sized and shown by the hook. */}
+      <div ref={stickySpacerRef} aria-hidden style={{ display: 'none' }} />
+    </>
   )
 }
 
@@ -260,7 +295,9 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
   return (
     <div>
       {!optionsPlaced && sel.payload.options.length > 0 && (
-        <div style={{ display: 'grid', gap: '1rem', marginTop: '18px' }}>
+        // The class marks the option pickers' extent for the pinned mobile
+        // gallery (lib/use-sticky-mobile-gallery.ts); it carries no styling.
+        <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem', marginTop: '18px' }}>
           {sel.payload.options.map((option, index) => (
             sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
           ))}
