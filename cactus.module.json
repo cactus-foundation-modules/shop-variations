@@ -1,6 +1,6 @@
 {
   "name": "shop-variations",
-  "version": "0.1.56",
+  "version": "0.1.57",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
@@ -55,6 +55,12 @@
       "id": "shop-variations",
       "import": "./lib/media-reference-rewriter",
       "component": "shopVariationsMediaReferenceRewriter"
+    },
+    {
+      "point": "core.media-usage-providers",
+      "id": "shop-variations",
+      "import": "./lib/media-usage-provider",
+      "component": "shopVariationsMediaUsageProvider"
     }
   ],
   "puckBlocks": [
