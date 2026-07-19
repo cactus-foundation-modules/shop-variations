@@ -37,6 +37,17 @@ export async function resolveColoursFolderId(productId: string): Promise<string 
  * same care reorganiseProductMedia takes for a product's own images.
  */
 export async function fileSwatchImage(productId: string, valueId: string, swatchUrl: string): Promise<void> {
+  // A sourced value's picture belongs to the module that supplied it - for an
+  // attribute-backed option that is the shop-wide attributes folder, where the
+  // same "Oak" picture serves every product carrying it. Dragging it into this
+  // product's colours folder would move the shared original (the library keys
+  // blobs by folder, so the move rewrites the url), leaving the attribute and
+  // every other product's copy pointing at a url that no longer serves.
+  const value = await prisma.$queryRaw<{ source_ref: string | null }[]>`
+    SELECT "source_ref" FROM "svr_option_values" WHERE "id" = ${valueId} LIMIT 1
+  `
+  if (value[0]?.source_ref) return
+
   const media = await prisma.media.findFirst({ where: { url: swatchUrl }, select: { id: true } })
   if (!media) return
 

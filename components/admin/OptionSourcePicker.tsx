@@ -155,7 +155,9 @@ export function OptionSourcePicker({ providers, existingOptions, onCancel, onCon
                   <strong style={{ fontSize: '0.875rem' }}>{provider.label}</strong>
                 )}
                 {groupSources(provider.sources).map(([groupLabel, sources]) => (
-                  <div key={groupLabel ?? '_'} style={{ display: 'grid', gap: '0.375rem' }}>
+                  // Ungrouped runs share a null label, so the first source's ref
+                  // keys them; a labelled section is unique by its label.
+                  <div key={groupLabel ?? sources[0]?.ref ?? '_'} style={{ display: 'grid', gap: '0.375rem' }}>
                     {groupLabel && (
                       <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{groupLabel}</span>
                     )}
@@ -284,14 +286,27 @@ export function OptionSourcePicker({ providers, existingOptions, onCancel, onCon
   )
 }
 
-// Sources keep their server order; the grouping only gathers each heading's runs
-// so a group that appears once stays where the provider put it.
+// Each heading appears exactly once, where its first source sits; later sources
+// carrying the same heading join that section rather than opening a second one.
+// A provider whose list interleaves grouped and ungrouped sources would
+// otherwise repeat its headings - one "Materials" section per run - which reads
+// as duplicate groups. Ungrouped sources (null label) are the exception: they
+// have no heading to merge under, so each run stays where the provider put it.
 function groupSources(sources: PickerSource[]): Array<[string | null, PickerSource[]]> {
   const out: Array<[string | null, PickerSource[]]> = []
+  const byLabel = new Map<string, PickerSource[]>()
   for (const source of sources) {
-    const last = out[out.length - 1]
-    if (last && last[0] === source.groupLabel) last[1].push(source)
-    else out.push([source.groupLabel, [source]])
+    if (source.groupLabel === null) {
+      const last = out[out.length - 1]
+      if (last && last[0] === null) last[1].push(source)
+      else out.push([null, [source]])
+      continue
+    }
+    const existing = byLabel.get(source.groupLabel)
+    if (existing) { existing.push(source); continue }
+    const section: PickerSource[] = [source]
+    byLabel.set(source.groupLabel, section)
+    out.push([source.groupLabel, section])
   }
   return out
 }
