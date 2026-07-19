@@ -407,6 +407,14 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     await Promise.all(moved.map(({ row, index }) => fetch(url(row.id), {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: index }),
     })))
+    // Variants are numbered into matrix order once, after every moved row has
+    // landed. Options and values are what that order is derived from, so leaving
+    // this out left the grid showing the old running order until the next
+    // regenerate - and hanging it off each PATCH instead would run it once per
+    // moved row, with the concurrent calls racing to write the answer.
+    if (moved.length > 0) {
+      await fetch(`/api/m/shop-variations/admin/products/${productId}/resequence-variants`, { method: 'POST' })
+    }
     await refresh(); setBusy(false)
   }
 
