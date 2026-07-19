@@ -151,6 +151,11 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
   // - and a shopper who cannot see the picture is left with only the second.
   const isSwatch = option.controlType === 'SWATCH'
   const isImage = option.controlType === 'IMAGE'
+  // A swatch or image option can still hold values with no colour or picture set,
+  // and a label on its own makes a shorter button than one carrying a 28px
+  // thumbnail. The row reserves the height of its tallest possible content so a
+  // half-filled option still reads as one tidy row rather than a broken fence.
+  const mediaPx = isImage ? 28 : isSwatch ? 16 : 0
   return (
     <div style={rowStyle}>
       {label}
@@ -178,6 +183,11 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
                 padding: isSwatch || isImage ? '0.375rem 0.5rem' : '0.375rem 0.75rem',
+                boxSizing: 'border-box',
+                // Padding (0.375rem each side) and the 2px border sit outside the
+                // reserved media height, so a value with nothing to show matches
+                // one that has.
+                ...(mediaPx ? { minHeight: `calc(${mediaPx}px + 0.75rem + 4px)` } : null),
                 borderRadius: 999,
                 border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 background: active ? 'var(--color-bg-subtle)' : 'var(--color-surface)',
