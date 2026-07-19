@@ -1,6 +1,6 @@
 {
   "name": "cactus-module-shop-variations",
-  "version": "0.1.55",
+  "version": "0.1.56",
   "description": "Product options (variants + personalisation) for the Cactus shop",
   "license": "MIT",
   "private": true

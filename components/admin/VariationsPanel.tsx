@@ -16,8 +16,8 @@ import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/typ
 type OptionValue = { id: string; label: string; swatch: string | null; position: number; sourceRef: string | null }
 type Option = {
   id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean
-  // Set when the option was built from another module's source, which is what
-  // makes the Refresh button appear. Null on a hand-typed option.
+  // Set when the option was built from another module's source. Null on a
+  // hand-typed option.
   sourceProvider: string | null; sourceRef: string | null
   values: OptionValue[]
 }
@@ -308,26 +308,6 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     await refresh(); setBusy(false)
   }
 
-  // Re-read a sourced option from the module that supplied it. Nothing is ever
-  // deleted, so the result is reported rather than silently applied - a value the
-  // source has dropped stays put (variants may depend on it) and is called out.
-  async function refreshOption(option: Option) {
-    setBusy(true); setOptionError(null); setRefreshNote(null)
-    const res = await fetch(`/api/m/shop-variations/admin/options/${option.id}/refresh`, { method: 'POST' })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setOptionError(json.error ?? 'Could not refresh that option.')
-      setBusy(false)
-      return
-    }
-    const parts: string[] = []
-    if (json.added) parts.push(`${json.added} value${json.added === 1 ? '' : 's'} added`)
-    if (json.updated) parts.push(`${json.updated} updated`)
-    if (json.stale?.length) parts.push(`${json.stale.join(', ')} no longer in the source (kept)`)
-    if (json.nameDiffers) parts.push(`the source now calls this "${json.sourceName}"`)
-    setRefreshNote(parts.length > 0 ? `${option.name}: ${parts.join('; ')}.` : `${option.name} was already up to date.`)
-    await refresh(); setBusy(false)
-  }
 
   async function deleteOption(id: string) {
     setBusy(true)
@@ -638,20 +618,6 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         <option key={ct} value={ct}>{CONTROL_LABELS[ct]}</option>
                       ))}
                     </select>
-                    {/* Only an option built from a source can be refreshed against
-                        one, and only while the module that supplied it is still
-                        installed and offering it. */}
-                    {opt.sourceProvider && sourceProviders.some((p) => p.id === opt.sourceProvider) && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => refreshOption(opt)}
-                        disabled={busy}
-                        title="Bring in new values and pick up any renames from the source. Nothing is removed."
-                      >
-                        Refresh
-                      </button>
-                    )}
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
