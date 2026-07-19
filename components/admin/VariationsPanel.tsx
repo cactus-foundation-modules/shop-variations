@@ -105,11 +105,14 @@ function normaliseHex(raw: string): string | null {
  * fields, so they are held locally and written by the product editor's own Save
  * button alongside everything else.
  */
-export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [] }: {
+export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [], weightBasedShippingEnabled = true }: {
   productId: string
   columns?: VariantColumn[]
   /** Which optional price types this shop has switched on, from Shop settings. */
   enabledPriceTypes?: readonly string[]
+  /** Whether the shop prices postage by weight, from Tax & shipping. Off drops
+   * the weight column; per-variant weights already saved are left untouched. */
+  weightBasedShippingEnabled?: boolean
 }) {
   const currency = useProductEditorCurrency()
   const priceFields = useMemo(
@@ -817,7 +820,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
                     <th style={{ padding: '0.5rem' }}>Stock</th>
-                    <th style={{ padding: '0.5rem' }}>Weight</th>
+                    {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
                     <th style={{ padding: '0.5rem' }} aria-label="Delete" />
                   </tr>
@@ -891,14 +894,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             onChange={(e) => editVariant(v.variantId, { stockCount: e.target.value === '' ? null : Number(e.target.value) })}
                           />
                         </td>
-                        <td style={{ padding: '0.5rem' }}>
-                          <input
-                            type="number" min={0} step="0.001" style={numInput} placeholder="—"
-                            aria-label={`Weight for ${v.label}`}
-                            value={valueOf(v, 'weight') ?? ''}
-                            onChange={(e) => editVariant(v.variantId, { weight: e.target.value === '' ? null : Number(e.target.value) })}
-                          />
-                        </td>
+                        {weightBasedShippingEnabled && (
+                          <td style={{ padding: '0.5rem' }}>
+                            <input
+                              type="number" min={0} step="0.001" style={numInput} placeholder="—"
+                              aria-label={`Weight for ${v.label}`}
+                              value={valueOf(v, 'weight') ?? ''}
+                              onChange={(e) => editVariant(v.variantId, { weight: e.target.value === '' ? null : Number(e.target.value) })}
+                            />
+                          </td>
+                        )}
                         <td style={{ padding: '0.5rem' }}>
                           <input
                             type="checkbox"

@@ -98,7 +98,8 @@ export async function ProductVariationsSection({ productId }: { productId: strin
     resolveVariantColumns(user),
     resolveFieldColumns(user, productId),
     // Read here rather than in the panel: the grid offers a column per price
-    // type the shop has switched on, and this is the one place already on the
+    // type the shop has switched on, plus a weight column only when the shop
+    // prices postage by weight, and this is the one place already on the
     // server. Saves the panel a second config fetch of its own.
     getShopConfigCached(),
   ])
@@ -108,6 +109,7 @@ export async function ProductVariationsSection({ productId }: { productId: strin
       productId={productId}
       columns={[...staticColumns, ...fieldColumns]}
       enabledPriceTypes={config.enabledPriceTypes}
+      weightBasedShippingEnabled={config.weightBasedShippingEnabled}
     />
   )
 }

@@ -1,13 +1,13 @@
 {
   "name": "shop-variations",
-  "version": "0.1.57",
+  "version": "0.1.58",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.52"
+      "minVersion": "0.1.71"
     }
   ],
   "permissions": [],
