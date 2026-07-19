@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import { prisma } from '@/lib/db/prisma'
+import { INSTALLED_MODULE_WHERE } from '@/lib/modules/live-status'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
@@ -82,7 +83,7 @@ export async function resolveVariantFieldProviders(
   user?: Awaited<ReturnType<typeof getSessionFromCookie>>,
 ): Promise<Array<{ id: string; provider: VariantFieldProvider }>> {
   const modules = await prisma.module.findMany({
-    where: { status: { in: ['active', 'update_available'] } },
+    where: { ...INSTALLED_MODULE_WHERE },
     select: { manifest: true },
   })
   const components = moduleExtensionPointComponents[POINT] ?? {}

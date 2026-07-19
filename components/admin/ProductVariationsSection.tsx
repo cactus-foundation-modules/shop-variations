@@ -2,6 +2,7 @@ import { getProductById } from '@/modules/shop/lib/db'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { prisma } from '@/lib/db/prisma'
+import { INSTALLED_MODULE_WHERE } from '@/lib/modules/live-status'
 import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
 import { VariationsPanel, type VariantColumn } from '@/modules/shop-variations/components/admin/VariationsPanel'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
@@ -39,7 +40,7 @@ type ExtensionPointEntry = {
 async function resolveVariantColumns(user: Awaited<ReturnType<typeof getSessionFromCookie>>): Promise<VariantColumn[]> {
   if (!user) return []
   const modules = await prisma.module.findMany({
-    where: { status: { in: ['active', 'update_available'] } },
+    where: { ...INSTALLED_MODULE_WHERE },
     select: { manifest: true },
   })
   const entries: ExtensionPointEntry[] = []
