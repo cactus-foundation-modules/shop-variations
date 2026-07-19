@@ -12,6 +12,21 @@ import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildP
 import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
+// A variant can carry several images, so the single `Image` cell holds them all
+// as a comma-separated list, primary first. One url still reads (and imports) as
+// it always did, so a sheet written before this change round-trips unchanged.
+// Note the shop's own product export uses `|` for its media cell; that one also
+// encodes a media TYPE per entry, which this column has no need for.
+const IMAGE_SEPARATOR = ', '
+
+export function serialiseVariantImages(urls: string[]): string {
+  return urls.join(IMAGE_SEPARATOR)
+}
+
+export function parseVariantImages(cell: string): string[] {
+  return cell.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
 export async function exportVariationsCsv(): Promise<string> {
   const ids = await getProductIdsWithVariations()
   const payloads = (await Promise.all(ids.map((id) => getEditorPayload(id)))).filter((p): p is NonNullable<typeof p> => !!p && p.variants.length > 0)
@@ -65,7 +80,7 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', v.imageUrls[0] ?? '',
+        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         ...fieldCells,
       ]))
     }
@@ -185,21 +200,27 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       pendingWrites: [],
     }
 
-    // Each variant's current primary image, prefetched once for the whole parent.
-    // The image write below re-files media through the storage provider (a network
-    // round-trip per image), so doing it on every row every import - even when the
-    // cell has not changed - is what pushed a large Pull past the request budget and
-    // left the later rows (and their 3D files) unprocessed. With this we skip the
-    // write entirely when the cell already matches what is stored.
-    const currentImageByChild = new Map<string, string>()
+    // Each variant's current images, prefetched once for the whole parent, in the
+    // same order the export writes them (primary first). The image write below
+    // re-files media through the storage provider (a network round-trip per image),
+    // so doing it on every row every import - even when the cell has not changed -
+    // is what pushed a large Pull past the request budget and left the later rows
+    // (and their 3D files) unprocessed. With this we skip the write entirely when
+    // the cell already lists exactly what is stored, in the same order.
+    const currentImagesByChild = new Map<string, string[]>()
     if (imageCol >= 0) {
       const childIds = upsertCtx.existing.map((v) => v.childProductId)
       if (childIds.length > 0) {
         const media = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
           SELECT "product_id", "url" FROM "shp_product_media"
-          WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE' AND "is_primary" = true
+          WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
+          ORDER BY "product_id", "is_primary" DESC, "position" ASC
         `
-        for (const m of media) currentImageByChild.set(m.product_id, m.url)
+        for (const m of media) {
+          const list = currentImagesByChild.get(m.product_id)
+          if (list) list.push(m.url)
+          else currentImagesByChild.set(m.product_id, [m.url])
+        }
       }
     }
 
@@ -248,28 +269,31 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
           }
         }
 
-        // The variant's own image, stored as the hidden child product's primary
-        // media - the same write the per-variant edit endpoint makes. An empty
-        // cell clears it (the sheet is the truth); a non-url is flagged, not
-        // stored. Only touched when the sheet actually carries an Image column, so
-        // a legacy sheet from before this column existed leaves images alone.
+        // The variant's own images, stored as the hidden child product's media -
+        // the same write the per-variant edit endpoint makes, first url primary.
+        // An empty cell clears them (the sheet is the truth); a non-url is flagged
+        // and the whole cell left alone rather than half-applied. Only touched when
+        // the sheet actually carries an Image column, so a legacy sheet from before
+        // this column existed leaves images alone.
         let imageChanged = false
         if (imageCol >= 0) {
-          const raw = (gr.cols[imageCol] ?? '').trim()
-          const current = currentImageByChild.get(childProductId) ?? ''
-          if (raw === current) {
+          const urls = parseVariantImages(gr.cols[imageCol] ?? '')
+          const current = currentImagesByChild.get(childProductId) ?? []
+          const bad = urls.filter((u) => !isHttpUrl(u))
+          if (bad.length > 0) {
+            result.errors.push({ row: gr.rowNum, reason: `Invalid image URL: ${bad.join(', ')}` })
+          } else if (urls.length === current.length && urls.every((u, i) => u === current[i])) {
             // Unchanged - skip the media rewrite and its provider re-file entirely.
-          } else if (raw === '') {
+          } else if (urls.length === 0) {
             await setProductMedia(childProductId, [])
-            imageChanged = true
-          } else if (isHttpUrl(raw)) {
-            await setProductMedia(childProductId, [{ type: 'IMAGE', url: raw, isPrimary: true }])
-            // File it in the parent's media-library folder, as the edit endpoint does.
-            await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
-            currentImageByChild.set(childProductId, raw)
+            currentImagesByChild.set(childProductId, [])
             imageChanged = true
           } else {
-            result.errors.push({ row: gr.rowNum, reason: `Invalid image URL: ${raw}` })
+            await setProductMedia(childProductId, urls.map((url, i) => ({ type: 'IMAGE' as const, url, isPrimary: i === 0 })))
+            // File them in the parent's media-library folder, as the edit endpoint does.
+            await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
+            currentImagesByChild.set(childProductId, urls)
+            imageChanged = true
           }
         }
 
