@@ -115,7 +115,13 @@ export type VariantSelectorVariant = {
   childProductId: string
   optionValueIds: string[]
   enabled: boolean
+  // What this combination is actually charged, sale price included when the shop
+  // has sale prices switched on. Worked out by shop's effectivePrice, never here,
+  // so a variant and an ordinary product can never disagree about the money.
   price: number
+  // The struck-through figure when this variant is on offer: its own normal
+  // price. Null when it is not, so the storefront has nothing to strike.
+  compareAtPrice: number | null
   inStock: boolean
   stockCount: number | null
   // Every image this variant owns, in gallery order (primary first). A variant

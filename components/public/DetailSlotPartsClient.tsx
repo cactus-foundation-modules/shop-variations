@@ -251,12 +251,19 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
   // number nobody is being charged, so they go.
   const atBase = Math.abs(live - base) < 0.005
   const symbol = sel.loaded && sel.payload ? sel.currencySymbol : currencySymbol
+  // A chosen variant brings its own "was" if it is the thing on offer, so the
+  // strike-through follows the price off the parent instead of vanishing with
+  // it. Its saving is worked out here against that same figure.
+  const variantWas = sel.loaded && sel.payload ? sel.compareAtPrice : null
+  const variantSavePct = variantWas != null && variantWas > live ? Math.round(((variantWas - live) / variantWas) * 100) : null
 
   return (
     <div className={classNames.block}>
       <span className={classNames.now}>{money(live, symbol)}</span>
       {atBase && compareAtPrice && <span className={classNames.was}>{money(Number(compareAtPrice), symbol)}</span>}
       {atBase && savePct != null && savePct > 0 && <span className={classNames.save}>Save {savePct}%</span>}
+      {!atBase && variantWas != null && <span className={classNames.was}>{money(variantWas, symbol)}</span>}
+      {!atBase && variantSavePct != null && variantSavePct > 0 && <span className={classNames.save}>Save {variantSavePct}%</span>}
       {/* The way back out of a chosen combination belongs with the price it moved,
           not buried under the last option. Shop's price block is a wrapping flex
           row, so on a narrow screen this drops to its own line rather than

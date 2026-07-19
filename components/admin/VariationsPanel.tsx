@@ -24,6 +24,7 @@ type Option = {
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
   enabled: boolean; price: number; sku: string | null; barcode: string | null
+  salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
 }
 type Payload = {
@@ -33,7 +34,27 @@ type Payload = {
   addons: SvrAddon[]
 }
 
-type VariantEdit = Partial<Pick<VariantRow, 'price' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'>>
+type VariantEdit = Partial<Pick<
+  VariantRow,
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'
+>>
+
+/**
+ * The optional price types a shop can switch on under Shop settings, and the
+ * variant field each one edits. The Variations grid offers a column per switched
+ * -on type, so a variant carries the same set of figures as an ordinary product
+ * rather than only the one price it used to.
+ *
+ * The labels are deliberately shorter than the product editor's ("Sale" rather
+ * than "Sale price") - these are column headings on a table that already has
+ * five other columns, and the full names push the grid off the side of a laptop.
+ */
+const OPTIONAL_PRICE_FIELDS = [
+  { type: 'sale', field: 'salePrice', label: 'Sale' },
+  { type: 'retail', field: 'retailPrice', label: 'RRP' },
+  { type: 'trade', field: 'tradePrice', label: 'Trade' },
+  { type: 'cost', field: 'costPrice', label: 'Cost' },
+] as const satisfies ReadonlyArray<{ type: string; field: keyof VariantEdit; label: string }>
 
 /**
  * A column another module has hung on the variants table through the
@@ -81,8 +102,17 @@ function normaliseHex(raw: string): string | null {
  * fields, so they are held locally and written by the product editor's own Save
  * button alongside everything else.
  */
-export function VariationsPanel({ productId, columns = [] }: { productId: string; columns?: VariantColumn[] }) {
+export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [] }: {
+  productId: string
+  columns?: VariantColumn[]
+  /** Which optional price types this shop has switched on, from Shop settings. */
+  enabledPriceTypes?: readonly string[]
+}) {
   const currency = useProductEditorCurrency()
+  const priceFields = useMemo(
+    () => OPTIONAL_PRICE_FIELDS.filter((p) => enabledPriceTypes.includes(p.type)),
+    [enabledPriceTypes],
+  )
   const [data, setData] = useState<Payload | null>(null)
   const [edits, setEdits] = useState<Record<string, VariantEdit>>({})
   // Variant ids ticked for a bulk delete. Pruned to what still exists whenever
@@ -812,6 +842,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     <th style={{ padding: '0.5rem' }}>Image</th>
                     {columns.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>Price</th>
+                    {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     <th style={{ padding: '0.5rem' }}>Weight</th>
@@ -856,6 +887,22 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                             />
                           </span>
                         </td>
+                        {priceFields.map((p) => (
+                          <td key={p.type} style={{ padding: '0.5rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {currency}
+                              <input
+                                type="number" min={0} step="0.01" style={numInput} placeholder="—"
+                                aria-label={`${p.label} price for ${v.label}`}
+                                value={valueOf(v, p.field) ?? ''}
+                                // Emptying the box clears the figure rather than
+                                // setting it to zero: a blank sale price means
+                                // "not on offer", and a zero one means free.
+                                onChange={(e) => editVariant(v.variantId, { [p.field]: e.target.value === '' ? null : Number(e.target.value) })}
+                              />
+                            </span>
+                          </td>
+                        ))}
                         <td style={{ padding: '0.5rem' }}>
                           <input
                             style={{ ...input, width: 120 }} placeholder="SKU"

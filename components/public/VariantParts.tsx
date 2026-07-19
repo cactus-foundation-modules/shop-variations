@@ -339,6 +339,13 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
       <span>{money(sel.price, sel.currencySymbol)}</span>
+      {/* The chosen combination's own normal price, struck through, when that
+          combination is the one on offer. */}
+      {sel.compareAtPrice != null && sel.compareAtPrice > sel.price && (
+        <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--color-text-muted)', textDecoration: 'line-through' }}>
+          {money(sel.compareAtPrice, sel.currencySymbol)}
+        </span>
+      )}
       {/* Only once there's a combination to be out of stock. Nothing chosen is
           not the same as nothing available, and saying so over the parent's
           price would turn every options product into a sold-out one. */}

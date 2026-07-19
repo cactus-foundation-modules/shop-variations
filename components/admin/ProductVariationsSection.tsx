@@ -1,4 +1,5 @@
 import { getProductById } from '@/modules/shop/lib/db'
+import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { prisma } from '@/lib/db/prisma'
@@ -93,10 +94,20 @@ export async function ProductVariationsSection({ productId }: { productId: strin
   if (!product || product.catalogueHidden) return null
 
   const user = await getSessionFromCookie()
-  const [staticColumns, fieldColumns] = await Promise.all([
+  const [staticColumns, fieldColumns, config] = await Promise.all([
     resolveVariantColumns(user),
     resolveFieldColumns(user, productId),
+    // Read here rather than in the panel: the grid offers a column per price
+    // type the shop has switched on, and this is the one place already on the
+    // server. Saves the panel a second config fetch of its own.
+    getShopConfigCached(),
   ])
 
-  return <VariationsPanel productId={productId} columns={[...staticColumns, ...fieldColumns]} />
+  return (
+    <VariationsPanel
+      productId={productId}
+      columns={[...staticColumns, ...fieldColumns]}
+      enabledPriceTypes={config.enabledPriceTypes}
+    />
+  )
 }

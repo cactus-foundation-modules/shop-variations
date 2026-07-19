@@ -7,6 +7,13 @@ import { getVariantById, setVariantEnabled } from '@/modules/shop-variations/lib
 
 const Body = z.object({
   price: z.number().nonnegative().optional(),
+  // The optional price types, which the grid only offers for the ones the shop
+  // has switched on. Nullable: clearing a variant's sale price has to be
+  // possible, and is not the same as setting it to nothing-pence.
+  salePrice: z.number().nonnegative().nullable().optional(),
+  retailPrice: z.number().nonnegative().nullable().optional(),
+  tradePrice: z.number().nonnegative().nullable().optional(),
+  costPrice: z.number().nonnegative().nullable().optional(),
   sku: z.string().max(120).nullable().optional(),
   barcode: z.string().max(120).nullable().optional(),
   trackInventory: z.boolean().optional(),
@@ -35,6 +42,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const productFields: Parameters<typeof updateProduct>[1] = {}
   if (data.price !== undefined) productFields.price = data.price
+  if (data.salePrice !== undefined) productFields.salePrice = data.salePrice
+  if (data.retailPrice !== undefined) productFields.retailPrice = data.retailPrice
+  if (data.tradePrice !== undefined) productFields.tradePrice = data.tradePrice
+  if (data.costPrice !== undefined) productFields.costPrice = data.costPrice
   if (data.sku !== undefined) productFields.sku = data.sku
   if (data.barcode !== undefined) productFields.barcode = data.barcode
   if (data.trackInventory !== undefined) productFields.trackInventory = data.trackInventory

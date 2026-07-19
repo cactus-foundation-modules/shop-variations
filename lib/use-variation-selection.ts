@@ -211,6 +211,10 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   const anyOptionChosen = payload ? payload.options.some((o) => !!optionValues[o.id]) : false
   const basePrice = variant ? variant.price : payload?.basePrice ?? 0
   const price = basePrice + addonPricing.priceAdjust
+  // The chosen variant's own "was" figure. Personalisation surcharges are added
+  // to both sides so the saving stays honest: strike the price this same
+  // configuration would have cost off offer, not the bare variant price.
+  const compareAtPrice = variant?.compareAtPrice != null ? variant.compareAtPrice + addonPricing.priceAdjust : null
   // Every picture the chosen variant owns, and the one the main stage shows.
   // An empty list means the variant brought none of its own, so the parent's
   // gallery stands as it is.
@@ -247,6 +251,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     addonValues,
     variant,
     price,
+    compareAtPrice,
     basePrice,
     image,
     variantImages,

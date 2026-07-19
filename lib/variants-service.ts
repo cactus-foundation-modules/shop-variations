@@ -6,6 +6,8 @@ import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import { createProduct, updateProduct, deleteProduct, getProductById, getProductBySlug, getProductMedia } from '@/modules/shop/lib/db/products'
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
+import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons } from '@/modules/shop-variations/lib/db/addons'
@@ -297,6 +299,7 @@ export async function deleteVariants(parentId: string, variantIds: string[]): Pr
 type ChildRow = {
   id: string
   price: unknown
+  sale_price: unknown
   track_inventory: boolean
   stock_count: number | null
   out_of_stock_behaviour: string
@@ -309,6 +312,13 @@ type ChildRow = {
 export async function getVariantSelectorPayload(parentId: string): Promise<VariantSelectorPayload | null> {
   const parent = await getProductById(parentId)
   if (!parent) return null
+
+  // Which optional price types the shop has switched on. The only one that can
+  // move money is `sale`, and it moves it for a variant exactly as it does for
+  // an ordinary product - so the figure below goes through shop's effectivePrice
+  // rather than reading the child's `price` column raw, which is what used to
+  // advertise the full price on a variant that was on offer.
+  const { enabledPriceTypes } = await getShopConfigCached()
 
   const [options, variants, valueMap, addons, baseMedia] = await Promise.all([
     getOptionsWithValues(parentId),
@@ -323,7 +333,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku"
+      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -345,12 +355,19 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     const stockCount = child?.stock_count ?? null
     const tracks = child?.track_inventory ?? false
     const inStock = !tracks || (stockCount ?? 0) > 0 || child?.out_of_stock_behaviour === 'BACKORDER' || child?.is_pre_order === true
+    // A variant with no child row of its own falls back to the parent, prices
+    // and all, so an incomplete matrix shows the product's own figure rather
+    // than nothing.
+    const priced = child
+      ? { price: Number(child.price), salePrice: child.sale_price != null ? Number(child.sale_price) : null }
+      : { price: Number(parent.price), salePrice: parent.salePrice }
     return {
       id: v.id,
       childProductId: v.childProductId,
       optionValueIds: valueMap[v.id] ?? [],
       enabled: v.enabled,
-      price: child ? Number(child.price) : Number(parent.price),
+      price: effectivePrice(priced, enabledPriceTypes),
+      compareAtPrice: isOnSale(priced, enabledPriceTypes) ? Number(priced.price) : null,
       inStock,
       stockCount: tracks ? stockCount : null,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
@@ -423,6 +440,13 @@ export type VariantEditorRow = {
   label: string
   enabled: boolean
   price: number
+  // The optional price types, exactly as the product editor's Pricing tab holds
+  // them. Null means "not set on this variant", which is a different thing from
+  // zero and must stay tellable apart from it all the way to the input box.
+  salePrice: number | null
+  retailPrice: number | null
+  tradePrice: number | null
+  costPrice: number | null
   sku: string | null
   barcode: string | null
   trackInventory: boolean
@@ -439,7 +463,20 @@ export type EditorPayload = {
   addons: SvrAddon[]
 }
 
-type ChildEditRow = ChildRow & { barcode: string | null; weight: unknown }
+// An optional price column as the editor wants it: a number, or null for "left
+// blank". Prisma hands these back as Decimal, and Number(null) is 0 - which
+// would quietly turn every unset retail price into a free item on screen.
+function optionalPrice(value: unknown): number | null {
+  return value == null ? null : Number(value)
+}
+
+type ChildEditRow = ChildRow & {
+  barcode: string | null
+  weight: unknown
+  retail_price: unknown
+  trade_price: unknown
+  cost_price: unknown
+}
 
 // Everything the deep-dive editor renders: options + values, the bulk grid rows
 // with full child fields, and the personalisation add-ons.
@@ -463,7 +500,8 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildEditRow[]>`
-      SELECT "id", "price", "sku", "barcode", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
+      SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
+             "sku", "barcode", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -491,6 +529,10 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
       label,
       enabled: v.enabled,
       price: child ? Number(child.price) : Number(parent.price),
+      salePrice: optionalPrice(child?.sale_price),
+      retailPrice: optionalPrice(child?.retail_price),
+      tradePrice: optionalPrice(child?.trade_price),
+      costPrice: optionalPrice(child?.cost_price),
       sku: child?.sku ?? null,
       barcode: child?.barcode ?? null,
       trackInventory: child?.track_inventory ?? false,
