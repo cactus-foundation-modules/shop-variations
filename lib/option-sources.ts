@@ -44,6 +44,20 @@ export type OptionSourceProvider = {
   listSources(): Promise<OptionSource[]>
   /** One source by ref, for a refresh. Null when it has since been deleted. */
   getSource(ref: string): Promise<OptionSource | null>
+  /**
+   * Add a value to the source itself, so a value typed on a product's Variations
+   * tab lands on the attribute (or whatever the provider keeps) rather than only
+   * on this one product. Returns the stored value, ref and all, which the caller
+   * copies down - so the new value is sourced from the start and a later refresh
+   * matches it by id rather than orphaning it.
+   *
+   * A label the source already carries is reused rather than refused: from a
+   * product's point of view typing "Oak" on a second product is not a mistake.
+   *
+   * Optional. A provider whose storage is read-only (or not the owner's to write
+   * to) simply leaves it off, and a typed value stays local to the product.
+   */
+  createValue?(ref: string, input: { label: string; swatch: string | null }): Promise<OptionSourceValue | null>
 }
 
 const POINT = 'shop-variations.option-source'

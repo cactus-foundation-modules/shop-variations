@@ -218,14 +218,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   }, [productId])
 
   // --- Options -------------------------------------------------------------
-  const [newOptionName, setNewOptionName] = useState('')
-  const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
-  const [newOptionValues, setNewOptionValues] = useState('')
-
-  // Modules offering ready-made options (attributes, say). Fetched once: the
-  // list decides whether the "Add from" button is worth showing at all, so it is
-  // needed before the dialog is ever opened. An empty list hides the button, and
-  // a failed fetch is treated the same - the typed-in route still works.
+  // Modules offering ready-made options (attributes, say). Fetched once, and the
+  // only way in: options are built from a source list rather than typed here, so
+  // every option on every product traces back to one attribute and the same
+  // colour cannot exist under three spellings across three products. An empty
+  // list (or a failed fetch) therefore leaves no way to add an option, and says
+  // so rather than showing a button that would not work.
   const [sourceProviders, setSourceProviders] = useState<PickerProvider[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [refreshNote, setRefreshNote] = useState<string | null>(null)
@@ -289,25 +287,6 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
 
-  async function addOption() {
-    if (!newOptionName.trim()) return
-    const values = newOptionValues.split(',').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }))
-    setBusy(true); setOptionError(null); setRefreshNote(null)
-    const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/options`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newOptionName.trim(), controlType: newOptionType, values }),
-    })
-    // A refused name (a duplicate, say) leaves the boxes as they were, so the
-    // owner can edit what they typed rather than type the whole lot again.
-    if (!res.ok) {
-      setOptionError((await res.json().catch(() => ({}))).error ?? 'Could not add that option.')
-      setBusy(false)
-      return
-    }
-    setNewOptionName(''); setNewOptionValues(''); setNewOptionType('DROPDOWN')
-    await refresh(); setBusy(false)
-  }
-
   // Build an option from a source module's ready-made list. Only the picked refs
   // and the (possibly overridden) name travel; the server re-reads the labels and
   // swatches from the source itself.
@@ -356,13 +335,22 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     await refresh(); setBusy(false)
   }
 
+  // A value typed here also lands on the list the option came from, so a colour
+  // first met on one product is there to pick on the next. That write can be
+  // refused (the attribute deleted from under us, the name already taken), and a
+  // refusal has to be said out loud - the value is not saved either way.
   async function addValue(optionId: string, label: string, swatch: string | null) {
     if (!label.trim()) return
-    setBusy(true)
-    await fetch(`/api/m/shop-variations/admin/options/${optionId}/values`, {
+    setBusy(true); setOptionError(null); setRefreshNote(null)
+    const res = await fetch(`/api/m/shop-variations/admin/options/${optionId}/values`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: label.trim(), swatch: swatch || null }),
     })
+    if (!res.ok) {
+      setOptionError((await res.json().catch(() => ({}))).error ?? 'Could not add that value.')
+      setBusy(false)
+      return
+    }
     await refresh(); setBusy(false)
   }
 
@@ -751,27 +739,24 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
 
         <div style={{ border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
           <strong style={{ fontSize: '0.875rem' }}>Add an option</strong>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <input placeholder="Name, e.g. Size" value={newOptionName} onChange={(e) => setNewOptionName(e.target.value)} style={{ ...input, width: 160 }} />
-            <select aria-label="How the new option is shown" value={newOptionType} onChange={(e) => setNewOptionType(e.target.value as Option['controlType'])} style={{ ...input, width: 150 }}>
-              {CONTROL_ORDER.map((ct) => (
-                <option key={ct} value={ct}>{CONTROL_LABELS[ct]}</option>
-              ))}
-            </select>
-            <input placeholder="Values, separated by commas: S, M, L" value={newOptionValues} onChange={(e) => setNewOptionValues(e.target.value)} style={{ ...input, flex: 1, minWidth: 200 }} />
-            <button type="button" className="btn btn-primary btn-sm" onClick={addOption} disabled={busy || !newOptionName.trim()}>Add option</button>
-          </div>
-          {/* Hidden entirely when no module offers ready-made options, so a plain
-              variations install looks exactly as it did. */}
-          {sourceProviders.length > 0 && (
+          {/* One route in, on purpose: options are picked from a list set up once
+              elsewhere, so the same colour cannot end up spelled three ways across
+              three products. Nothing to pick from means nothing to press, and the
+              reason is spelled out rather than left as an empty box. */}
+          {sourceProviders.length > 0 ? (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                Or reuse a list you have already set up:
+                Options come from the lists you have already set up:
               </span>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPickerOpen(true)} disabled={busy}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => setPickerOpen(true)} disabled={busy}>
                 {sourceButtonLabel}
               </button>
             </div>
+          ) : (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
+              Options are built from ready-made lists, and nothing is offering any yet. Set up your product attributes
+              first, then come back and pick from them here.
+            </p>
           )}
         </div>
 

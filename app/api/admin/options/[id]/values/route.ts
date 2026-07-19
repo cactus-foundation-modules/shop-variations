@@ -52,11 +52,44 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const option = await getOptionWithValues(id)
-  const value = await createOptionValue(id, parsed.data.label, parsed.data.swatch ?? null, option?.values.length ?? 0)
+
+  // A value typed onto an option that came from a source is pushed back to that
+  // source first, so the attribute (or whatever supplied the option) grows too
+  // rather than the value living on this one product. The stored ref comes back
+  // with it, which is what makes the new value sourced from the start: a later
+  // Refresh matches it by id and renames it, instead of treating it as a stray.
+  //
+  // A source that cannot take it is a hard stop, not a quiet fallback. Writing
+  // the value locally anyway would look like it worked while the attributes
+  // screen silently disagreed, and the two would drift apart unnoticed.
+  let sourceRef: string | null = null
+  let label = parsed.data.label.trim()
+  let swatch = parsed.data.swatch ?? null
+  if (!label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  if (option?.sourceProvider && option.sourceRef) {
+    const user = await getSessionFromCookie()
+    const provider = await resolveOptionSourceProvider(option.sourceProvider, user)
+    if (provider?.createValue) {
+      const created = await provider.createValue(option.sourceRef, { label, swatch })
+      if (!created) {
+        return NextResponse.json({ error: 'Could not add that value to the list it came from.' }, { status: 400 })
+      }
+      // The source is the authority on what it stored - a reused value keeps its
+      // own spelling and swatch, so the copy matches what the list actually says.
+      sourceRef = created.ref
+      label = created.label
+      swatch = created.swatch
+      if (await optionValueLabelTaken(id, label, '')) {
+        return NextResponse.json({ error: `This option already has a value called "${label}".` }, { status: 409 })
+      }
+    }
+  }
+
+  const value = await createOptionValue(id, label, swatch, option?.values.length ?? 0, sourceRef)
 
   // File an image-swatch picture in the product's colours folder (a no-op for a
   // hex colour swatch or an externally-hosted url).
-  if (parsed.data.swatch) await fileSwatchImage(productId, value.id, parsed.data.swatch)
+  if (swatch) await fileSwatchImage(productId, value.id, swatch)
 
   return NextResponse.json({ id: value.id }, { status: 201 })
 }
