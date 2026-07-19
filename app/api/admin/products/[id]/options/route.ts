@@ -32,13 +32,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = Body.safeParse(await request.json())
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid request' }, { status: 400 })
 
-  const { name, controlType, source } = parsed.data
+  const { controlType, source } = parsed.data
+  const name = parsed.data.name.trim()
+  if (!name) return NextResponse.json({ error: 'Give the option a name.' }, { status: 400 })
+
+  // Names have to be unique on a product: the spreadsheet importer matches
+  // options by name, and two identically named choosers on the product page tell
+  // the customer nothing. This is also what makes adding one source twice work -
+  // a second Colour off the same attribute simply has to be called something
+  // else, e.g. "Seat colour", and that name is then its own.
+  const existing = await getOptionsWithValues(id)
+  if (existing.some((o) => o.name.toLowerCase() === name.toLowerCase())) {
+    return NextResponse.json(
+      { error: `This product already has an option called "${name}". Give this one a name of its own.` },
+      { status: 409 },
+    )
+  }
 
   // A sourced option reads its own values back from the provider rather than
   // trusting labels posted by the browser, so what lands in the database is
   // whatever the source actually says right now. Only the picked refs, the
   // option name and the control type come from the client.
   let values: { label: string; swatch: string | null; sourceRef: string | null }[]
+  // Set once the source is read: true when the owner has named this option
+  // something other than what the source calls it, so refreshes leave the name be.
+  let nameOverridden = false
   if (source) {
     const user = await getSessionFromCookie()
     const provider = await resolveOptionSourceProvider(source.provider, user)
@@ -51,12 +69,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .filter((v) => wanted.has(v.ref))
       .map((v) => ({ label: v.label, swatch: v.swatch ?? null, sourceRef: v.ref }))
     if (values.length === 0) return NextResponse.json({ error: 'None of those values exist any more.' }, { status: 400 })
+    nameOverridden = resolved.name.trim().toLowerCase() !== name.toLowerCase()
   } else {
     values = (parsed.data.values ?? []).map((v) => ({ label: v.label, swatch: v.swatch ?? null, sourceRef: null }))
   }
 
-  const existing = await getOptionsWithValues(id)
-  const option = await createOption(id, name, controlType, existing.length, source ? { provider: source.provider, ref: source.ref } : null)
+  const option = await createOption(
+    id,
+    name,
+    controlType,
+    existing.length,
+    source ? { provider: source.provider, ref: source.ref } : null,
+    nameOverridden,
+  )
 
   let pos = 0
   for (const v of values) {

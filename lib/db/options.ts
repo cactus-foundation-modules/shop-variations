@@ -12,6 +12,7 @@ function mapOption(r: Record<string, unknown>): SvrOption {
     requiresPreviousOption: (r.requires_previous_option as boolean | null) ?? false,
     sourceProvider: (r.source_provider as string | null) ?? null,
     sourceRef: (r.source_ref as string | null) ?? null,
+    nameOverridden: (r.name_overridden as boolean | null) ?? false,
   }
 }
 
@@ -47,10 +48,11 @@ export async function createOption(
   controlType: SvrControlType,
   position: number,
   source?: { provider: string; ref: string } | null,
+  nameOverridden = false,
 ): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
-    INSERT INTO "svr_options" ("product_id", "name", "control_type", "position", "source_provider", "source_ref")
-    VALUES (${productId}, ${name}, ${controlType}, ${position}, ${source?.provider ?? null}, ${source?.ref ?? null})
+    INSERT INTO "svr_options" ("product_id", "name", "control_type", "position", "source_provider", "source_ref", "name_overridden")
+    VALUES (${productId}, ${name}, ${controlType}, ${position}, ${source?.provider ?? null}, ${source?.ref ?? null}, ${nameOverridden})
     RETURNING "id"
   `
   return rows[0]
@@ -70,9 +72,10 @@ export async function getOptionWithValues(id: string): Promise<SvrOptionWithValu
   return { ...mapOption(optionRow), values: valueRows.map(mapValue) }
 }
 
-export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean }): Promise<void> {
+export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean; nameOverridden?: boolean }): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.name !== undefined) sets.push(Prisma.sql`"name" = ${fields.name}`)
+  if (fields.nameOverridden !== undefined) sets.push(Prisma.sql`"name_overridden" = ${fields.nameOverridden}`)
   if (fields.controlType !== undefined) sets.push(Prisma.sql`"control_type" = ${fields.controlType}`)
   if (fields.position !== undefined) sets.push(Prisma.sql`"position" = ${fields.position}`)
   if (fields.requiresPreviousOption !== undefined) sets.push(Prisma.sql`"requires_previous_option" = ${fields.requiresPreviousOption}`)

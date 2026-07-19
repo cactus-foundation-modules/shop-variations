@@ -231,11 +231,18 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   async function addOption() {
     if (!newOptionName.trim()) return
     const values = newOptionValues.split(',').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }))
-    setBusy(true)
-    await fetch(`/api/m/shop-variations/admin/products/${productId}/options`, {
+    setBusy(true); setOptionError(null); setRefreshNote(null)
+    const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/options`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newOptionName.trim(), controlType: newOptionType, values }),
     })
+    // A refused name (a duplicate, say) leaves the boxes as they were, so the
+    // owner can edit what they typed rather than type the whole lot again.
+    if (!res.ok) {
+      setOptionError((await res.json().catch(() => ({}))).error ?? 'Could not add that option.')
+      setBusy(false)
+      return
+    }
     setNewOptionName(''); setNewOptionValues(''); setNewOptionType('DROPDOWN')
     await refresh(); setBusy(false)
   }
@@ -637,7 +644,7 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
         {pickerOpen && (
           <OptionSourcePicker
             providers={sourceProviders}
-            existingNames={data.options.map((o) => o.name.toLowerCase())}
+            existingOptions={data.options.map((o) => ({ name: o.name, sourceProvider: o.sourceProvider, sourceRef: o.sourceRef }))}
             onCancel={() => setPickerOpen(false)}
             onConfirm={addOptionFromSource}
           />

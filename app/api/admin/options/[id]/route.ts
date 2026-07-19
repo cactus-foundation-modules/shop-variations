@@ -29,7 +29,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
-  await updateOption(id, { ...parsed.data, ...(name !== undefined ? { name } : {}) })
+  // A rename here is always the owner's own choice, so it counts as an override:
+  // a later refresh stops offering the source's name back, and the same source
+  // can sit on the product twice under two different names.
+  await updateOption(id, {
+    ...parsed.data,
+    ...(name !== undefined ? { name, nameOverridden: true } : {}),
+  })
   return NextResponse.json({ ok: true })
 }
 

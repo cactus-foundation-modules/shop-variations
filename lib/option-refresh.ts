@@ -31,7 +31,11 @@ export type OptionRefreshResult = {
    * because variants may depend on them - the owner decides what to do.
    */
   stale: string[]
-  /** True when the source's own name no longer matches the option's name. */
+  /**
+   * True when the source's own name no longer matches the option's name AND the
+   * owner has not deliberately renamed it. A renamed option stays quiet: with one
+   * source added to a product twice, the difference is the whole point.
+   */
   nameDiffers: boolean
   /** The source's current name, for the UI to offer as a rename. */
   sourceName: string
@@ -100,7 +104,7 @@ export async function refreshOptionFromSource(
     added,
     updated,
     stale,
-    nameDiffers: source.name !== option.name,
+    nameDiffers: !option.nameOverridden && source.name !== option.name,
     sourceName: source.name,
   }
 }

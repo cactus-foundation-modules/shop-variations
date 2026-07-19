@@ -24,6 +24,12 @@ export type SvrOption = {
   // null on a hand-made option. Set together or not at all.
   sourceProvider: string | null
   sourceRef: string | null
+  // True when the name above was chosen by the owner rather than inherited from
+  // the source. One source can be added to a product more than once (a frame
+  // colour and a seat colour off one Colour attribute), and since names must be
+  // unique per product all but one of those copies is renamed - so a refresh
+  // must stop offering the source's name back once this is set.
+  nameOverridden: boolean
 }
 
 export type SvrOptionValue = {

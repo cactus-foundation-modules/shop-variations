@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     -- provider understands. Both null for a hand-made option. See 004.
     "source_provider" TEXT,
     "source_ref" TEXT,
+    -- True once the owner has given this option a name of their own instead of
+    -- the source's. A refresh then stops offering the source's name, and the same
+    -- source can sit on a product twice under two names. See 005.
+    "name_overridden" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,

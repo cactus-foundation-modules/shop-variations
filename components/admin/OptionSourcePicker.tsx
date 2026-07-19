@@ -10,6 +10,12 @@ import type { SvrControlType } from '@/modules/shop-variations/lib/types'
 //
 // This component knows nothing about attributes. Everything it renders comes
 // from /admin/option-sources, so a second source module needs no change here.
+//
+// One source may be added to the same product more than once - a chair whose
+// frame and seat both come off the one Colour attribute. Options must still have
+// unique names on a product, so every copy after the first has to be renamed
+// here before it can be added. That is the whole mechanism: the name field, not
+// a separate mode.
 
 export type PickerValue = { ref: string; label: string; swatch: string | null }
 export type PickerSource = {
@@ -36,10 +42,13 @@ const CONTROL_OPTIONS: { value: SvrControlType; label: string }[] = [
   { value: 'IMAGE', label: 'Image swatch' },
 ]
 
-export function OptionSourcePicker({ providers, existingNames, onCancel, onConfirm }: {
+/** An option already on the product, so the picker can spot clashes and repeats. */
+export type ExistingOption = { name: string; sourceProvider: string | null; sourceRef: string | null }
+
+export function OptionSourcePicker({ providers, existingOptions, onCancel, onConfirm }: {
   providers: PickerProvider[]
-  /** Option names already on this product, lower-cased, so a clash is caught before the request. */
-  existingNames: string[]
+  /** Options already on this product, so a name clash is caught before the request and a repeat source is announced. */
+  existingOptions: ExistingOption[]
   onCancel: () => void
   onConfirm: (selection: OptionSourceSelection) => Promise<void>
 }) {
@@ -58,11 +67,33 @@ export function OptionSourcePicker({ providers, existingNames, onCancel, onConfi
     return () => window.removeEventListener('keydown', onKey)
   }, [onCancel, saving])
 
+  const existingNames = useMemo(
+    () => existingOptions.map((o) => o.name.toLowerCase()),
+    [existingOptions],
+  )
+
+  /** The names this product already gives a source, so a repeat can say so. */
+  const namesUsedFor = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const option of existingOptions) {
+      if (!option.sourceProvider || !option.sourceRef) continue
+      const key = `${option.sourceProvider}|${option.sourceRef}`
+      map.set(key, [...(map.get(key) ?? []), option.name])
+    }
+    return map
+  }, [existingOptions])
+
+  const alreadyUsedAs = (providerId: string, ref: string) => namesUsedFor.get(`${providerId}|${ref}`) ?? []
+
   function choose(providerId: string, source: PickerSource) {
     setChosen({ providerId, source })
     // Pre-fill the name from the source and tick everything: bringing the whole
     // list across is the common case, and unticking a few beats ticking twenty.
-    setName(source.name)
+    // When the source's own name is already spoken for on this product - usually
+    // because this is the second helping of the same attribute - the field starts
+    // empty instead, since a name of its own is the one thing this copy needs and
+    // pre-filling one that cannot be used only invites a click that fails.
+    setName(existingNames.includes(source.name.trim().toLowerCase()) ? '' : source.name)
     setControlType(source.suggestedControlType)
     setTicked(new Set(source.values.map((v) => v.ref)))
     setError(null)
@@ -128,24 +159,36 @@ export function OptionSourcePicker({ providers, existingNames, onCancel, onConfi
                     {groupLabel && (
                       <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{groupLabel}</span>
                     )}
-                    {sources.map((source) => (
-                      <button
-                        key={source.ref}
-                        type="button"
-                        onClick={() => choose(provider.id, source)}
-                        style={{
-                          textAlign: 'left', display: 'flex', justifyContent: 'space-between', gap: '0.75rem',
-                          alignItems: 'center', padding: '0.5rem 0.75rem', background: 'var(--color-bg-subtle)',
-                          border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
-                          color: 'var(--color-text)', cursor: 'pointer',
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>{source.name}</span>
-                        <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                          {source.values.length} {source.values.length === 1 ? 'value' : 'values'}
-                        </span>
-                      </button>
-                    ))}
+                    {sources.map((source) => {
+                      // Already on this product? Say so and carry on offering it -
+                      // a product can want the same list twice under two names.
+                      const used = alreadyUsedAs(provider.id, source.ref)
+                      return (
+                        <button
+                          key={source.ref}
+                          type="button"
+                          onClick={() => choose(provider.id, source)}
+                          style={{
+                            textAlign: 'left', display: 'flex', justifyContent: 'space-between', gap: '0.75rem',
+                            alignItems: 'center', padding: '0.5rem 0.75rem', background: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+                            color: 'var(--color-text)', cursor: 'pointer',
+                          }}
+                        >
+                          <span style={{ display: 'grid', gap: '0.125rem' }}>
+                            <span style={{ fontWeight: 500 }}>{source.name}</span>
+                            {used.length > 0 && (
+                              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                                Already added as {used.map((n) => `"${n}"`).join(', ')}
+                              </span>
+                            )}
+                          </span>
+                          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                            {source.values.length} {source.values.length === 1 ? 'value' : 'values'}
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 ))}
               </div>
@@ -163,8 +206,12 @@ export function OptionSourcePicker({ providers, existingNames, onCancel, onConfi
                     borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text)',
                   }}
                 />
-                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                  Starts as the source&apos;s own name. Change it and this product keeps your version, refresh or no refresh.
+                <span style={{ fontSize: '0.8125rem', color: nameClashes ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                  {nameClashes
+                    ? `This product already has an option called "${name.trim()}". Give this one a name of its own.`
+                    : alreadyUsedAs(chosen.providerId, chosen.source.ref).length > 0
+                      ? `Already on this product as ${alreadyUsedAs(chosen.providerId, chosen.source.ref).map((n) => `"${n}"`).join(', ')}, so this one needs a name of its own - "Seat colour", say.`
+                      : 'Starts as the source’s own name. Change it and this product keeps your version, refresh or no refresh.'}
                 </span>
               </label>
 
@@ -227,7 +274,7 @@ export function OptionSourcePicker({ providers, existingNames, onCancel, onConfi
           )}
           <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} disabled={saving}>Cancel</button>
           {chosen && (
-            <button type="button" className="btn btn-primary btn-sm" onClick={confirm} disabled={saving || ticked.size === 0 || !name.trim()}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={confirm} disabled={saving || ticked.size === 0 || !name.trim() || nameClashes}>
               {saving ? 'Adding...' : 'Add option'}
             </button>
           )}
