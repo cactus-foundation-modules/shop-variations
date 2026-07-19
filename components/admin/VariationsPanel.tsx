@@ -79,6 +79,9 @@ export type VariantColumn = {
 }
 
 const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch' }
+// One order for both the add-an-option box and the per-option picker, so the list
+// never reads differently depending on where the owner meets it.
+const CONTROL_ORDER: Option['controlType'][] = ['DROPDOWN', 'PILL', 'SWATCH', 'IMAGE']
 
 const DEFAULT_SWATCH = '#000000'
 
@@ -277,6 +280,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
 
   const renameOption = (id: string, name: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { name }, 'Could not rename that option.')
   const setRequiresPrevious = (id: string, requiresPreviousOption: boolean) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { requiresPreviousOption }, 'Could not change that setting.')
+  // Values keep whatever colour or picture they were given, so switching a colour
+  // swatch to pills and back does not throw the swatches away. Values that have
+  // none yet simply show as plain buttons until the owner fills them in, which is
+  // the same thing a brand-new swatch option does.
+  const setControlType = (id: string, controlType: Option['controlType']) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { controlType }, 'Could not change how that option is shown.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
@@ -627,7 +635,21 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <InlineRename value={opt.name} ariaLabel={`Rename option ${opt.name}`} onSave={(name) => renameOption(opt.id, name)} disabled={busy} inputWidth={160} textStyle={{ fontWeight: 600 }} />
                   </span>
                   <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{CONTROL_LABELS[opt.controlType]}</span>
+                    {/* How this option is shown to a shopper, changeable after the
+                        fact: an owner who set up Size as a dropdown and later
+                        wants pills should not have to delete and retype it. */}
+                    <select
+                      aria-label={`How ${opt.name} is shown`}
+                      title="How shoppers pick this option"
+                      value={opt.controlType}
+                      disabled={busy}
+                      onChange={(e) => setControlType(opt.id, e.target.value as Option['controlType'])}
+                      style={{ ...input, width: 150, fontSize: '0.8125rem', padding: '0.25rem 0.5rem' }}
+                    >
+                      {CONTROL_ORDER.map((ct) => (
+                        <option key={ct} value={ct}>{CONTROL_LABELS[ct]}</option>
+                      ))}
+                    </select>
                     {/* Only an option built from a source can be refreshed against
                         one, and only while the module that supplied it is still
                         installed and offering it. */}
@@ -731,11 +753,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
           <strong style={{ fontSize: '0.875rem' }}>Add an option</strong>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input placeholder="Name, e.g. Size" value={newOptionName} onChange={(e) => setNewOptionName(e.target.value)} style={{ ...input, width: 160 }} />
-            <select value={newOptionType} onChange={(e) => setNewOptionType(e.target.value as Option['controlType'])} style={{ ...input, width: 150 }}>
-              <option value="DROPDOWN">Dropdown</option>
-              <option value="PILL">Pills</option>
-              <option value="SWATCH">Colour swatch</option>
-              <option value="IMAGE">Image swatch</option>
+            <select aria-label="How the new option is shown" value={newOptionType} onChange={(e) => setNewOptionType(e.target.value as Option['controlType'])} style={{ ...input, width: 150 }}>
+              {CONTROL_ORDER.map((ct) => (
+                <option key={ct} value={ct}>{CONTROL_LABELS[ct]}</option>
+              ))}
             </select>
             <input placeholder="Values, separated by commas: S, M, L" value={newOptionValues} onChange={(e) => setNewOptionValues(e.target.value)} style={{ ...input, flex: 1, minWidth: 200 }} />
             <button type="button" className="btn btn-primary btn-sm" onClick={addOption} disabled={busy || !newOptionName.trim()}>Add option</button>
