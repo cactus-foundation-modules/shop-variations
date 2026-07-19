@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
+import { useAlert, usePrompt } from '@/modules/shop/components/admin/dialogs'
 import { uploadOneFile } from '@/lib/media/upload-client'
 import { preflightUploadError } from '@/lib/media/limits'
 import {
@@ -120,6 +121,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   supplierField?: { label: string } | null
 }) {
   const currency = useProductEditorCurrency()
+  const [promptText, promptNode] = usePrompt()
+  const [showAlert, alertNode] = useAlert()
+  // Enabled names from the shop's supplier directory. Only fetched when the
+  // supplier column is on, so a shop that never asked for it pays nothing.
+  const [supplierOptions, setSupplierOptions] = useState<string[]>([])
   const priceFields = useMemo(
     () => OPTIONAL_PRICE_FIELDS.filter((p) => enabledPriceTypes.includes(p.type)),
     [enabledPriceTypes],
@@ -524,6 +530,44 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     return (edited === undefined ? v[key] : edited) as VariantRow[K]
   }, [edits])
 
+  // --- Suppliers -----------------------------------------------------------
+  // The directory is the shop's, not this module's, so both the list and the
+  // "add a new one" call go to the shop's own endpoint.
+  const loadSuppliers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/m/shop/admin/suppliers?for=picker')
+      if (!res.ok) return
+      const payload = await res.json()
+      if (Array.isArray(payload.suppliers)) setSupplierOptions(payload.suppliers.map((s: { name: string }) => s.name))
+    } catch {
+      // The column falls back to whatever each variation already has.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supplierField) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs in an async callback after an await, never synchronously in the effect body
+    void loadSuppliers()
+  }, [supplierField, loadSuppliers])
+
+  const chooseSupplier = useCallback(async (variantId: string, value: string) => {
+    if (value !== ADD_NEW_SUPPLIER) {
+      editVariant(variantId, { supplier: value || null })
+      return
+    }
+    const name = (await promptText({ title: `New ${supplierField?.label.toLowerCase() ?? 'supplier'}`, placeholder: 'e.g. Northern Clay Co.', confirmLabel: 'Add' }))?.trim()
+    if (!name) return
+    const res = await fetch('/api/m/shop/admin/suppliers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    })
+    if (!res.ok) {
+      await showAlert((await res.json().catch(() => ({}))).error ?? 'Could not add that supplier.', 'Could not add')
+      return
+    }
+    await loadSuppliers()
+    editVariant(variantId, { supplier: name })
+  }, [editVariant, loadSuppliers, promptText, showAlert, supplierField])
+
   function bulkSet(field: 'price' | 'stockCount', value: number) {
     if (!data) return
     setEdits((prev) => {
@@ -894,11 +938,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         </td>
                         {supplierField && (
                           <td style={{ padding: '0.5rem' }}>
-                            <input
-                              style={{ ...input, width: 140 }} placeholder={supplierField.label}
-                              aria-label={`${supplierField.label} for ${v.label}`}
+                            <SupplierCell
+                              label={supplierField.label}
+                              variantLabel={v.label}
                               value={valueOf(v, 'supplier') ?? ''}
-                              onChange={(e) => editVariant(v.variantId, { supplier: e.target.value || null })}
+                              options={supplierOptions}
+                              onChange={(next) => void chooseSupplier(v.variantId, next)}
                             />
                           </td>
                         )}
@@ -950,7 +995,48 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
       </section>
 
       <PersonalisationEditor productId={productId} addons={data.addons} currency={currency} onChange={refresh} />
+      {promptNode}
+      {alertNode}
     </div>
+  )
+}
+
+// Sentinel option value for "add a new one", picked so it can never collide with
+// a real supplier name (those are trimmed before they are saved).
+const ADD_NEW_SUPPLIER = ' add-new'
+
+// Matches the grid's own `input` style, which is scoped inside the panel.
+const supplierSelectStyle: CSSProperties = {
+  padding: '0.375rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)',
+  width: 160, background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.875rem',
+}
+
+/**
+ * The supplier picker in one variation's row. A supplier already saved against
+ * the variation but no longer offered - retired from the directory, or typed by
+ * hand before the directory existed - is added as an option of its own so
+ * opening the grid can never silently blank it.
+ */
+function SupplierCell({ label, variantLabel, value, options, onChange }: {
+  label: string
+  variantLabel: string
+  value: string
+  options: string[]
+  onChange: (next: string) => void
+}) {
+  const orphan = value && !options.includes(value) ? value : null
+  return (
+    <select
+      style={supplierSelectStyle}
+      aria-label={`${label} for ${variantLabel}`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Not recorded</option>
+      {orphan && <option value={orphan}>{orphan}</option>}
+      {options.map((name) => <option key={name} value={name}>{name}</option>)}
+      <option value={ADD_NEW_SUPPLIER}>Add a new {label.toLowerCase()}…</option>
+    </select>
   )
 }
 
