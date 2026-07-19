@@ -1,35 +1,123 @@
 {
   "name": "shop-variations",
-  "version": "0.1.48",
+  "version": "0.1.49",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
-    { "name": "shop", "minVersion": "0.1.52" }
+    {
+      "name": "shop",
+      "minVersion": "0.1.52"
+    }
   ],
   "permissions": [],
   "navGroupLabel": "Shop",
   "navEntries": [
-    { "label": "Product options", "path": "/m/shop-variations/products", "icon": "<line x1=\"4\" y1=\"21\" x2=\"4\" y2=\"14\"/><line x1=\"4\" y1=\"10\" x2=\"4\" y2=\"3\"/><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"3\"/><line x1=\"20\" y1=\"21\" x2=\"20\" y2=\"16\"/><line x1=\"20\" y1=\"12\" x2=\"20\" y2=\"3\"/><line x1=\"1\" y1=\"14\" x2=\"7\" y2=\"14\"/><line x1=\"9\" y1=\"8\" x2=\"15\" y2=\"8\"/><line x1=\"17\" y1=\"16\" x2=\"23\" y2=\"16\"/>", "permission": "shop.products" }
+    {
+      "label": "Product options",
+      "path": "/m/shop-variations/products",
+      "icon": "<line x1=\"4\" y1=\"21\" x2=\"4\" y2=\"14\"/><line x1=\"4\" y1=\"10\" x2=\"4\" y2=\"3\"/><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"3\"/><line x1=\"20\" y1=\"21\" x2=\"20\" y2=\"16\"/><line x1=\"20\" y1=\"12\" x2=\"20\" y2=\"3\"/><line x1=\"1\" y1=\"14\" x2=\"7\" y2=\"14\"/><line x1=\"9\" y1=\"8\" x2=\"15\" y2=\"8\"/><line x1=\"17\" y1=\"16\" x2=\"23\" y2=\"16\"/>",
+      "permission": "shop.products"
+    }
   ],
   "requiredEnvVars": [],
   "cookieCategories": [],
   "cronJobs": [
-    { "path": "/api/m/shop-variations/cron/cleanup-uploads", "schedule": "0 3 * * *" }
+    {
+      "path": "/api/m/shop-variations/cron/cleanup-uploads",
+      "schedule": "0 3 * * *"
+    }
   ],
   "extensionPoints": [
-    { "point": "shop.product-editor-sections", "id": "variations-inline", "label": "Variations", "order": 50, "permission": "shop.products", "import": "./components/admin/ProductVariationsSection", "component": "ProductVariationsSection" },
-    { "point": "shop.cart-line-resolver", "id": "variations-addons", "import": "./lib/line-resolver", "component": "resolveVariationLineMeta" },
-    { "point": "shop.product-detail-parts", "id": "variations-detail-parts", "import": "./lib/detail-parts-provider", "component": "shopVariationsDetailParts" },
-    { "point": "core.media-reference-rewriters", "id": "shop-variations", "import": "./lib/media-reference-rewriter", "component": "shopVariationsMediaReferenceRewriter" }
+    {
+      "point": "shop.product-editor-sections",
+      "id": "variations-inline",
+      "label": "Variations",
+      "order": 50,
+      "permission": "shop.products",
+      "import": "./components/admin/ProductVariationsSection",
+      "component": "ProductVariationsSection"
+    },
+    {
+      "point": "shop.cart-line-resolver",
+      "id": "variations-addons",
+      "import": "./lib/line-resolver",
+      "component": "resolveVariationLineMeta"
+    },
+    {
+      "point": "shop.product-detail-parts",
+      "id": "variations-detail-parts",
+      "import": "./lib/detail-parts-provider",
+      "component": "shopVariationsDetailParts"
+    },
+    {
+      "point": "core.media-reference-rewriters",
+      "id": "shop-variations",
+      "import": "./lib/media-reference-rewriter",
+      "component": "shopVariationsMediaReferenceRewriter"
+    }
   ],
   "puckBlocks": [
-    { "type": "ShopVariantPurchase", "import": "./components/puck/ShopVariantPurchase", "component": "shopVariantPurchasePuckComponent", "rscComponent": "shopVariantPurchasePuckRscComponent", "rscImport": "./components/puck/ShopVariantPurchase.rsc", "layoutTypes": ["shopProduct"] },
-    { "type": "ShopVariantOptions", "import": "./components/puck/variant-parts", "component": "shopVariantOptionsPuckComponent", "rscComponent": "shopVariantOptionsPuckRscComponent", "rscImport": "./components/puck/variant-parts.rsc", "layoutTypes": ["shopProductDetail"] },
-    { "type": "ShopVariantPersonalisation", "import": "./components/puck/variant-parts", "component": "shopVariantPersonalisationPuckComponent", "rscComponent": "shopVariantPersonalisationPuckRscComponent", "rscImport": "./components/puck/variant-parts.rsc", "layoutTypes": ["shopProductDetail"] },
-    { "type": "ShopVariantPrice", "import": "./components/puck/variant-parts", "component": "shopVariantPricePuckComponent", "rscComponent": "shopVariantPricePuckRscComponent", "rscImport": "./components/puck/variant-parts.rsc", "layoutTypes": ["shopProductDetail"] },
-    { "type": "ShopVariantAddToCart", "import": "./components/puck/variant-parts", "component": "shopVariantAddToCartPuckComponent", "rscComponent": "shopVariantAddToCartPuckRscComponent", "rscImport": "./components/puck/variant-parts.rsc", "layoutTypes": ["shopProductDetail"] },
-    { "type": "ShopVariantGallery", "import": "./components/puck/variant-parts", "component": "shopVariantGalleryPuckComponent", "rscComponent": "shopVariantGalleryPuckRscComponent", "rscImport": "./components/puck/variant-parts.rsc", "layoutTypes": ["shopProductDetail"] }
+    {
+      "type": "ShopVariantPurchase",
+      "import": "./components/puck/ShopVariantPurchase",
+      "component": "shopVariantPurchasePuckComponent",
+      "rscComponent": "shopVariantPurchasePuckRscComponent",
+      "rscImport": "./components/puck/ShopVariantPurchase.rsc",
+      "layoutTypes": [
+        "shopProduct"
+      ]
+    },
+    {
+      "type": "ShopVariantOptions",
+      "import": "./components/puck/variant-parts",
+      "component": "shopVariantOptionsPuckComponent",
+      "rscComponent": "shopVariantOptionsPuckRscComponent",
+      "rscImport": "./components/puck/variant-parts.rsc",
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
+    },
+    {
+      "type": "ShopVariantPersonalisation",
+      "import": "./components/puck/variant-parts",
+      "component": "shopVariantPersonalisationPuckComponent",
+      "rscComponent": "shopVariantPersonalisationPuckRscComponent",
+      "rscImport": "./components/puck/variant-parts.rsc",
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
+    },
+    {
+      "type": "ShopVariantPrice",
+      "import": "./components/puck/variant-parts",
+      "component": "shopVariantPricePuckComponent",
+      "rscComponent": "shopVariantPricePuckRscComponent",
+      "rscImport": "./components/puck/variant-parts.rsc",
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
+    },
+    {
+      "type": "ShopVariantAddToCart",
+      "import": "./components/puck/variant-parts",
+      "component": "shopVariantAddToCartPuckComponent",
+      "rscComponent": "shopVariantAddToCartPuckRscComponent",
+      "rscImport": "./components/puck/variant-parts.rsc",
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
+    },
+    {
+      "type": "ShopVariantGallery",
+      "import": "./components/puck/variant-parts",
+      "component": "shopVariantGalleryPuckComponent",
+      "rscComponent": "shopVariantGalleryPuckRscComponent",
+      "rscImport": "./components/puck/variant-parts.rsc",
+      "layoutTypes": [
+        "shopProductDetail"
+      ]
+    }
   ],
   "memberExtensions": {
     "activityTypes": [],

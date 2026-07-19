@@ -8,10 +8,19 @@ import {
   useProductEditorCurrency, useProductEditorSave, useProductEditorTabBadge,
 } from '@/modules/shop/components/admin/product-editor/context'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
+import {
+  OptionSourcePicker, type OptionSourceSelection, type PickerProvider,
+} from '@/modules/shop-variations/components/admin/OptionSourcePicker'
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 
-type OptionValue = { id: string; label: string; swatch: string | null; position: number }
-type Option = { id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean; values: OptionValue[] }
+type OptionValue = { id: string; label: string; swatch: string | null; position: number; sourceRef: string | null }
+type Option = {
+  id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean
+  // Set when the option was built from another module's source, which is what
+  // makes the Refresh button appear. Null on a hand-typed option.
+  sourceProvider: string | null; sourceRef: string | null
+  values: OptionValue[]
+}
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
   enabled: boolean; price: number; sku: string | null; barcode: string | null
@@ -180,6 +189,27 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
   const [newOptionType, setNewOptionType] = useState<Option['controlType']>('DROPDOWN')
   const [newOptionValues, setNewOptionValues] = useState('')
 
+  // Modules offering ready-made options (attributes, say). Fetched once: the
+  // list decides whether the "Add from" button is worth showing at all, so it is
+  // needed before the dialog is ever opened. An empty list hides the button, and
+  // a failed fetch is treated the same - the typed-in route still works.
+  const [sourceProviders, setSourceProviders] = useState<PickerProvider[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [refreshNote, setRefreshNote] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/m/shop-variations/admin/option-sources')
+      .then((res) => (res.ok ? res.json() : { providers: [] }))
+      .then((json) => { if (!cancelled) setSourceProviders(json.providers ?? []) })
+      .catch(() => { /* no sources on offer; the button simply stays hidden */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const sourceButtonLabel = sourceProviders.length === 1 && sourceProviders[0]
+    ? `Add from ${sourceProviders[0].label.toLowerCase()}`
+    : 'Add from a source'
+
   async function patchAndRefresh(url: string, patch: Record<string, string | boolean | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
@@ -207,6 +237,48 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
       body: JSON.stringify({ name: newOptionName.trim(), controlType: newOptionType, values }),
     })
     setNewOptionName(''); setNewOptionValues(''); setNewOptionType('DROPDOWN')
+    await refresh(); setBusy(false)
+  }
+
+  // Build an option from a source module's ready-made list. Only the picked refs
+  // and the (possibly overridden) name travel; the server re-reads the labels and
+  // swatches from the source itself.
+  async function addOptionFromSource(selection: OptionSourceSelection) {
+    setBusy(true); setOptionError(null); setRefreshNote(null)
+    const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/options`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: selection.name,
+        controlType: selection.controlType,
+        source: { provider: selection.provider, ref: selection.ref, valueRefs: selection.valueRefs },
+      }),
+    })
+    if (!res.ok) {
+      setBusy(false)
+      throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not add that option.')
+    }
+    setPickerOpen(false)
+    await refresh(); setBusy(false)
+  }
+
+  // Re-read a sourced option from the module that supplied it. Nothing is ever
+  // deleted, so the result is reported rather than silently applied - a value the
+  // source has dropped stays put (variants may depend on it) and is called out.
+  async function refreshOption(option: Option) {
+    setBusy(true); setOptionError(null); setRefreshNote(null)
+    const res = await fetch(`/api/m/shop-variations/admin/options/${option.id}/refresh`, { method: 'POST' })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setOptionError(json.error ?? 'Could not refresh that option.')
+      setBusy(false)
+      return
+    }
+    const parts: string[] = []
+    if (json.added) parts.push(`${json.added} value${json.added === 1 ? '' : 's'} added`)
+    if (json.updated) parts.push(`${json.updated} updated`)
+    if (json.stale?.length) parts.push(`${json.stale.join(', ')} no longer in the source (kept)`)
+    if (json.nameDiffers) parts.push(`the source now calls this "${json.sourceName}"`)
+    setRefreshNote(parts.length > 0 ? `${option.name}: ${parts.join('; ')}.` : `${option.name} was already up to date.`)
     await refresh(); setBusy(false)
   }
 
@@ -460,6 +532,20 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                   </span>
                   <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{CONTROL_LABELS[opt.controlType]}</span>
+                    {/* Only an option built from a source can be refreshed against
+                        one, and only while the module that supplied it is still
+                        installed and offering it. */}
+                    {opt.sourceProvider && sourceProviders.some((p) => p.id === opt.sourceProvider) && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => refreshOption(opt)}
+                        disabled={busy}
+                        title="Bring in new values and pick up any renames from the source. Nothing is removed."
+                      >
+                        Refresh
+                      </button>
+                    )}
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
@@ -530,7 +616,32 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
             <input placeholder="Values, separated by commas: S, M, L" value={newOptionValues} onChange={(e) => setNewOptionValues(e.target.value)} style={{ ...input, flex: 1, minWidth: 200 }} />
             <button type="button" className="btn btn-primary btn-sm" onClick={addOption} disabled={busy || !newOptionName.trim()}>Add option</button>
           </div>
+          {/* Hidden entirely when no module offers ready-made options, so a plain
+              variations install looks exactly as it did. */}
+          {sourceProviders.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                Or reuse a list you have already set up:
+              </span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPickerOpen(true)} disabled={busy}>
+                {sourceButtonLabel}
+              </button>
+            </div>
+          )}
         </div>
+
+        {refreshNote && (
+          <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }} role="status">{refreshNote}</p>
+        )}
+
+        {pickerOpen && (
+          <OptionSourcePicker
+            providers={sourceProviders}
+            existingNames={data.options.map((o) => o.name.toLowerCase())}
+            onCancel={() => setPickerOpen(false)}
+            onConfirm={addOptionFromSource}
+          />
+        )}
       </section>
 
       <section className="spe-section">

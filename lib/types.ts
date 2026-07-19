@@ -19,6 +19,11 @@ export type SvrOption = {
   // (in display order) has a value chosen. Dormant on the first option, which
   // has nothing before it - see isOptionVisible in selection-logic.ts.
   requiresPreviousOption: boolean
+  // Where the option came from when it was not typed by hand: the extension-point
+  // provider that supplied it and that provider's own ref for the source. Both
+  // null on a hand-made option. Set together or not at all.
+  sourceProvider: string | null
+  sourceRef: string | null
 }
 
 export type SvrOptionValue = {
@@ -30,6 +35,9 @@ export type SvrOptionValue = {
   // has given one to yet - both of those render as the bare label.
   swatch: string | null
   position: number
+  // The source value this one was copied from, opaque here. Null on a value added
+  // by hand, which a refresh then leaves alone.
+  sourceRef: string | null
 }
 
 export type SvrOptionWithValues = SvrOption & { values: SvrOptionValue[] }

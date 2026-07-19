@@ -19,6 +19,11 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     -- it (by position) has a value chosen, so dependent options reveal in order.
     -- Dormant on the first option, which has nothing before it to wait on.
     "requires_previous_option" BOOLEAN NOT NULL DEFAULT false,
+    -- Where this option was built from, when it was not typed by hand: the id of
+    -- the extension-point provider that supplied it, plus an opaque ref only that
+    -- provider understands. Both null for a hand-made option. See 004.
+    "source_provider" TEXT,
+    "source_ref" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,
@@ -34,10 +39,14 @@ CREATE TABLE IF NOT EXISTS "svr_option_values" (
     "label" TEXT NOT NULL,
     "swatch" TEXT,
     "position" INTEGER NOT NULL DEFAULT 0,
+    -- The source value this one was copied from, opaque to this module. Null for
+    -- a hand-added value, which a refresh then leaves alone. See 004.
+    "source_ref" TEXT,
     CONSTRAINT "svr_option_values_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_option_values_option_id_fkey" FOREIGN KEY ("option_id") REFERENCES "svr_options"("id") ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS "svr_option_values_option_id_idx" ON "svr_option_values" ("option_id");
+CREATE INDEX IF NOT EXISTS "svr_option_values_source_ref_idx" ON "svr_option_values" ("option_id", "source_ref");
 
 -- One concrete combination of option values, mapped to the hidden child
 -- shp_products row that carries its price/SKU/stock/weight/image.

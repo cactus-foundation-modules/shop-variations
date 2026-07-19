@@ -10,6 +10,8 @@ function mapOption(r: Record<string, unknown>): SvrOption {
     controlType: r.control_type as SvrControlType,
     position: r.position as number,
     requiresPreviousOption: (r.requires_previous_option as boolean | null) ?? false,
+    sourceProvider: (r.source_provider as string | null) ?? null,
+    sourceRef: (r.source_ref as string | null) ?? null,
   }
 }
 
@@ -20,6 +22,7 @@ function mapValue(r: Record<string, unknown>): SvrOptionValue {
     label: r.label as string,
     swatch: (r.swatch as string | null) ?? null,
     position: r.position as number,
+    sourceRef: (r.source_ref as string | null) ?? null,
   }
 }
 
@@ -38,13 +41,33 @@ export async function getOptionsWithValues(productId: string): Promise<SvrOption
   return options.map((o) => ({ ...o, values: values.filter((v) => v.optionId === o.id) }))
 }
 
-export async function createOption(productId: string, name: string, controlType: SvrControlType, position: number): Promise<{ id: string }> {
+export async function createOption(
+  productId: string,
+  name: string,
+  controlType: SvrControlType,
+  position: number,
+  source?: { provider: string; ref: string } | null,
+): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
-    INSERT INTO "svr_options" ("product_id", "name", "control_type", "position")
-    VALUES (${productId}, ${name}, ${controlType}, ${position})
+    INSERT INTO "svr_options" ("product_id", "name", "control_type", "position", "source_provider", "source_ref")
+    VALUES (${productId}, ${name}, ${controlType}, ${position}, ${source?.provider ?? null}, ${source?.ref ?? null})
     RETURNING "id"
   `
   return rows[0]
+}
+
+// A single option with its values, for the refresh path which needs to know what
+// it already holds before deciding what to add, rename or leave be.
+export async function getOptionWithValues(id: string): Promise<SvrOptionWithValues | null> {
+  const optionRows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_options" WHERE "id" = ${id} LIMIT 1
+  `
+  const optionRow = optionRows[0]
+  if (!optionRow) return null
+  const valueRows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_option_values" WHERE "option_id" = ${id} ORDER BY "position" ASC
+  `
+  return { ...mapOption(optionRow), values: valueRows.map(mapValue) }
 }
 
 export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean }): Promise<void> {
@@ -103,10 +126,16 @@ export async function optionValueLabelTaken(optionId: string, label: string, exc
   return rows.length > 0
 }
 
-export async function createOptionValue(optionId: string, label: string, swatch: string | null, position: number): Promise<{ id: string }> {
+export async function createOptionValue(
+  optionId: string,
+  label: string,
+  swatch: string | null,
+  position: number,
+  sourceRef?: string | null,
+): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
-    INSERT INTO "svr_option_values" ("option_id", "label", "swatch", "position")
-    VALUES (${optionId}, ${label}, ${swatch}, ${position})
+    INSERT INTO "svr_option_values" ("option_id", "label", "swatch", "position", "source_ref")
+    VALUES (${optionId}, ${label}, ${swatch}, ${position}, ${sourceRef ?? null})
     RETURNING "id"
   `
   return rows[0]
