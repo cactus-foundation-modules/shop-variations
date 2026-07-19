@@ -14,6 +14,7 @@ import {
   VariantSlotGallery,
   VariantSlotPrice,
   VariantSlotPurchase,
+  VariantSlotSupplierValue,
 } from '@/modules/shop-variations/components/public/DetailSlotParts'
 import type { ShopDetailPartsProvider, ShopDetailSlotName } from '@/modules/shop/lib/detail-slot'
 import type { ShpProduct } from '@/modules/shop/lib/types'
@@ -60,4 +61,8 @@ export const shopVariationsDetailParts: ShopDetailPartsProvider = {
   Gallery: VariantSlotGallery,
   Price: VariantSlotPrice,
   PurchaseArea: VariantSlotPurchase,
+  // No coveredSlots entry: unlike the other three, shop still renders the
+  // Specification row itself (label, table markup) - this only ever swaps the
+  // value cell, so there is no block-placement case where it would double up.
+  SupplierValue: VariantSlotSupplierValue,
 }

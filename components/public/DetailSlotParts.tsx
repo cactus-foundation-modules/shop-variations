@@ -19,11 +19,13 @@ import {
   VariantSlotGalleryClient,
   VariantSlotPriceClient,
   VariantSlotPurchaseClient,
+  VariantSlotSupplierValueClient,
 } from '@/modules/shop-variations/components/public/DetailSlotPartsClient'
 import type {
   ShopDetailGallerySlotProps,
   ShopDetailPriceSlotProps,
   ShopDetailPurchaseSlotProps,
+  ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 
 export async function VariantSlotGallery(props: ShopDetailGallerySlotProps) {
@@ -39,4 +41,9 @@ export async function VariantSlotPrice(props: ShopDetailPriceSlotProps) {
 export async function VariantSlotPurchase(props: ShopDetailPurchaseSlotProps) {
   const initial = await getVariationBootstrap(props.slug)
   return <VariantSlotPurchaseClient {...props} initial={initial} />
+}
+
+export async function VariantSlotSupplierValue(props: ShopDetailSupplierValueSlotProps) {
+  const initial = await getVariationBootstrap(props.slug)
+  return <VariantSlotSupplierValueClient {...props} initial={initial} />
 }

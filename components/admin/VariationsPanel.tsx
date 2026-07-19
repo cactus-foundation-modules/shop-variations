@@ -23,7 +23,7 @@ type Option = {
 }
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
-  enabled: boolean; price: number; sku: string | null; barcode: string | null
+  enabled: boolean; price: number; sku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
 }
@@ -36,7 +36,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'
 >>
 
 /**
@@ -105,7 +105,7 @@ function normaliseHex(raw: string): string | null {
  * fields, so they are held locally and written by the product editor's own Save
  * button alongside everything else.
  */
-export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [], weightBasedShippingEnabled = true }: {
+export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [], weightBasedShippingEnabled = true, supplierField = null }: {
   productId: string
   columns?: VariantColumn[]
   /** Which optional price types this shop has switched on, from Shop settings. */
@@ -113,6 +113,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   /** Whether the shop prices postage by weight, from Tax & shipping. Off drops
    * the weight column; per-variant weights already saved are left untouched. */
   weightBasedShippingEnabled?: boolean
+  /** Set when the shop records a supplier and has asked for the field on
+   * variations as well as products, carrying whatever the shop calls it. Null
+   * drops the column; suppliers already saved against a variation are left
+   * untouched, so switching it back on gets them back. */
+  supplierField?: { label: string } | null
 }) {
   const currency = useProductEditorCurrency()
   const priceFields = useMemo(
@@ -819,6 +824,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <th style={{ padding: '0.5rem' }}>Price</th>
                     {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
+                    {supplierField && <th style={{ padding: '0.5rem' }}>{supplierField.label}</th>}
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
@@ -886,6 +892,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             onChange={(e) => editVariant(v.variantId, { sku: e.target.value || null })}
                           />
                         </td>
+                        {supplierField && (
+                          <td style={{ padding: '0.5rem' }}>
+                            <input
+                              style={{ ...input, width: 140 }} placeholder={supplierField.label}
+                              aria-label={`${supplierField.label} for ${v.label}`}
+                              value={valueOf(v, 'supplier') ?? ''}
+                              onChange={(e) => editVariant(v.variantId, { supplier: e.target.value || null })}
+                            />
+                          </td>
+                        )}
                         <td style={{ padding: '0.5rem' }}>
                           <input
                             type="number" step="1" style={numInput} placeholder="—"

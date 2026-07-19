@@ -62,7 +62,7 @@ export async function exportVariationsCsv(): Promise<string> {
 
   const optionCols: string[] = []
   for (let i = 0; i < maxOptions; i++) optionCols.push(`Option ${i + 1}`, `Value ${i + 1}`)
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Weight', 'Image', ...fieldHeaderOrder])]
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -80,7 +80,7 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
+        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         ...fieldCells,
       ]))
     }
@@ -131,7 +131,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase())
   const slugCol = idx('Parent Slug')
   if (slugCol < 0) { result.errors.push({ row: 1, reason: 'Missing "Parent Slug" column' }); return result }
-  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), weightCol = idx('Weight'), imageCol = idx('Image')
+  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), supplierCol = idx('Supplier'), weightCol = idx('Weight'), imageCol = idx('Image')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
   for (let i = 1; ; i++) {
@@ -255,6 +255,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
           price: priceCol >= 0 ? num(gr.cols[priceCol]) : undefined,
           sku: skuCol >= 0 ? (gr.cols[skuCol]?.trim() || null) : undefined,
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
+          supplier: supplierCol >= 0 ? (gr.cols[supplierCol]?.trim() || null) : undefined,
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
         }, upsertCtx)

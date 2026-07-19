@@ -305,6 +305,7 @@ type ChildRow = {
   out_of_stock_behaviour: string
   is_pre_order: boolean
   sku: string | null
+  supplier: string | null
 }
 
 // Everything the storefront selector needs in one payload: option controls,
@@ -318,7 +319,14 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // an ordinary product - so the figure below goes through shop's effectivePrice
   // rather than reading the child's `price` column raw, which is what used to
   // advertise the full price on a variant that was on offer.
-  const { enabledPriceTypes } = await getShopConfigCached()
+  const config = await getShopConfigCached()
+  const { enabledPriceTypes } = config
+  // The child row is queried regardless (it's one extra column on a query that
+  // already runs), but is only ever handed to a shopper when the shop has both
+  // switched the field on for variations AND agreed to show it - otherwise a
+  // supplier kept as a private buying reference would leak through this public
+  // payload even with the storefront row switched off.
+  const exposeSupplier = config.supplierFieldEnabled && config.supplierShowOnFrontend && config.supplierFieldScope === 'PRODUCTS_AND_VARIATIONS'
 
   const [options, variants, valueMap, addons, baseMedia] = await Promise.all([
     getOptionsWithValues(parentId),
@@ -333,7 +341,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku"
+      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "supplier"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -372,6 +380,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       stockCount: tracks ? stockCount : null,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
       sku: child?.sku ?? null,
+      supplier: exposeSupplier ? child?.supplier ?? null : null,
     }
   })
 
@@ -449,6 +458,9 @@ export type VariantEditorRow = {
   costPrice: number | null
   sku: string | null
   barcode: string | null
+  // Who supplied this particular variation. Offered in the grid only when the
+  // shop has switched the supplier field on for variations as well as products.
+  supplier: string | null
   trackInventory: boolean
   stockCount: number | null
   weight: number | null
@@ -472,6 +484,7 @@ function optionalPrice(value: unknown): number | null {
 
 type ChildEditRow = ChildRow & {
   barcode: string | null
+  supplier: string | null
   weight: unknown
   retail_price: unknown
   trade_price: unknown
@@ -501,7 +514,7 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildEditRow[]>`
       SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-             "sku", "barcode", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
+             "sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -535,6 +548,7 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
       costPrice: optionalPrice(child?.cost_price),
       sku: child?.sku ?? null,
       barcode: child?.barcode ?? null,
+      supplier: child?.supplier ?? null,
       trackInventory: child?.track_inventory ?? false,
       stockCount: child?.stock_count ?? null,
       weight: child?.weight != null ? Number(child.weight) : null,
@@ -574,7 +588,7 @@ export async function upsertVariantForCombination(
   parentId: string,
   optionValueIds: string[],
   valueLabels: string[],
-  fields: { price?: number; sku?: string | null; barcode?: string | null; stockCount?: number | null; weight?: number | null },
+  fields: { price?: number; sku?: string | null; barcode?: string | null; supplier?: string | null; stockCount?: number | null; weight?: number | null },
   ctx?: VariantUpsertContext,
 ): Promise<{ variantId: string; childProductId: string; created: boolean; changed: boolean }> {
   const parent = ctx?.parent ?? await getProductById(parentId)
@@ -628,6 +642,7 @@ export async function upsertVariantForCombination(
       || (fields.price !== undefined && Number(currentChild.price) !== fields.price)
       || (fields.sku !== undefined && (currentChild.sku ?? null) !== (fields.sku ?? null))
       || (fields.barcode !== undefined && (currentChild.barcode ?? null) !== (fields.barcode ?? null))
+      || (fields.supplier !== undefined && (currentChild.supplier ?? null) !== (fields.supplier ?? null))
       || (fields.stockCount !== undefined && currentChild.stockCount !== fields.stockCount)
       || (fields.weight !== undefined && (currentChild.weight == null ? null : Number(currentChild.weight)) !== fields.weight)
   }
@@ -637,6 +652,7 @@ export async function upsertVariantForCombination(
       ...(fields.price !== undefined ? { price: fields.price } : {}),
       ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
       ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
+      ...(fields.supplier !== undefined ? { supplier: fields.supplier } : {}),
       ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
       ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
     }

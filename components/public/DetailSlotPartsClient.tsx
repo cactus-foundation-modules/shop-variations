@@ -24,6 +24,7 @@ import type {
   ShopDetailGallerySlotProps,
   ShopDetailPriceSlotProps,
   ShopDetailPurchaseSlotProps,
+  ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
 import { AddonControl, OptionControl, ResetOptionsLink } from '@/modules/shop-variations/components/public/VariantParts'
@@ -271,6 +272,17 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
       <ResetOptionsLink sel={sel} />
     </div>
   )
+}
+
+// ---- Supplier (Specification tab) -----------------------------------------
+// The row's label and table markup are shop's own; this only ever swaps the
+// value cell. `fallback` is the parent's own supplier, already gated server-side
+// on the same settings this reads client-side - a chosen variant without one of
+// its own falls back to it, exactly as an unclaimed part of the page would.
+export function VariantSlotSupplierValueClient({ slug, fallback, initial }: Seeded<ShopDetailSupplierValueSlotProps>) {
+  const sel = useVariationSelection(slug, initial)
+  if (sel.loaded && sel.payload && sel.variant?.supplier) return <>{sel.variant.supplier}</>
+  return <>{fallback}</>
 }
 
 // ---- Purchase area -------------------------------------------------------

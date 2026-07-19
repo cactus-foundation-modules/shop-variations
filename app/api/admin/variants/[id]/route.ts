@@ -16,6 +16,7 @@ const Body = z.object({
   costPrice: z.number().nonnegative().nullable().optional(),
   sku: z.string().max(120).nullable().optional(),
   barcode: z.string().max(120).nullable().optional(),
+  supplier: z.string().max(200).nullable().optional(),
   trackInventory: z.boolean().optional(),
   stockCount: z.number().int().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
@@ -48,6 +49,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (data.costPrice !== undefined) productFields.costPrice = data.costPrice
   if (data.sku !== undefined) productFields.sku = data.sku
   if (data.barcode !== undefined) productFields.barcode = data.barcode
+  if (data.supplier !== undefined) productFields.supplier = data.supplier
   if (data.trackInventory !== undefined) productFields.trackInventory = data.trackInventory
   if (data.stockCount !== undefined) productFields.stockCount = data.stockCount
   if (data.weight !== undefined) productFields.weight = data.weight

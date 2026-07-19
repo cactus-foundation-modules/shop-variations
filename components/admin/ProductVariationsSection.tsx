@@ -1,5 +1,5 @@
 import { getProductById } from '@/modules/shop/lib/db'
-import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { getShopConfigCached, resolveSupplierLabel } from '@/modules/shop/lib/config'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { prisma } from '@/lib/db/prisma'
@@ -110,6 +110,11 @@ export async function ProductVariationsSection({ productId }: { productId: strin
       columns={[...staticColumns, ...fieldColumns]}
       enabledPriceTypes={config.enabledPriceTypes}
       weightBasedShippingEnabled={config.weightBasedShippingEnabled}
+      supplierField={
+        config.supplierFieldEnabled && config.supplierFieldScope === 'PRODUCTS_AND_VARIATIONS'
+          ? { label: resolveSupplierLabel(config) }
+          : null
+      }
     />
   )
 }

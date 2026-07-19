@@ -129,6 +129,9 @@ export type VariantSelectorVariant = {
   // snaps to when the combination is chosen, the rest join the thumbnail strip.
   imageUrls: string[]
   sku: string | null
+  // Null means this variation has none of its own, in which case the parent's
+  // supplier (already the fallback shown before any choice is made) stands.
+  supplier: string | null
 }
 
 export type VariantSelectorPayload = {

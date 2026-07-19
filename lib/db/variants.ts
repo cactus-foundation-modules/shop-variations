@@ -28,6 +28,7 @@ export type ChildProductFields = {
   price: number
   sku: string | null
   barcode: string | null
+  supplier: string | null
   stockCount: number | null
   weight: number | null
 }
@@ -35,8 +36,8 @@ export type ChildProductFields = {
 export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
   const map = new Map<string, ChildProductFields>()
   if (childProductIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sku: string | null; barcode: string | null; stock_count: number | null; weight: unknown }[]>`
-    SELECT "id", "price", "sku", "barcode", "stock_count", "weight"
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
+    SELECT "id", "price", "sku", "barcode", "supplier", "stock_count", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
   `
   for (const r of rows) {
@@ -44,6 +45,7 @@ export async function getChildProductFields(childProductIds: string[]): Promise<
       price: Number(r.price),
       sku: r.sku ?? null,
       barcode: r.barcode ?? null,
+      supplier: r.supplier ?? null,
       stockCount: r.stock_count == null ? null : Number(r.stock_count),
       weight: r.weight == null ? null : Number(r.weight),
     })
