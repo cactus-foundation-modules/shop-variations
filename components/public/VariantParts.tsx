@@ -462,7 +462,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
         /* eslint-disable-next-line @next/next/no-img-element */
         <img src={main} alt={sel.payload.productName} style={{ width: '100%', borderRadius: 10, objectFit: 'cover', aspectRatio: '1 / 1', border: '1px solid var(--color-border)' }} />
       ) : null}
-      {thumbs.length + extras.length > 1 && (
+      {thumbs.length + extras.length > 1 ? (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Contributed media (a 3D model, say) leads the strip, so the richer
               view sits first rather than trailing behind the photos - it is also
@@ -485,6 +485,25 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
             </button>
           ))}
         </div>
+      ) : (
+        // A lone contributed item still has to mount: unlike a lone photo (already
+        // showing via `main`, no click required), a lone extra's stage only ever
+        // appears once its Thumbs component's own effect calls onPick - that is
+        // where "lead with the model" lives (see Gallery3dThumbs). No picker is
+        // needed with nothing to pick between, so it mounts invisibly rather than
+        // inside the visible strip.
+        extras.map((extra) => (
+          <div key={extra.id} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+            <extra.Thumbs
+              payload={extra.payload}
+              activeProductId={activeProductId}
+              activeKey={picked?.id === extra.id ? picked.key : null}
+              onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
+              thumbClass="svr-gallery-thumb"
+              thumbOnClass="svr-gallery-thumb on"
+            />
+          </div>
+        ))
       )}
     </div>
   )

@@ -192,7 +192,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
         ) : null}
       </div>
       {/* One image plus one contributed item is still two things to pick between. */}
-      {thumbs.length + extras.length > 1 && (
+      {thumbs.length + extras.length > 1 ? (
         // Shop's strip wrapper, wearing the strip class shop handed us. Replacing
         // shop's gallery meant we were quietly opting out of it: shop scopes the
         // arrows and edge fades to the wrapper, and we rendered .spd-thumbs
@@ -232,6 +232,28 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
             </button>
           ))}
         </GalleryThumbStrip>
+      ) : (
+        // A lone contributed item still has to mount: unlike a lone photo (already
+        // showing via `main`, no click required), a lone extra's stage only ever
+        // appears once its Thumbs component's own effect calls onPick - that is
+        // where "lead with the model" lives (see Gallery3dThumbs). No picker is
+        // needed with nothing to pick between, so it mounts invisibly rather than
+        // inside the visible strip.
+        extras.map((extra) => (
+          <div key={extra.id} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+            <extra.Thumbs
+              payload={extra.payload}
+              activeProductId={activeProductId}
+              activeKey={picked?.id === extra.id ? picked.key : null}
+              onPick={(key) => {
+                setPicked(key === null ? null : { id: extra.id, key })
+                setTapped(false)
+              }}
+              thumbClass={classNames.thumb}
+              thumbOnClass={classNames.thumbOn}
+            />
+          </div>
+        ))
       )}
       </div>
       {/* Holds the gallery's place in the flow while the column is pinned, so
