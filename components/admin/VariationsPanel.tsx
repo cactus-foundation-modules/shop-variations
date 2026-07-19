@@ -210,6 +210,29 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
     ? `Add from ${sourceProviders[0].label.toLowerCase()}`
     : 'Add from a source'
 
+  // What an option was built from, resolved for display. An option stores only
+  // its provider id and an opaque ref, so the readable name has to come from the
+  // fetched provider list - which is already loaded for the picker, so this costs
+  // no extra request.
+  //
+  // Worth showing because the option's own name need not match the source's: one
+  // attribute can be added to a product twice under names of its own ("Seat
+  // colour", "Back colour"), and without this the shared origin is invisible.
+  //
+  // Three outcomes, deliberately distinct:
+  //   provider missing -> null, and nothing is rendered. The module is gone or
+  //     the user may not use it; naming a source we cannot verify would be a guess.
+  //   provider found, ref not -> the source itself has been deleted. Said out
+  //     loud, because otherwise the only way to find out is to press Refresh.
+  //   both found -> the source is named.
+  function describeSource(opt: Option): { providerLabel: string; sourceName: string | null; groupLabel: string | null } | null {
+    if (!opt.sourceProvider || !opt.sourceRef) return null
+    const provider = sourceProviders.find((p) => p.id === opt.sourceProvider)
+    if (!provider) return null
+    const source = provider.sources.find((s) => s.ref === opt.sourceRef)
+    return { providerLabel: provider.label, sourceName: source?.name ?? null, groupLabel: source?.groupLabel ?? null }
+  }
+
   async function patchAndRefresh(url: string, patch: Record<string, string | boolean | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
@@ -302,6 +325,42 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label: label.trim(), swatch: swatch || null }),
     })
+    await refresh(); setBusy(false)
+  }
+
+  // Values the option's source offers that it has not taken yet. Computed from
+  // the already-fetched provider list, so the picker opens without a round trip.
+  // Empty when the option is hand-typed, the module is gone, or the source has
+  // nothing left to give - each of which hides the button.
+  function unusedSourceValues(opt: Option): { ref: string; label: string; swatch: string | null }[] {
+    if (!opt.sourceProvider || !opt.sourceRef) return []
+    const source = sourceProviders
+      .find((p) => p.id === opt.sourceProvider)
+      ?.sources.find((s) => s.ref === opt.sourceRef)
+    if (!source) return []
+    const taken = new Set(opt.values.map((v) => v.sourceRef).filter(Boolean))
+    return source.values.filter((v) => !taken.has(v.ref))
+  }
+
+  // Only the refs are sent: the server reads the labels and swatches back from
+  // the source itself, so what lands in the database is what the source says.
+  async function addValuesFromSource(optionId: string, valueRefs: string[]) {
+    setBusy(true); setOptionError(null); setRefreshNote(null)
+    const res = await fetch(`/api/m/shop-variations/admin/options/${optionId}/values`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueRefs }),
+    })
+    if (!res.ok) {
+      setOptionError((await res.json().catch(() => ({}))).error ?? 'Could not add those values.')
+      setBusy(false)
+      return
+    }
+    // A partial result is worth saying out loud - a value skipped for clashing
+    // with a hand-typed one looks like a silent failure otherwise.
+    const json = (await res.json().catch(() => ({}))) as { added?: number; skipped?: string[] }
+    if (json.skipped?.length) {
+      setRefreshNote(`Added ${json.added ?? 0}. Left out ${json.skipped.join(', ')} - this option already has a value by that name.`)
+    }
     await refresh(); setBusy(false)
   }
 
@@ -556,6 +615,26 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => deleteOption(opt.id)} disabled={busy}>Remove</button>
                   </span>
                 </div>
+                {/* Where the option's values came from. Sits under the name rather
+                    than beside it so a long attribute name cannot squeeze the
+                    rename field on a narrow screen. */}
+                {(() => {
+                  const source = describeSource(opt)
+                  if (!source) return null
+                  return (
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                      {source.sourceName ? (
+                        <>
+                          From {source.providerLabel.toLowerCase()}:{' '}
+                          <span style={{ fontWeight: 600 }}>{source.sourceName}</span>
+                          {source.groupLabel ? ` (${source.groupLabel})` : ''}
+                        </>
+                      ) : (
+                        <>Built from {source.providerLabel.toLowerCase()}, but that source no longer exists.</>
+                      )}
+                    </p>
+                  )
+                })()}
                 {/* Only the second option onward can wait on the ones before it;
                     the first has nothing above it to wait for. When ticked it
                     stays hidden until every option above it has been chosen, not
@@ -604,6 +683,14 @@ export function VariationsPanel({ productId, columns = [] }: { productId: string
                     </span>
                   ))}
                   <AddValueInline optionId={opt.id} isSwatch={opt.controlType === 'SWATCH'} onAdd={addValue} disabled={busy} />
+                  {/* Sits beside the type-it-in field rather than replacing it:
+                      a sourced option can still take a one-off value of its own. */}
+                  <AddFromSourceInline
+                    optionId={opt.id}
+                    available={unusedSourceValues(opt)}
+                    onAdd={addValuesFromSource}
+                    disabled={busy}
+                  />
                 </div>
               </div>
             ))}
@@ -1139,6 +1226,92 @@ function AddValueInline({ optionId, isSwatch, onAdd, disabled }: {
       )}
       <button type="button" className="btn btn-secondary btn-sm" onClick={add} disabled={!canAdd}>+</button>
     </span>
+  )
+}
+
+// Pick more values from the option's own source. Renders nothing when the source
+// has none left to offer, which is the common resting state - the button appearing
+// is itself the signal that the attribute has grown since this option was built.
+//
+// A tick list rather than a straight "add them all" because that is what Refresh
+// already does. The point here is choosing: a chair sold in four of an attribute's
+// twenty-two colours wants four, not twenty-two.
+function AddFromSourceInline({ optionId, available, onAdd, disabled }: {
+  optionId: string
+  available: { ref: string; label: string; swatch: string | null }[]
+  onAdd: (optionId: string, valueRefs: string[]) => void | Promise<void>
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [ticked, setTicked] = useState<Set<string>>(new Set())
+
+  if (available.length === 0) return null
+
+  function toggle(ref: string) {
+    setTicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(ref)) next.delete(ref); else next.add(ref)
+      return next
+    })
+  }
+
+  function close() { setOpen(false); setTicked(new Set()) }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title="Take more values from the attribute this option came from."
+      >
+        Add from source ({available.length})
+      </button>
+    )
+  }
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+        padding: '0.5rem 0.75rem', display: 'grid', gap: '0.5rem',
+        background: 'var(--color-bg)', width: '100%', marginTop: '0.25rem',
+      }}
+    >
+      <strong style={{ fontSize: '0.8125rem' }}>Add from the source</strong>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: 180, overflowY: 'auto' }}>
+        {available.map((v) => (
+          <label
+            key={v.ref}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              fontSize: '0.8125rem', border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)', padding: '0.25rem 0.5rem', cursor: 'pointer',
+            }}
+          >
+            <input type="checkbox" checked={ticked.has(v.ref)} onChange={() => toggle(v.ref)} disabled={disabled} />
+            {/* Hex swatches show as a dot; picture swatches are urls and would
+                not survive being crammed into one, so they stay as labels. */}
+            {v.swatch?.startsWith('#') && (
+              <span aria-hidden style={{ width: 12, height: 12, borderRadius: 'var(--radius-full)', background: v.swatch, border: '1px solid var(--color-border)' }} />
+            )}
+            {v.label}
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={disabled || ticked.size === 0}
+          onClick={async () => { const refs = [...ticked]; close(); await onAdd(optionId, refs) }}
+        >
+          Add {ticked.size > 0 ? ticked.size : ''}
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={close} disabled={disabled}>Cancel</button>
+      </div>
+    </div>
   )
 }
 
