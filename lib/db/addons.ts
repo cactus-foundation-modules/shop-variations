@@ -27,6 +27,24 @@ export async function getAddons(productId: string): Promise<SvrAddon[]> {
   return rows.map(mapAddon)
 }
 
+// Same as getAddons, for every product in one go - one query instead of one per
+// product. Used where a caller needs several parents' worth at once (a Pull's
+// preview/deletion planner), which used to call the per-product version in a loop.
+export async function getAddonsForProducts(productIds: string[]): Promise<Map<string, SvrAddon[]>> {
+  const map = new Map<string, SvrAddon[]>()
+  if (productIds.length === 0) return map
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_addons" WHERE "product_id" IN (${Prisma.join(productIds)}) ORDER BY "position" ASC, "created_at" ASC
+  `
+  for (const r of rows) {
+    const a = mapAddon(r)
+    const list = map.get(a.productId) ?? []
+    list.push(a)
+    map.set(a.productId, list)
+  }
+  return map
+}
+
 export async function createAddon(
   productId: string,
   data: { type: SvrAddonType; label: string; required: boolean; position: number; config: SvrAddonConfig },

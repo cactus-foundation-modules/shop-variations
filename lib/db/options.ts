@@ -42,6 +42,37 @@ export async function getOptionsWithValues(productId: string): Promise<SvrOption
   return options.map((o) => ({ ...o, values: values.filter((v) => v.optionId === o.id) }))
 }
 
+// Same as getOptionsWithValues, for every product in one go - two queries total
+// instead of two per product. Used where a caller needs several parents' worth
+// at once (a Pull's preview/deletion planner), which used to call the per-product
+// version in a loop.
+export async function getOptionsWithValuesForProducts(productIds: string[]): Promise<Map<string, SvrOptionWithValues[]>> {
+  const map = new Map<string, SvrOptionWithValues[]>()
+  if (productIds.length === 0) return map
+  const optionRows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_options" WHERE "product_id" IN (${Prisma.join(productIds)}) ORDER BY "position" ASC, "created_at" ASC
+  `
+  const options = optionRows.map(mapOption)
+  if (options.length === 0) return map
+  const valueRows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_option_values" WHERE "option_id" IN (${Prisma.join(options.map((o) => o.id))})
+    ORDER BY "position" ASC
+  `
+  const values = valueRows.map(mapValue)
+  const valuesByOption = new Map<string, SvrOptionValue[]>()
+  for (const v of values) {
+    const list = valuesByOption.get(v.optionId) ?? []
+    list.push(v)
+    valuesByOption.set(v.optionId, list)
+  }
+  for (const o of options) {
+    const list = map.get(o.productId) ?? []
+    list.push({ ...o, values: valuesByOption.get(o.id) ?? [] })
+    map.set(o.productId, list)
+  }
+  return map
+}
+
 export async function createOption(
   productId: string,
   name: string,

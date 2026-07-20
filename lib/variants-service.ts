@@ -8,9 +8,9 @@ import { createProduct, updateProduct, deleteProduct, getProductById, getProduct
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
-import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
-import { getVariants, getVariantValueMap, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
-import { getAddons } from '@/modules/shop-variations/lib/db/addons'
+import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
+import { getVariants, getVariantValueMap, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
+import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
 import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
 // Stable key for a combination: its option-value ids, sorted, joined. Two
@@ -491,45 +491,23 @@ type ChildEditRow = ChildRow & {
   cost_price: unknown
 }
 
-// Everything the deep-dive editor renders: options + values, the bulk grid rows
-// with full child fields, and the personalisation add-ons.
-export async function getEditorPayload(parentId: string): Promise<EditorPayload | null> {
-  const parent = await getProductById(parentId)
-  if (!parent) return null
+type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string }
 
-  const [options, variants, valueMap, addons] = await Promise.all([
-    getOptionsWithValues(parentId),
-    getVariants(parentId),
-    getVariantValueMap(parentId),
-    getAddons(parentId),
-  ])
-
+// Shared by getEditorPayload and getEditorPayloadsBatch: turns one parent's
+// already-fetched options/variants/value-map/addons plus the shared child-row
+// and child-image lookups into its EditorPayload.
+function buildEditorPayload(
+  parent: EditorPayloadParent,
+  options: SvrOptionWithValues[],
+  variants: Awaited<ReturnType<typeof getVariants>>,
+  valueMap: Record<string, string[]>,
+  addons: SvrAddon[],
+  childById: Map<string, ChildEditRow>,
+  imagesByChild: Map<string, string[]>,
+): EditorPayload {
   const labelByValueId = new Map<string, string>()
   const valueOptionOrder = new Map<string, number>()
   options.forEach((o, oi) => o.values.forEach((v) => { labelByValueId.set(v.id, v.label); valueOptionOrder.set(v.id, oi) }))
-
-  const childIds = variants.map((v) => v.childProductId)
-  const childById = new Map<string, ChildEditRow>()
-  const imagesByChild = new Map<string, string[]>()
-  if (childIds.length > 0) {
-    const childRows = await prisma.$queryRaw<ChildEditRow[]>`
-      SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-             "sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
-      FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
-    `
-    for (const r of childRows) childById.set(r.id, r)
-    const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
-      SELECT "product_id", "url"
-      FROM "shp_product_media"
-      WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
-      ORDER BY "product_id", "is_primary" DESC, "position" ASC
-    `
-    for (const r of mediaRows) {
-      const list = imagesByChild.get(r.product_id)
-      if (list) list.push(r.url)
-      else imagesByChild.set(r.product_id, [r.url])
-    }
-  }
 
   const rows: VariantEditorRow[] = variants.map((v) => {
     const child = childById.get(v.childProductId)
@@ -562,6 +540,85 @@ export async function getEditorPayload(parentId: string): Promise<EditorPayload 
     variants: rows,
     addons,
   }
+}
+
+// One parent's child rows + child images, keyed for buildEditorPayload.
+async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: Map<string, ChildEditRow>; imagesByChild: Map<string, string[]> }> {
+  const childById = new Map<string, ChildEditRow>()
+  const imagesByChild = new Map<string, string[]>()
+  if (childIds.length === 0) return { childById, imagesByChild }
+  const childRows = await prisma.$queryRaw<ChildEditRow[]>`
+    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
+           "sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
+    FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
+  `
+  for (const r of childRows) childById.set(r.id, r)
+  const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
+    SELECT "product_id", "url"
+    FROM "shp_product_media"
+    WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
+    ORDER BY "product_id", "is_primary" DESC, "position" ASC
+  `
+  for (const r of mediaRows) {
+    const list = imagesByChild.get(r.product_id)
+    if (list) list.push(r.url)
+    else imagesByChild.set(r.product_id, [r.url])
+  }
+  return { childById, imagesByChild }
+}
+
+// Everything the deep-dive editor renders: options + values, the bulk grid rows
+// with full child fields, and the personalisation add-ons.
+export async function getEditorPayload(parentId: string): Promise<EditorPayload | null> {
+  const parent = await getProductById(parentId)
+  if (!parent) return null
+
+  const [options, variants, valueMap, addons] = await Promise.all([
+    getOptionsWithValues(parentId),
+    getVariants(parentId),
+    getVariantValueMap(parentId),
+    getAddons(parentId),
+  ])
+
+  const { childById, imagesByChild } = await loadChildRowsAndImages(variants.map((v) => v.childProductId))
+  return buildEditorPayload(parent, options, variants, valueMap, addons, childById, imagesByChild)
+}
+
+// Batched EditorPayload for many parents at once - the options/variants/value-map/
+// addons queries and the child-row/child-image queries each run once for the
+// whole set, in place of calling getEditorPayload per parent. A Google-Sheet Pull
+// preview or deletion plan touches every parent product named in the sheet, so
+// the per-parent version turned a Pull over hundreds of products into hundreds of
+// round trips; this is the same data, fetched with `product_id IN (...)`/
+// `child_id IN (...)` instead of once per id.
+export async function getEditorPayloadsBatch(parents: EditorPayloadParent[]): Promise<Map<string, EditorPayload>> {
+  const map = new Map<string, EditorPayload>()
+  if (parents.length === 0) return map
+  const parentIds = parents.map((p) => p.id)
+
+  const [optionsByProduct, variantsByProduct, valueMapByProduct, addonsByProduct] = await Promise.all([
+    getOptionsWithValuesForProducts(parentIds),
+    getVariantsForProducts(parentIds),
+    getVariantValueMapForProducts(parentIds),
+    getAddonsForProducts(parentIds),
+  ])
+
+  const allChildIds = [...variantsByProduct.values()].flat().map((v) => v.childProductId)
+  const { childById, imagesByChild } = await loadChildRowsAndImages(allChildIds)
+
+  for (const parent of parents) {
+    map.set(parent.id, buildEditorPayload(
+      parent,
+      optionsByProduct.get(parent.id) ?? [],
+      variantsByProduct.get(parent.id) ?? [],
+      valueMapByProduct.get(parent.id) ?? {},
+      addonsByProduct.get(parent.id) ?? [],
+      childById,
+      imagesByChild,
+    ))
+  }
+
+  return map
 }
 
 // Create or update the single variant for a specific value combination (used by

@@ -53,6 +53,44 @@ export async function getChildProductFields(childProductIds: string[]): Promise<
   return map
 }
 
+// Same as getVariants, for every product in one go - one query instead of one
+// per product. Used where a caller needs several parents' worth at once (a
+// Pull's preview/deletion planner), which used to call the per-product version
+// in a loop.
+export async function getVariantsForProducts(productIds: string[]): Promise<Map<string, SvrVariant[]>> {
+  const map = new Map<string, SvrVariant[]>()
+  if (productIds.length === 0) return map
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_variants" WHERE "product_id" IN (${Prisma.join(productIds)}) ORDER BY "position" ASC, "created_at" ASC
+  `
+  for (const r of rows) {
+    const v = mapVariant(r)
+    const list = map.get(v.productId) ?? []
+    list.push(v)
+    map.set(v.productId, list)
+  }
+  return map
+}
+
+// Same as getVariantValueMap, for every product in one go, keyed by product id
+// then variant id.
+export async function getVariantValueMapForProducts(productIds: string[]): Promise<Map<string, Record<string, string[]>>> {
+  const map = new Map<string, Record<string, string[]>>()
+  if (productIds.length === 0) return map
+  const rows = await prisma.$queryRaw<{ product_id: string; variant_id: string; option_value_id: string }[]>`
+    SELECT v."product_id", vv."variant_id", vv."option_value_id"
+    FROM "svr_variant_values" vv
+    JOIN "svr_variants" v ON v."id" = vv."variant_id"
+    WHERE v."product_id" IN (${Prisma.join(productIds)})
+  `
+  for (const r of rows) {
+    const perProduct = map.get(r.product_id) ?? {}
+    ;(perProduct[r.variant_id] ??= []).push(r.option_value_id)
+    map.set(r.product_id, perProduct)
+  }
+  return map
+}
+
 export async function getVariantById(id: string): Promise<SvrVariant | null> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`SELECT * FROM "svr_variants" WHERE "id" = ${id} LIMIT 1`
   return rows[0] ? mapVariant(rows[0]) : null
