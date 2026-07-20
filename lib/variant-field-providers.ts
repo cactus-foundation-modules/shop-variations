@@ -64,6 +64,23 @@ export type VariantFieldProvider = {
    * parent (undefined when the provider has no `beginImport`).
    */
   applyImportedRow(productId: string, childProductId: string, row: Record<string, string>, ctx?: unknown): Promise<void>
+  /**
+   * Would `applyImportedRow` write anything for this row? Read-only: a preview
+   * calls this to count what an import would change, so it MUST NOT create,
+   * update or delete anything - including the lazily-created rows
+   * `applyImportedRow` is allowed to make (an attribute value for a label the
+   * vocabulary has not seen yet). A label with no existing value is a change,
+   * because applying the row would go on to create it.
+   *
+   * Optional and back-compatible: a provider without it is simply invisible to
+   * the preview, which is exactly what every provider was before this existed -
+   * a Google Sheet pull reported "nothing to update" for a changed 3D file or
+   * attribute cell, then went and changed it anyway.
+   *
+   * `ctx` is whatever `beginImport` returned for this parent, so a preview can
+   * preload once per parent exactly as the import does.
+   */
+  rowChanged?(productId: string, childProductId: string, row: Record<string, string>, ctx?: unknown): Promise<boolean>
   /** The admin grid cell. A client component that renders one column's control and saves itself. */
   Cell: ComponentType<VariantFieldCellProps>
 }
