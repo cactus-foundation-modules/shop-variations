@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
@@ -53,6 +53,14 @@ function Skeleton({ label }: { label: string }) {
 
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
+// A layout effect on the client, a plain effect on the server. The accordion's
+// auto-advance (below) must open the next section BEFORE the browser paints the
+// shopper's choice - a plain post-paint effect leaves one painted frame with the
+// next section still shut, which reads as a lag. useLayoutEffect commits it in
+// the same frame; the server swap keeps React from warning it does nothing there
+// (this subtree is server-rendered whenever the product was resolved server-side).
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
 // ---- Options -------------------------------------------------------------
 export type VariantOptionsPartProps = PartProps & {
   labelPlacement?: OptionLabelPlacement
@@ -103,11 +111,13 @@ export function VariantOptionsPart({
 // label here.
 //
 // Open/close state is the shopper's, seeded once from `initial` on mount. When a
-// choice opens the next section (`onSelect`), the move is deferred through
+// choice opens the next section (`onSelect`), the move is routed through
 // `pending`: the option that comes next may only be revealed by the very choice
 // that triggers this (the progressive reveal above), so we wait for the render
 // that choice causes and read the freshly-widened `options` list, rather than the
-// stale one we held when the click landed.
+// stale one we held when the click landed. That drain runs in a LAYOUT effect,
+// not a plain one, so the next section opens in the same paint as the choice -
+// a post-paint effect left a frame with it still shut, which read as a lag.
 function VariantOptionsAccordion({
   options, sel, initial, onSelect, swatchDisplay,
 }: {
@@ -128,11 +138,12 @@ function VariantOptionsAccordion({
   // for either.
   const autoNext = initial !== 'all' && onSelect !== 'none'
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!pending) return
     const idx = options.findIndex((o) => o.id === pending)
     const nextId = idx >= 0 ? options[idx + 1]?.id : undefined
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- draining a one-shot "a choice was made" signal after the reveal render, not deriving render state; the guard above makes it fire once per choice
+    // Draining a one-shot "a choice was made" signal after the reveal render, not
+    // deriving render state; the guard above makes it fire once per choice.
     setPending(null)
     if (idx < 0) return
     setOpenIds((prev) => {
