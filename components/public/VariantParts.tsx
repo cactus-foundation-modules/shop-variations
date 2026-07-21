@@ -149,29 +149,49 @@ function VariantOptionsAccordion({
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
       {options.map((option) => {
-        const open = openIds.has(option.id)
+        // How many of this option's values the shopper can still reach given the
+        // picks above it. A section with one or none has nothing left to decide -
+        // its single value is already auto-chosen upstream (withAutoSelected) - so
+        // it must not open, and offers no toggle: a header with a disclosure the
+        // shopper cannot usefully use is just noise. It goes back to a normal,
+        // openable section the moment an upstream change widens it past one again.
+        const availableCount = option.values.filter((v) => sel.isAvailable(option.id, v.id)).length
+        const collapsible = availableCount > 1
+        const open = collapsible && openIds.has(option.id)
         const chosenId = sel.optionValues[option.id]
         const chosenLabel = chosenId ? option.values.find((v) => v.id === chosenId)?.label ?? null : null
         const panelId = `svr-acc-${option.id}`
-        return (
-          <div key={option.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
-            <button
-              type="button" onClick={() => toggle(option.id)} aria-expanded={open} aria-controls={panelId}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
-                width: '100%', padding: '0.625rem 0.875rem', textAlign: 'left',
-                background: 'var(--color-surface)', border: 'none', cursor: 'pointer',
-                color: 'var(--color-text)', fontFamily: 'inherit',
-              }}
-            >
-              <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{option.name}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
+        const headerStyle = {
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
+          width: '100%', padding: '0.625rem 0.875rem', textAlign: 'left' as const,
+          background: 'var(--color-surface)', border: 'none',
+          color: 'var(--color-text)', fontFamily: 'inherit',
+        }
+        const headerInner = (
+          <>
+            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{option.name}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+              {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
+              {collapsible && (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-base, 0.15s)' }}>
                   <path d="M6 9l6 6 6-6" />
                 </svg>
-              </span>
-            </button>
+              )}
+            </span>
+          </>
+        )
+        return (
+          <div key={option.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
+            {collapsible ? (
+              <button
+                type="button" onClick={() => toggle(option.id)} aria-expanded={open} aria-controls={panelId}
+                style={{ ...headerStyle, cursor: 'pointer' }}
+              >
+                {headerInner}
+              </button>
+            ) : (
+              <div style={headerStyle}>{headerInner}</div>
+            )}
             {open && (
               <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)' }}>
                 <OptionControl
