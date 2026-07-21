@@ -21,6 +21,24 @@ type PartProps = { preview?: boolean; slug?: string | null; initial?: VariationB
 // columns where a stack of name-then-choices runs the page long.
 export type OptionLabelPlacement = 'above' | 'beside'
 
+// How the whole set of option pickers lays out. 'inline' is the long-standing look
+// (every option's choices on show at once); 'accordion' collapses each option into
+// its own expandable section, one heading per option.
+export type VariantDisplayMode = 'inline' | 'accordion'
+
+// Accordion only. Which sections are open when the page first loads.
+export type AccordionInitial = 'closed' | 'first' | 'all'
+
+// Accordion only, and only when the load state leaves a next section to open
+// (closed or first - moot under "all", which already has everything open). What
+// happens to the sections once a choice is made in one of them.
+export type AccordionOnSelect = 'none' | 'openNext' | 'openNextCloseCurrent'
+
+// How a colour/image choice draws itself. 'pill' is the long-standing look (a
+// pill carrying the swatch AND its name); 'swatchOnly' drops the name to a hover
+// tooltip and shows just the swatch or thumbnail.
+export type SwatchDisplay = 'pill' | 'swatchOnly'
+
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
 // block) or dropped independently (the granular Product Detail parts).
@@ -36,7 +54,17 @@ function Skeleton({ label }: { label: string }) {
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
 // ---- Options -------------------------------------------------------------
-export function VariantOptionsPart({ preview, slug: explicitSlug, initial, labelPlacement }: PartProps & { labelPlacement?: OptionLabelPlacement }) {
+export type VariantOptionsPartProps = PartProps & {
+  labelPlacement?: OptionLabelPlacement
+  displayMode?: VariantDisplayMode
+  accordionInitial?: AccordionInitial
+  accordionOnSelect?: AccordionOnSelect
+  swatchDisplay?: SwatchDisplay
+}
+export function VariantOptionsPart({
+  preview, slug: explicitSlug, initial, labelPlacement,
+  displayMode = 'inline', accordionInitial = 'closed', accordionOnSelect = 'openNext', swatchDisplay = 'pill',
+}: VariantOptionsPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   // The skeleton is the editor's placeholder and belongs nowhere near a shopper:
@@ -45,14 +73,149 @@ export function VariantOptionsPart({ preview, slug: explicitSlug, initial, label
   if (!slug || !sel.loaded) return null
   if (!sel.payload || sel.payload.options.length === 0) return null
 
+  // An option held back by the progressive reveal (isOptionVisible) is out of both
+  // layouts alike - the accordion never draws a heading for one the shopper isn't
+  // meant to have reached yet.
+  const visibleOptions = sel.payload.options.filter((_, index) => sel.isOptionVisible(index))
+  if (visibleOptions.length === 0) return null
+
   return (
     // The class marks the option pickers' extent for the pinned mobile gallery
     // (lib/use-sticky-mobile-gallery.ts); it carries no styling.
     <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem' }}>
-      {sel.payload.options.map((option, index) => (
-        sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} /> : null
-      ))}
+      {displayMode === 'accordion' ? (
+        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} />
+      ) : (
+        visibleOptions.map((option) => (
+          <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} />
+        ))
+      )}
     </div>
+  )
+}
+
+// The accordion layout: one collapsible section per option, its heading the option
+// name (and, once chosen, the picked value), its panel the same OptionControl the
+// inline layout uses - drawn with its own label hidden, because the heading is the
+// label here.
+//
+// Open/close state is the shopper's, seeded once from `initial` on mount. When a
+// choice opens the next section (`onSelect`), the move is deferred through
+// `pending`: the option that comes next may only be revealed by the very choice
+// that triggers this (the progressive reveal above), so we wait for the render
+// that choice causes and read the freshly-widened `options` list, rather than the
+// stale one we held when the click landed.
+function VariantOptionsAccordion({
+  options, sel, initial, onSelect, swatchDisplay,
+}: {
+  options: SvrOptionWithValues[]
+  sel: ReturnType<typeof useVariationSelection>
+  initial: AccordionInitial
+  onSelect: AccordionOnSelect
+  swatchDisplay: SwatchDisplay
+}) {
+  const [openIds, setOpenIds] = useState<Set<string>>(() => {
+    if (initial === 'all') return new Set(options.map((o) => o.id))
+    if (initial === 'first') return options[0] ? new Set([options[0].id]) : new Set<string>()
+    return new Set<string>()
+  })
+  const [pending, setPending] = useState<string | null>(null)
+  // The auto-advance is offered whenever there's a next section left to open -
+  // closed or first, not all (see the block's resolveFields) - so it's wired up
+  // for either.
+  const autoNext = initial !== 'all' && onSelect !== 'none'
+
+  useEffect(() => {
+    if (!pending) return
+    const idx = options.findIndex((o) => o.id === pending)
+    const nextId = idx >= 0 ? options[idx + 1]?.id : undefined
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- draining a one-shot "a choice was made" signal after the reveal render, not deriving render state; the guard above makes it fire once per choice
+    setPending(null)
+    if (idx < 0) return
+    setOpenIds((prev) => {
+      const s = new Set(prev)
+      if (onSelect === 'openNextCloseCurrent') s.delete(pending)
+      if (nextId) s.add(nextId)
+      return s
+    })
+  }, [pending, options, onSelect])
+
+  const toggle = (id: string) => setOpenIds((prev) => {
+    const s = new Set(prev)
+    if (s.has(id)) s.delete(id); else s.add(id)
+    return s
+  })
+
+  return (
+    <div style={{ display: 'grid', gap: '0.5rem' }}>
+      {options.map((option) => {
+        const open = openIds.has(option.id)
+        const chosenId = sel.optionValues[option.id]
+        const chosenLabel = chosenId ? option.values.find((v) => v.id === chosenId)?.label ?? null : null
+        const panelId = `svr-acc-${option.id}`
+        return (
+          <div key={option.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
+            <button
+              type="button" onClick={() => toggle(option.id)} aria-expanded={open} aria-controls={panelId}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
+                width: '100%', padding: '0.625rem 0.875rem', textAlign: 'left',
+                background: 'var(--color-surface)', border: 'none', cursor: 'pointer',
+                color: 'var(--color-text)', fontFamily: 'inherit',
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{option.name}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-base, 0.15s)' }}>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </span>
+            </button>
+            {open && (
+              <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)' }}>
+                <OptionControl
+                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay}
+                  onChoose={autoNext ? () => setPending(option.id) : undefined}
+                />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// A hover tooltip carrying an option value's name, for the swatch-only look where
+// the swatch has no visible label of its own. Matches the admin theme toggle's
+// tooltip (.theme-toggle-tip): a bordered surface chip above the swatch. Hover
+// only, in step with the image swatch's peek below; the value's name also rides
+// the button's `title` and `aria-label` so it is never hover-only for a keyboard
+// or screen-reader shopper.
+function ValueTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}
+    >
+      {children}
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 20, whiteSpace: 'nowrap', pointerEvents: 'none',
+            background: 'var(--color-surface)', color: 'var(--color-text)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm, 4px)',
+            boxShadow: 'var(--shadow-md)', padding: '2px 8px', fontSize: 'var(--text-xs, 0.75rem)',
+          }}
+        >
+          {label}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -81,7 +244,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, labelPlacement = 'above' }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement }) {
+export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -108,8 +271,11 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
   // Containment is `flow-root`, deliberately not `overflow: hidden`: the image
   // swatch's hover peek is absolutely positioned and escapes its button, and
   // hidden would clip it.
-  const beside = labelPlacement === 'beside'
-  const label = (
+  // In the accordion layout the heading already carries the name, so the control
+  // drops its own label - and with it the beside float, which has nothing to sit
+  // against.
+  const beside = !hideLabel && labelPlacement === 'beside'
+  const label = hideLabel ? null : (
     <span style={{
       fontWeight: 600, fontSize: '0.875rem', display: 'block',
       marginBottom: beside ? 0 : '0.375rem',
@@ -127,7 +293,7 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
       <label style={rowStyle}>
         {label}
         <select
-          value={chosen ?? ''} onChange={(e) => sel.setOption(option.id, e.target.value)}
+          value={chosen ?? ''} onChange={(e) => { sel.setOption(option.id, e.target.value); onChoose?.() }}
           style={{ padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', minWidth: 180, background: 'var(--color-surface)', color: 'var(--color-text)' }}
         >
           <option value="" disabled>Choose {option.name.toLowerCase()}</option>
@@ -174,11 +340,17 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
         {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
           const available = sel.isAvailable(option.id, v.id)
           const active = chosen === v.id
+          // Swatch-only drops the value's name to a hover tooltip and shows just
+          // the swatch or thumbnail - but only for a value that actually carries
+          // one. A colour/image value left blank keeps its text label rather than
+          // rendering an empty button nobody could tell apart.
+          const swatchOnly = swatchDisplay === 'swatchOnly' && (isSwatch || isImage) && !!v.swatch
           return (
             <button
               key={v.id} type="button" disabled={!available}
-              onClick={() => sel.setOption(option.id, v.id)}
+              onClick={() => { sel.setOption(option.id, v.id); onChoose?.() }}
               title={available ? v.label : unavailableTitle(v)}
+              aria-label={swatchOnly ? v.label : undefined}
               aria-pressed={active}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
@@ -203,9 +375,23 @@ export function OptionControl({ option, sel, labelPlacement = 'above' }: { optio
                 ...(beside ? { marginRight: '0.5rem', marginBottom: '0.5rem', verticalAlign: 'top' as const } : null),
               }}
             >
-              {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
-              {isImage && v.swatch && <ImageSwatchThumb src={v.swatch} />}
-              {v.label}
+              {swatchOnly ? (
+                // Swatch or thumbnail alone, its name in a hover tooltip. The image
+                // peek belongs to the pill look; here the tooltip is the one hover
+                // affordance, so a plain thumbnail stands in for ImageSwatchThumb.
+                <ValueTooltip label={v.label}>
+                  {isSwatch
+                    ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
+                    /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
+                    : <img src={v.swatch!} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />}
+                </ValueTooltip>
+              ) : (
+                <>
+                  {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
+                  {isImage && v.swatch && <ImageSwatchThumb src={v.swatch} />}
+                  {v.label}
+                </>
+              )}
             </button>
           )
         })}

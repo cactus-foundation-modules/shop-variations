@@ -33,7 +33,16 @@ async function bootstrapProps(): Promise<{ slug: string | null; initial: Awaited
 
 // --- Options ---
 export async function ShopVariantOptionsRsc(props: ShopVariantOptionsProps) {
-  return <VariantOptionsPart {...await bootstrapProps()} labelPlacement={props.labelPlacement} />
+  return (
+    <VariantOptionsPart
+      {...await bootstrapProps()}
+      labelPlacement={props.labelPlacement}
+      displayMode={props.displayMode}
+      accordionInitial={props.accordionInitial}
+      accordionOnSelect={props.accordionOnSelect}
+      swatchDisplay={props.swatchDisplay}
+    />
+  )
 }
 export const shopVariantOptionsPuckRscComponent = { ...shopVariantOptionsPuckComponent, render: ShopVariantOptionsRsc }
 
