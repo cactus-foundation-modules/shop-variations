@@ -32,9 +32,10 @@ import { useEffect, useRef, type RefObject } from 'react'
 export const STICKY_GALLERY_CLASS = 'svr-mstick'
 
 // Set on the page root while the compact strip is pinned, so shop's sticky tab
-// bar (which pins to the same spot under the header) can hide itself out of the
-// strip's way. The CSS that reads it lives beside the strip's own styling in
-// DetailSlotPartsClient, since both restyle shop's classes from this module.
+// bar (which pins to the same spot under the header, with the strip tucked
+// below it) stays painted above the strip while the two hand over. The CSS
+// that reads it lives beside the strip's own styling in DetailSlotPartsClient,
+// since both restyle shop's classes from this module.
 export const GALLERY_PINNED_CLASS = 'svr-gallery-pinned'
 
 // The option pickers mark themselves with this (VariantSlotPurchaseClient's
@@ -71,6 +72,15 @@ export function useStickyMobileGallery(enabled: boolean): {
       return Number.isFinite(v) ? v : 96
     }
 
+    // Shop's sticky tab bar publishes its measured height here (see
+    // ProductSectionTabs); the pinned strip sits below the bar, so every
+    // threshold that reasons about where the strip rests must add it on.
+    // 0 when the author didn't make the bar sticky.
+    const tabNavH = (): number => {
+      const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spd-tabnav-h'))
+      return Number.isFinite(v) ? v : 0
+    }
+
     const unpin = () => {
       pinned = false
       col.classList.remove(STICKY_GALLERY_CLASS)
@@ -98,7 +108,7 @@ export function useStickyMobileGallery(enabled: boolean): {
         if (pinned) unpin()
         return
       }
-      const h = headerH()
+      const h = headerH() + tabNavH()
       const stripH = compactH > 0 ? compactH : flow.width / 2 + 16
       // Pin while the gallery has scrolled up past where the compact strip sits,
       // and the options' end hasn't yet.

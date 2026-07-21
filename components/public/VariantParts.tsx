@@ -82,7 +82,10 @@ export function VariantOptionsPart({
   return (
     // The class marks the option pickers' extent for the pinned mobile gallery
     // (lib/use-sticky-mobile-gallery.ts); it carries no styling.
-    <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem' }}>
+    // data-spd-configure is shop's documented hook: its tab strip's Configure
+    // action scrolls here rather than to the buy button, and the scroll margin
+    // keeps the landing clear of the header and a sticky bar.
+    <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
       {displayMode === 'accordion' ? (
         <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} />
       ) : (

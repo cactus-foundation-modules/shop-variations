@@ -62,17 +62,19 @@ function pct(offset: number, size: number): string {
 // header keeps the strip tucked under itself.
 //
 // While the strip is pinned the hook marks the page root with
-// `svr-gallery-pinned`; that hides shop's own sticky tab bar, which pins to the
-// same spot under the header and would otherwise stack on top of (or peek out
-// below) this strip. It reappears when the strip lets go.
+// `svr-gallery-pinned`. Shop's sticky tab bar pins to the same spot under the
+// header, so the strip tucks itself BELOW the bar instead of under the header
+// alone: the bar publishes its measured height as --spd-tabnav-h (0 when the
+// author didn't make it sticky), and the strip's top adds it on. The pinned
+// root class keeps the bar painted above the strip while the two hand over.
 const stickyGalleryCss = `
-.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
+.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px));margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-stage{width:100%;min-width:0}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-wrap{display:contents}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/2;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumb{width:100%;height:100%}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-arrow,.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-fade{display:none}
-.svr-gallery-pinned .spd-tab-nav.sticky{visibility:hidden}
+.svr-gallery-pinned .spd-tab-nav.sticky{z-index:31}
 `
 
 // ---- Gallery -------------------------------------------------------------
@@ -353,7 +355,10 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
       {!optionsPlaced && sel.payload.options.length > 0 && (
         // The class marks the option pickers' extent for the pinned mobile
         // gallery (lib/use-sticky-mobile-gallery.ts); it carries no styling.
-        <div className={OPTIONS_AREA_CLASS} style={{ display: 'grid', gap: '1rem', marginTop: '18px' }}>
+        // data-spd-configure is shop's documented hook: its tab strip's
+        // Configure action scrolls here rather than to the buy button, and the
+        // scroll margin keeps the landing clear of the header and a sticky bar.
+        <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', marginTop: '18px', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
           {sel.payload.options.map((option, index) => (
             sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
           ))}
