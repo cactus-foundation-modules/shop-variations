@@ -48,9 +48,11 @@ function pct(offset: number, size: number): string {
 // outrank shop's equally-specific rules by coming later in the document - the
 // slot gallery always renders after shop's Gallery <style>.
 //
-// The stage takes the left half of the strip and the thumbnails the right, as a
-// two-across grid that borrows the stage's 1/1 ratio (so the halves stay level)
-// with rows each half its height - exactly four thumbnails show, and any beyond
+// The stage takes two-thirds of the strip's width and the thumbnails the
+// remaining third, as a single column of two so the picture the shopper is
+// configuring stays large on a phone. The thumb column borrows the stage's
+// height (aspect-ratio 1/2 against the 2:1 split leaves each of its two cells
+// square and level with the stage) - exactly two thumbnails show, and any beyond
 // that scroll vertically inside. The thumb-strip wrapper collapses to
 // display:contents so the same rules land whether the strip arrives wrapped
 // (thumbnails below) or bare (thumbnails beside); the sideways-scroll arrows
@@ -58,13 +60,19 @@ function pct(offset: number, size: number): string {
 // `left` and `width` arrive inline from the hook, sized to the slot the gallery
 // vacated; top tracks the measured live header height, so a shrink-on-scroll
 // header keeps the strip tucked under itself.
+//
+// While the strip is pinned the hook marks the page root with
+// `svr-gallery-pinned`; that hides shop's own sticky tab bar, which pins to the
+// same spot under the header and would otherwise stack on top of (or peek out
+// below) this strip. It reappears when the strip lets go.
 const stickyGalleryCss = `
-.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
+.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-stage{width:100%;min-width:0}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-wrap{display:contents}
-.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/1;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
+.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/2;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumb{width:100%;height:100%}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-arrow,.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-fade{display:none}
+.svr-gallery-pinned .spd-tab-nav.sticky{visibility:hidden}
 `
 
 // ---- Gallery -------------------------------------------------------------

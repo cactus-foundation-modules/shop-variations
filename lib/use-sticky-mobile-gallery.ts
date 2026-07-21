@@ -14,8 +14,9 @@
 // contract.
 //
 // Pinned, the column turns into a compact strip (CSS class `svr-mstick`,
-// emitted by VariantSlotGalleryClient): the stage at half width, the remaining
-// thumbnails beside it as a 2x2 grid that scrolls for any beyond four. The pin
+// emitted by VariantSlotGalleryClient): the stage large, taking most of the
+// width, with two of the remaining thumbnails stacked beside it and any beyond
+// those two scrolling within. The pin
 // starts when the normal gallery's bottom has scrolled up to where the compact
 // strip ends (so the swap reads as the gallery catching on the header rather
 // than popping in), and releases in both directions: scrolled back to the top
@@ -29,6 +30,12 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
 export const STICKY_GALLERY_CLASS = 'svr-mstick'
+
+// Set on the page root while the compact strip is pinned, so shop's sticky tab
+// bar (which pins to the same spot under the header) can hide itself out of the
+// strip's way. The CSS that reads it lives beside the strip's own styling in
+// DetailSlotPartsClient, since both restyle shop's classes from this module.
+export const GALLERY_PINNED_CLASS = 'svr-gallery-pinned'
 
 // The option pickers mark themselves with this (VariantSlotPurchaseClient's
 // inline options area and the granular ShopVariantOptions block both wear it),
@@ -67,6 +74,7 @@ export function useStickyMobileGallery(enabled: boolean): {
     const unpin = () => {
       pinned = false
       col.classList.remove(STICKY_GALLERY_CLASS)
+      document.documentElement.classList.remove(GALLERY_PINNED_CLASS)
       col.style.removeProperty('left')
       col.style.removeProperty('width')
       spacer.style.display = 'none'
@@ -100,6 +108,7 @@ export function useStickyMobileGallery(enabled: boolean): {
         spacer.style.height = `${flow.height}px`
         spacer.style.display = 'block'
         col.classList.add(STICKY_GALLERY_CLASS)
+        document.documentElement.classList.add(GALLERY_PINNED_CLASS)
       }
       if (pinned) {
         if (!shouldPin) {
