@@ -39,6 +39,13 @@ export type AccordionOnSelect = 'none' | 'openNext' | 'openNextCloseCurrent'
 // tooltip and shows just the swatch or thumbnail.
 export type SwatchDisplay = 'pill' | 'swatchOnly'
 
+// Whether hovering a colour/image choice pops a bigger look at it - the full
+// picture for an image value, a proper block of colour for a swatch value. Off
+// leaves the small swatch or thumbnail as the only thing on show. Independent of
+// SwatchDisplay: the swatch-only look still names the value on hover either way,
+// it just gains the picture above the name when previews are on.
+export type SwatchPreview = 'show' | 'hide'
+
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
 // block) or dropped independently (the granular Product Detail parts).
@@ -68,10 +75,12 @@ export type VariantOptionsPartProps = PartProps & {
   accordionInitial?: AccordionInitial
   accordionOnSelect?: AccordionOnSelect
   swatchDisplay?: SwatchDisplay
+  swatchPreview?: SwatchPreview
 }
 export function VariantOptionsPart({
   preview, slug: explicitSlug, initial, labelPlacement,
   displayMode = 'inline', accordionInitial = 'closed', accordionOnSelect = 'openNext', swatchDisplay = 'pill',
+  swatchPreview = 'show',
 }: VariantOptionsPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
@@ -95,10 +104,10 @@ export function VariantOptionsPart({
     // keeps the landing clear of the header and a sticky bar.
     <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
       {displayMode === 'accordion' ? (
-        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} />
+        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
       ) : (
         visibleOptions.map((option) => (
-          <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} />
+          <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
         ))
       )}
     </div>
@@ -119,13 +128,14 @@ export function VariantOptionsPart({
 // not a plain one, so the next section opens in the same paint as the choice -
 // a post-paint effect left a frame with it still shut, which read as a lag.
 function VariantOptionsAccordion({
-  options, sel, initial, onSelect, swatchDisplay,
+  options, sel, initial, onSelect, swatchDisplay, swatchPreview,
 }: {
   options: SvrOptionWithValues[]
   sel: ReturnType<typeof useVariationSelection>
   initial: AccordionInitial
   onSelect: AccordionOnSelect
   swatchDisplay: SwatchDisplay
+  swatchPreview: SwatchPreview
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
     if (initial === 'all') return new Set(options.map((o) => o.id))
@@ -180,6 +190,10 @@ function VariantOptionsAccordion({
           width: '100%', padding: '0.625rem 0.875rem', textAlign: 'left' as const,
           background: 'var(--color-surface)', border: 'none',
           color: 'var(--color-text)', fontFamily: 'inherit',
+          // The section no longer clips (see below), so the header rounds its own
+          // corners to sit inside the section's 1px border rather than leaning on
+          // an `overflow: hidden` to be trimmed.
+          borderRadius: open ? '7px 7px 0 0' : 7,
         }
         const headerInner = (
           <>
@@ -195,7 +209,13 @@ function VariantOptionsAccordion({
           </>
         )
         return (
-          <div key={option.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden' }}>
+          // Deliberately NOT `overflow: hidden`: a swatch's hover preview is
+          // absolutely positioned and pops above its button, so clipping the
+          // section sliced every preview off at the section's own border. The
+          // header and panel round their own corners instead (above/below), and
+          // the preview - being positioned, with its own z-index - paints over
+          // the sections around it.
+          <div key={option.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
             {collapsible ? (
               <button
                 type="button" onClick={() => toggle(option.id)} aria-expanded={open} aria-controls={panelId}
@@ -207,9 +227,9 @@ function VariantOptionsAccordion({
               <div style={headerStyle}>{headerInner}</div>
             )}
             {open && (
-              <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)' }}>
+              <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)', borderRadius: '0 0 7px 7px' }}>
                 <OptionControl
-                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay}
+                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay} swatchPreview={swatchPreview}
                   onChoose={autoNext ? () => setPending(option.id) : undefined}
                 />
               </div>
@@ -221,14 +241,19 @@ function VariantOptionsAccordion({
   )
 }
 
-// A hover tooltip carrying an option value's name, for the swatch-only look where
-// the swatch has no visible label of its own. Matches the admin theme toggle's
-// tooltip (.theme-toggle-tip): a bordered surface chip above the swatch. Hover
-// only, in step with the image swatch's peek below; the value's name also rides
-// the button's `title` and `aria-label` so it is never hover-only for a keyboard
-// or screen-reader shopper.
-function ValueTooltip({ label, children }: { label: string; children: React.ReactNode }) {
+// The one hover affordance a colour/image choice has: a bordered surface chip
+// above the swatch carrying a bigger look at the value (the full picture, or a
+// proper block of colour), its name, or both. The pill look already shows the
+// name, so it asks for the preview alone; the swatch-only look always asks for
+// the name and adds the preview above it when previews are on.
+//
+// With neither to show it gets out of the way entirely and renders the swatch on
+// its own - no listeners, no wrapper state. The name also rides the button's
+// `title` and `aria-label`, so it is never hover-only for a keyboard or screen
+// reader shopper.
+function ValuePeek({ label, preview, children }: { label?: string; preview?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  if (!label && !preview) return <>{children}</>
   return (
     <span
       style={{ position: 'relative', display: 'inline-flex' }}
@@ -241,16 +266,30 @@ function ValueTooltip({ label, children }: { label: string; children: React.Reac
           style={{
             position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
             zIndex: 20, whiteSpace: 'nowrap', pointerEvents: 'none',
+            display: 'grid', justifyItems: 'center', gap: preview && label ? 4 : 0,
             background: 'var(--color-surface)', color: 'var(--color-text)',
-            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm, 4px)',
-            boxShadow: 'var(--shadow-md)', padding: '2px 8px', fontSize: 'var(--text-xs, 0.75rem)',
+            border: '1px solid var(--color-border)', borderRadius: preview ? 8 : 'var(--radius-sm, 4px)',
+            boxShadow: preview ? 'var(--shadow-lg)' : 'var(--shadow-md)',
+            padding: preview ? 4 : '2px 8px', fontSize: 'var(--text-xs, 0.75rem)',
           }}
         >
-          {label}
+          {preview}
+          {label && <span style={{ padding: preview ? '0 4px 2px' : 0 }}>{label}</span>}
         </span>
       )}
     </span>
   )
+}
+
+// The enlarged look a preview pops: the picture itself for an image value, and
+// for a colour value the same colour drawn big enough to actually judge, since a
+// 16px dot tells a shopper very little about a paint or a fabric.
+function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
+  if (src) {
+    /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
+    return <img src={src} alt="" aria-hidden style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
+  }
+  return <span aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
 
 // Sits alongside the live price, in both hosts (see DetailSlotPartsClient), and
@@ -278,7 +317,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; onChoose?: () => void }) {
+export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -379,6 +418,12 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
           // one. A colour/image value left blank keeps its text label rather than
           // rendering an empty button nobody could tell apart.
           const swatchOnly = swatchDisplay === 'swatchOnly' && (isSwatch || isImage) && !!v.swatch
+          // The enlarged look, when previews are on and the value has something
+          // to enlarge. Both looks pop the same chip; they differ only in whether
+          // the name rides along in it (the pill already shows the name).
+          const previewNode = swatchPreview === 'show' && v.swatch && (isSwatch || isImage)
+            ? <ValuePreview src={isImage ? v.swatch : undefined} colour={isSwatch ? v.swatch : undefined} />
+            : undefined
           return (
             <button
               key={v.id} type="button" disabled={!available}
@@ -410,19 +455,30 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
               }}
             >
               {swatchOnly ? (
-                // Swatch or thumbnail alone, its name in a hover tooltip. The image
-                // peek belongs to the pill look; here the tooltip is the one hover
-                // affordance, so a plain thumbnail stands in for ImageSwatchThumb.
-                <ValueTooltip label={v.label}>
+                // Swatch or thumbnail alone: the name has nowhere else to go, so it
+                // always rides the hover chip, with the enlarged preview above it
+                // when previews are on.
+                <ValuePeek label={v.label} preview={previewNode}>
                   {isSwatch
                     ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
                     /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
                     : <img src={v.swatch!} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />}
-                </ValueTooltip>
+                </ValuePeek>
               ) : (
                 <>
-                  {isSwatch && v.swatch && <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />}
-                  {isImage && v.swatch && <ImageSwatchThumb src={v.swatch} />}
+                  {/* The pill shows the name already, so its hover chip carries the
+                      preview alone - and nothing at all when previews are off. */}
+                  {isSwatch && v.swatch && (
+                    <ValuePeek preview={previewNode}>
+                      <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />
+                    </ValuePeek>
+                  )}
+                  {isImage && v.swatch && (
+                    <ValuePeek preview={previewNode}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
+                      <img src={v.swatch} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
+                    </ValuePeek>
+                  )}
                   {v.label}
                 </>
               )}
@@ -431,39 +487,6 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
         })}
       </div>
     </div>
-  )
-}
-
-// The thumbnail beside an image-swatch value doubles as a peek control: hover it
-// and the full picture pops above at 200x200, so a shopper can see the fabric
-// properly before choosing. The thumbnail sits inside the value's selecting
-// button, so a click on the picture chooses it just like a click on the label -
-// the peek is a pure hover affordance and never swallows the click.
-function ImageSwatchThumb({ src }: { src: string }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <span
-      style={{ position: 'relative', display: 'inline-flex' }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
-      <img src={src} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
-      {open && (
-        <span
-          role="tooltip"
-          style={{
-            position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
-            zIndex: 20, padding: 4, background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-            borderRadius: 8, boxShadow: 'var(--shadow-lg)', pointerEvents: 'none',
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
-          <img src={src} alt="" aria-hidden style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
-        </span>
-      )}
-    </span>
   )
 }
 
