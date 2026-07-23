@@ -1,21 +1,21 @@
 {
   "name": "shop-variations",
-  "version": "0.1.71",
+  "version": "0.1.72",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.74"
+      "minVersion": "0.1.92"
     }
   ],
   "permissions": [],
   "navGroupLabel": "Shop",
   "navEntries": [
     {
-      "label": "Product options",
-      "path": "/m/shop-variations/products",
+      "label": "Variation tools",
+      "path": "/m/shop-variations/import",
       "icon": "<line x1=\"4\" y1=\"21\" x2=\"4\" y2=\"14\"/><line x1=\"4\" y1=\"10\" x2=\"4\" y2=\"3\"/><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"3\"/><line x1=\"20\" y1=\"21\" x2=\"20\" y2=\"16\"/><line x1=\"20\" y1=\"12\" x2=\"20\" y2=\"3\"/><line x1=\"1\" y1=\"14\" x2=\"7\" y2=\"14\"/><line x1=\"9\" y1=\"8\" x2=\"15\" y2=\"8\"/><line x1=\"17\" y1=\"16\" x2=\"23\" y2=\"16\"/>",
       "permission": "shop.products"
     }
@@ -29,6 +29,15 @@
     }
   ],
   "extensionPoints": [
+    {
+      "point": "shop.products-tabs",
+      "id": "variations",
+      "label": "Variations",
+      "order": 20,
+      "permission": "shop.products",
+      "import": "./components/admin/VariationsBrowser",
+      "component": "VariationsBrowser"
+    },
     {
       "point": "shop.product-editor-sections",
       "id": "variations-inline",
