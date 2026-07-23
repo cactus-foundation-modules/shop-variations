@@ -645,7 +645,21 @@ export async function upsertVariantForCombination(
   parentId: string,
   optionValueIds: string[],
   valueLabels: string[],
-  fields: { price?: number; sku?: string | null; barcode?: string | null; supplier?: string | null; stockCount?: number | null; weight?: number | null },
+  fields: {
+    price?: number
+    // The optional price types, threaded through so a variant can carry its RRP,
+    // trade and cost the same way a top-level product does. null clears the
+    // figure, undefined leaves it alone (an absent column), a number sets it.
+    salePrice?: number | null
+    retailPrice?: number | null
+    tradePrice?: number | null
+    costPrice?: number | null
+    sku?: string | null
+    barcode?: string | null
+    supplier?: string | null
+    stockCount?: number | null
+    weight?: number | null
+  },
   ctx?: VariantUpsertContext,
 ): Promise<{ variantId: string; childProductId: string; created: boolean; changed: boolean }> {
   const parent = ctx?.parent ?? await getProductById(parentId)
@@ -695,8 +709,15 @@ export async function upsertVariantForCombination(
     // Prefer the pre-loaded field map; fall back to a direct read only when the
     // caller didn't supply one (single-row callers like the variant edit endpoint).
     const currentChild = ctx?.currentFields?.get(childId) ?? await getProductById(childId)
+    // Both sources present the optional prices differently (the pre-loaded map as
+    // number|null, getProductById as string|null), so coerce before comparing.
+    const curPrice = (v: unknown): number | null => (v == null ? null : Number(v))
     changed = !currentChild
       || (fields.price !== undefined && Number(currentChild.price) !== fields.price)
+      || (fields.salePrice !== undefined && curPrice(currentChild.salePrice) !== fields.salePrice)
+      || (fields.retailPrice !== undefined && curPrice(currentChild.retailPrice) !== fields.retailPrice)
+      || (fields.tradePrice !== undefined && curPrice(currentChild.tradePrice) !== fields.tradePrice)
+      || (fields.costPrice !== undefined && curPrice(currentChild.costPrice) !== fields.costPrice)
       || (fields.sku !== undefined && (currentChild.sku ?? null) !== (fields.sku ?? null))
       || (fields.barcode !== undefined && (currentChild.barcode ?? null) !== (fields.barcode ?? null))
       || (fields.supplier !== undefined && (currentChild.supplier ?? null) !== (fields.supplier ?? null))
@@ -707,6 +728,10 @@ export async function upsertVariantForCombination(
   if (changed) {
     const update = {
       ...(fields.price !== undefined ? { price: fields.price } : {}),
+      ...(fields.salePrice !== undefined ? { salePrice: fields.salePrice } : {}),
+      ...(fields.retailPrice !== undefined ? { retailPrice: fields.retailPrice } : {}),
+      ...(fields.tradePrice !== undefined ? { tradePrice: fields.tradePrice } : {}),
+      ...(fields.costPrice !== undefined ? { costPrice: fields.costPrice } : {}),
       ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
       ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
       ...(fields.supplier !== undefined ? { supplier: fields.supplier } : {}),

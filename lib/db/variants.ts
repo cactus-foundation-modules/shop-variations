@@ -26,6 +26,14 @@ export async function getVariants(productId: string): Promise<SvrVariant[]> {
 // Pull (every row read its child back just to decide whether anything changed).
 export type ChildProductFields = {
   price: number
+  // The optional price types, null where unset - the same figures the product
+  // editor's Pricing tab holds. Carried here so the CSV importer can tell a
+  // genuinely changed retail/trade/cost/sale price from an unchanged one without
+  // a per-row round-trip, exactly as it already does for price and stock.
+  salePrice: number | null
+  retailPrice: number | null
+  tradePrice: number | null
+  costPrice: number | null
   sku: string | null
   barcode: string | null
   supplier: string | null
@@ -36,13 +44,17 @@ export type ChildProductFields = {
 export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
   const map = new Map<string, ChildProductFields>()
   if (childProductIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
-    SELECT "id", "price", "sku", "barcode", "supplier", "stock_count", "weight"
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
+    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "barcode", "supplier", "stock_count", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
   `
   for (const r of rows) {
     map.set(r.id, {
       price: Number(r.price),
+      salePrice: r.sale_price == null ? null : Number(r.sale_price),
+      retailPrice: r.retail_price == null ? null : Number(r.retail_price),
+      tradePrice: r.trade_price == null ? null : Number(r.trade_price),
+      costPrice: r.cost_price == null ? null : Number(r.cost_price),
       sku: r.sku ?? null,
       barcode: r.barcode ?? null,
       supplier: r.supplier ?? null,

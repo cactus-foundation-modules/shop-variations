@@ -19,6 +19,29 @@ import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/vari
 // encodes a media TYPE per entry, which this column has no need for.
 const IMAGE_SEPARATOR = ', '
 
+// The optional per-variant price columns, in editor order, sitting after Price.
+// Header labels match the product editor's own so the sheet reads the same way
+// the admin does; import matches them case-insensitively.
+export const PRICE_TYPE_COLUMNS = ['Sale Price', 'RRP', 'Trade Price', 'Cost Price'] as const
+
+// A price cell for export: the number as typed, or blank when the variant has
+// not set that figure (null must stay tellable apart from 0 - a blank RRP is not
+// a free item).
+function money(value: number | null): string {
+  return value == null ? '' : String(value)
+}
+
+// A price cell on import. A present-but-empty cell clears the figure to null (the
+// sheet is the truth), a number sets it, and anything unparseable is treated as
+// blank rather than aborting the row - the same lenient rule the Products import
+// uses for its optional price columns. Only ever called for a column that exists
+// in the header; an absent column passes `undefined` and leaves the field alone.
+function optPrice(raw: string | undefined): number | null {
+  if (raw == null || raw.trim() === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
 export function serialiseVariantImages(urls: string[]): string {
   return urls.join(IMAGE_SEPARATOR)
 }
@@ -62,7 +85,11 @@ export async function exportVariationsCsv(): Promise<string> {
 
   const optionCols: string[] = []
   for (let i = 0; i < maxOptions; i++) optionCols.push(`Option ${i + 1}`, `Value ${i + 1}`)
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', ...fieldHeaderOrder])]
+  // The optional price types sit right after the selling Price, in the same order
+  // the product editor lists them. They are always present (like the Products
+  // tab's own price columns), blank where a variant hasn't set one, so the sheet
+  // can carry a variant's RRP, trade and cost - not just its price.
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -80,7 +107,9 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price), v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
+        v.sku ?? '', String(v.price),
+        money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
+        v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         ...fieldCells,
       ]))
     }
@@ -132,6 +161,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const slugCol = idx('Parent Slug')
   if (slugCol < 0) { result.errors.push({ row: 1, reason: 'Missing "Parent Slug" column' }); return result }
   const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), supplierCol = idx('Supplier'), weightCol = idx('Weight'), imageCol = idx('Image')
+  const salePriceCol = idx('Sale Price'), rrpCol = idx('RRP'), tradePriceCol = idx('Trade Price'), costPriceCol = idx('Cost Price')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
   for (let i = 1; ; i++) {
@@ -253,6 +283,10 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
 
         const { created, changed: fieldsChanged, childProductId } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
           price: priceCol >= 0 ? num(gr.cols[priceCol]) : undefined,
+          salePrice: salePriceCol >= 0 ? optPrice(gr.cols[salePriceCol]) : undefined,
+          retailPrice: rrpCol >= 0 ? optPrice(gr.cols[rrpCol]) : undefined,
+          tradePrice: tradePriceCol >= 0 ? optPrice(gr.cols[tradePriceCol]) : undefined,
+          costPrice: costPriceCol >= 0 ? optPrice(gr.cols[costPriceCol]) : undefined,
           sku: skuCol >= 0 ? (gr.cols[skuCol]?.trim() || null) : undefined,
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
           supplier: supplierCol >= 0 ? (gr.cols[supplierCol]?.trim() || null) : undefined,
