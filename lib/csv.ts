@@ -7,9 +7,9 @@ import { prisma } from '@/lib/db/prisma'
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
 import { getProductBySlug, setProductMedia, updateProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
-import { getEditorPayload, upsertVariantForCombination, type VariantUpsertContext } from '@/modules/shop-variations/lib/variants-service'
-import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields } from '@/modules/shop-variations/lib/db/variants'
-import { getOptionsWithValues, createOption, createOptionValue } from '@/modules/shop-variations/lib/db/options'
+import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, type VariantUpsertContext } from '@/modules/shop-variations/lib/variants-service'
+import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
+import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
 // A variant can carry several images, so the single `Image` cell holds them all
@@ -89,7 +89,13 @@ export async function exportVariationsCsv(): Promise<string> {
   // the product editor lists them. They are always present (like the Products
   // tab's own price columns), blank where a variant hasn't set one, so the sheet
   // can carry a variant's RRP, trade and cost - not just its price.
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', ...fieldHeaderOrder])]
+  // Variant ID is the variant's hidden child product id - the one identity that
+  // survives a rename of an option, a value, the SKU or the parent. Import (and
+  // the Google-Sheet mirror's Pull) matches on it first, so editing a value label
+  // in the sheet reads as "rename this variant's value", not "delete this variant
+  // and create a stranger". A sheet from before the column existed still imports
+  // by value-set exactly as it always did.
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -110,6 +116,7 @@ export async function exportVariationsCsv(): Promise<string> {
         v.sku ?? '', String(v.price),
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
         v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
+        v.childProductId,
         ...fieldCells,
       ]))
     }
@@ -118,6 +125,12 @@ export async function exportVariationsCsv(): Promise<string> {
 }
 
 export type ImportResult = { created: number; updated: number; errors: Array<{ row: number; reason: string }> }
+
+// Stable key for a value combination - two combinations are the same variant iff
+// they hold the same set of value ids (same rule variants-service uses).
+function comboKey(optionValueIds: string[]): string {
+  return [...optionValueIds].sort().join('|')
+}
 
 const num = (s: string | undefined): number | undefined => {
   if (s == null || s.trim() === '') return undefined
@@ -160,7 +173,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase())
   const slugCol = idx('Parent Slug')
   if (slugCol < 0) { result.errors.push({ row: 1, reason: 'Missing "Parent Slug" column' }); return result }
-  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), supplierCol = idx('Supplier'), weightCol = idx('Weight'), imageCol = idx('Image')
+  const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), supplierCol = idx('Supplier'), weightCol = idx('Weight'), imageCol = idx('Image'), idCol = idx('Variant ID')
   const salePriceCol = idx('Sale Price'), rrpCol = idx('RRP'), tradePriceCol = idx('Trade Price'), costPriceCol = idx('Cost Price')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
@@ -193,9 +206,15 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // (optionName|valueLabel) -> value id map as we go.
     const valueIdByKey = new Map<string, string>()
     const optionByName = new Map<string, { id: string }>()
+    // Each value's owning option and current label, for the stable-id rename
+    // pass below.
+    const valueInfo = new Map<string, { optionId: string; optionName: string; label: string }>()
     for (const o of await getOptionsWithValues(parent.id)) {
       optionByName.set(o.name.toLowerCase(), { id: o.id })
-      for (const v of o.values) valueIdByKey.set(`${o.name.toLowerCase()}|${v.label.toLowerCase()}`, v.id)
+      for (const v of o.values) {
+        valueIdByKey.set(`${o.name.toLowerCase()}|${v.label.toLowerCase()}`, v.id)
+        valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label })
+      }
     }
 
     async function ensureValue(optName: string, valLabel: string): Promise<string> {
@@ -218,6 +237,9 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // than re-reading every sibling variant - a parent with hundreds of variants
     // used to be O(rows x variants) and could not finish inside the request budget.
     const existingVariants = await getVariants(parent.id)
+    // Variant ID -> variant. The cell holds the variant's hidden child product
+    // id, the one identity a rename cannot disturb.
+    const variantByChildId = new Map(existingVariants.map((v) => [v.childProductId, v]))
     const upsertCtx: VariantUpsertContext = {
       parent,
       existing: existingVariants,
@@ -228,6 +250,63 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       // Changed-row writes collect here and flush together (concurrently) after
       // the parent's rows are decided, rather than one round-trip per row.
       pendingWrites: [],
+    }
+
+    // Which values had at least one variant on them when this call began - the
+    // baseline for the orphan sweep after the rows are applied.
+    const referencedBefore = new Set(Object.values(upsertCtx.valueMap).flat())
+
+    // --- Stable-id rename pass ---
+    // A row that carries a Variant ID but names a value label this parent does
+    // not have is, in the common case, a rename typed into the sheet ("Red" ->
+    // "Crimson" down a whole column). Without this pass those rows would mint a
+    // brand-new value and a brand-new variant, stranding the original - the exact
+    // delete-and-recreate this column exists to prevent. A rename is applied only
+    // when it is unambiguous: every id-matched row that touches the value agrees
+    // on one new label, EVERY variant currently sitting on the value is covered
+    // by such a row (judged against the database, not the rows in hand - a Pull
+    // feeds this importer a filtered slice of the sheet, so absence of a row
+    // proves nothing), and the new label is not already taken on the option.
+    // Anything ambiguous falls through to the per-row reassignment below, which
+    // never guesses.
+    let renamedValues = 0
+    if (idCol >= 0 && optionPairs.length > 0) {
+      const proposals = new Map<string, { labels: Set<string>; proposers: Set<string> }>() // valueId -> labels + proposing variant ids
+      for (const gr of groupRows) {
+        const childId = (gr.cols[idCol] ?? '').trim()
+        const variant = childId ? variantByChildId.get(childId) : undefined
+        if (!variant) continue
+        const currentIds = upsertCtx.valueMap[variant.id] ?? []
+        for (const pair of optionPairs) {
+          const optName = (gr.cols[pair.nameCol] ?? '').trim().toLowerCase()
+          const valLabel = (gr.cols[pair.valueCol] ?? '').trim()
+          if (!optName || !valLabel) continue
+          if (valueIdByKey.has(`${optName}|${valLabel.toLowerCase()}`)) continue // resolves already - nothing to rename
+          const cur = currentIds.find((id) => valueInfo.get(id)?.optionName === optName)
+          if (!cur) continue
+          let entry = proposals.get(cur)
+          if (!entry) { entry = { labels: new Set(), proposers: new Set() }; proposals.set(cur, entry) }
+          entry.labels.add(valLabel)
+          entry.proposers.add(variant.id)
+        }
+      }
+      for (const [valueId, { labels, proposers }] of proposals) {
+        if (labels.size !== 1) continue // conflicting targets - not a rename
+        const info = valueInfo.get(valueId)
+        if (!info) continue
+        // Every variant on this value must be asking for the move, or some
+        // variant the sheet did not touch would be dragged along with it.
+        const covered = upsertCtx.existing.every((v) =>
+          !(upsertCtx.valueMap[v.id] ?? []).includes(valueId) || proposers.has(v.id))
+        if (!covered) continue
+        const newLabel = [...labels][0]!
+        if (await optionValueLabelTaken(info.optionId, newLabel, valueId)) continue
+        await updateOptionValue(valueId, { label: newLabel })
+        valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        valueIdByKey.set(`${info.optionName}|${newLabel.toLowerCase()}`, valueId)
+        valueInfo.set(valueId, { ...info, label: newLabel })
+        renamedValues += 1
+      }
     }
 
     // Each variant's current images, prefetched once for the whole parent, in the
@@ -268,6 +347,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       }
     }
 
+    let reassignedAny = false
     for (const gr of groupRows) {
       try {
         const optionValueIds: string[] = []
@@ -280,6 +360,29 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
           labels.push(valLabel)
         }
         if (optionValueIds.length === 0) { result.errors.push({ row: gr.rowNum, reason: 'No options on this row' }); continue }
+
+        // Stable-id reassignment: the row names this exact variant (by child
+        // product id) but a combination that differs from what it holds - an
+        // ambiguous rename the pass above declined, or a re-pointed value. Move
+        // the variant onto the named combination rather than letting the upsert
+        // mint a duplicate and orphan the original. Refused when another variant
+        // already owns that combination - that is a collision, not a rename.
+        let reassignedRow = false
+        if (idCol >= 0) {
+          const childId = (gr.cols[idCol] ?? '').trim()
+          const idVariant = childId ? variantByChildId.get(childId) : undefined
+          if (idVariant) {
+            const newKey = comboKey(optionValueIds)
+            if (comboKey(upsertCtx.valueMap[idVariant.id] ?? []) !== newKey) {
+              const clash = upsertCtx.existing.find((v) => v.id !== idVariant.id && comboKey(upsertCtx.valueMap[v.id] ?? []) === newKey)
+              if (clash) { result.errors.push({ row: gr.rowNum, reason: 'That combination already belongs to another variation' }); continue }
+              await setVariantValues(idVariant.id, optionValueIds)
+              upsertCtx.valueMap[idVariant.id] = optionValueIds
+              reassignedRow = true
+              reassignedAny = true
+            }
+          }
+        }
 
         const { created, changed: fieldsChanged, childProductId } = await upsertVariantForCombination(parent.id, optionValueIds, labels, {
           price: priceCol >= 0 ? num(gr.cols[priceCol]) : undefined,
@@ -337,7 +440,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
         // value) isn't counted here since those already skip their own no-op
         // writes; this count reflects the variant's own fields and image.
         if (created) result.created += 1
-        else if (fieldsChanged || imageChanged) result.updated += 1
+        else if (fieldsChanged || imageChanged || reassignedRow) result.updated += 1
       } catch (err) {
         result.errors.push({ row: gr.rowNum, reason: err instanceof Error ? err.message : 'Row failed' })
       }
@@ -349,6 +452,33 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // for one child and the pool could apply them out of order; last row wins,
     // as it did when writes were inline. Distinct children never race, so a
     // bounded concurrent pool safely collapses the round-trips.
+    // Reassignment can leave a value with no variant on it at all (a rename the
+    // pass above declined, now fully migrated row by row). Sweep those: left
+    // behind, a ghost value re-enters the next matrix generation as combinations
+    // nobody asked for. Only values that HAD variants when this call began are
+    // candidates - a value set up ahead of a matrix build is none of our
+    // business - and a value any variant still sits on never qualifies.
+    if (reassignedAny) {
+      const referencedAfter = new Set(Object.values(upsertCtx.valueMap).flat())
+      for (const valueId of referencedBefore) {
+        if (referencedAfter.has(valueId)) continue
+        const info = valueInfo.get(valueId)
+        if (!info) continue
+        await deleteOptionValue(valueId)
+        valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        valueInfo.delete(valueId)
+      }
+    }
+
+    // Renames and reassignments both leave variant child product names stale
+    // (they snapshot the value labels), so re-compose them once per parent.
+    // Renamed values count as updates so "N updated" owns up to the change even
+    // when every other cell on the row was already right.
+    if (renamedValues > 0 || reassignedAny) {
+      await syncVariantChildNames(parent.id)
+      result.updated += renamedValues
+    }
+
     const pending = upsertCtx.pendingWrites ?? []
     if (pending.length > 0) {
       const lastByChild = new Map<string, (typeof pending)[number]['update']>()

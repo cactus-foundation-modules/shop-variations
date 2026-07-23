@@ -160,6 +160,22 @@ export async function setVariantPositions(positions: { id: string; position: num
   `
 }
 
+// Replace a variant's option-value set in one transaction. Used by the CSV
+// importer's stable-id path when a row keeps its Variant ID but names a
+// combination that no longer matches the variant's stored values (a renamed or
+// re-pointed value in the sheet).
+export async function setVariantValues(variantId: string, optionValueIds: string[]): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`DELETE FROM "svr_variant_values" WHERE "variant_id" = ${variantId}`
+    for (const ovId of optionValueIds) {
+      await tx.$executeRaw`
+        INSERT INTO "svr_variant_values" ("variant_id", "option_value_id") VALUES (${variantId}, ${ovId})
+        ON CONFLICT DO NOTHING
+      `
+    }
+  })
+}
+
 export async function setVariantEnabled(id: string, enabled: boolean): Promise<void> {
   await prisma.$executeRaw`UPDATE "svr_variants" SET "enabled" = ${enabled} WHERE "id" = ${id}`
 }
