@@ -281,13 +281,50 @@ function ValuePeek({ label, preview, children }: { label?: string; preview?: Rea
   )
 }
 
+// A swatch picture, fetched in CORS mode.
+//
+// `crossOrigin` looks like it has no business on a product page, and it is here for
+// one specific reason: on a product with a 3D view, the viewer paints this very same
+// picture onto the model, and WebGL will only upload a cross-origin image that was
+// fetched WITH CORS - so three's texture loader always asks for it that way. A browser
+// files a CORS response and a plain one as two SEPARATE cache entries, which meant the
+// swatch the shopper was already looking at could not satisfy the viewer's request and
+// the whole file came down a second time on the first pick of every colour. Asking for
+// it in the same mode here makes the two one download, and the colour lands from cache.
+//
+// Media served by the site's own worker answers with `Access-Control-Allow-Origin`, so
+// this costs nothing there. A swatch pointed at some other host that does not is what
+// the fallback is for: the attribute is dropped and the picture fetched plainly, exactly
+// as before, rather than a shopper being shown a broken image for the sake of a
+// speed-up. `crossOrigin` is written BEFORE `src` because that is the order React sets
+// them in, and the attribute only counts if it is there when the load starts - which is
+// also why the retry remounts the element rather than editing it in place.
+function SwatchImg({ src, style }: { src: string; style: React.CSSProperties }) {
+  // The url that would not load in CORS mode, rather than a plain "off" flag: the
+  // fallback belongs to the picture that failed, so a value showing a different
+  // picture gets its own fresh attempt with no effect to reset anything.
+  const [refused, setRefused] = useState<string | null>(null)
+  const cors = refused !== src
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
+    <img
+      key={cors ? 'cors' : 'plain'}
+      crossOrigin={cors ? 'anonymous' : undefined}
+      src={src}
+      onError={() => setRefused(src)}
+      alt=""
+      aria-hidden
+      style={style}
+    />
+  )
+}
+
 // The enlarged look a preview pops: the picture itself for an image value, and
 // for a colour value the same colour drawn big enough to actually judge, since a
 // 16px dot tells a shopper very little about a paint or a fabric.
 function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
   if (src) {
-    /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
-    return <img src={src} alt="" aria-hidden style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
+    return <SwatchImg src={src} style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
   }
   return <span aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
@@ -461,8 +498,7 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
                 <ValuePeek label={v.label} preview={previewNode}>
                   {isSwatch
                     ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
-                    /* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */
-                    : <img src={v.swatch!} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />}
+                    : <SwatchImg src={v.swatch!} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />}
                 </ValuePeek>
               ) : (
                 <>
@@ -475,8 +511,7 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
                   )}
                   {isImage && v.swatch && (
                     <ValuePeek preview={previewNode}>
-                      {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
-                      <img src={v.swatch} alt="" aria-hidden style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
+                      <SwatchImg src={v.swatch} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
                     </ValuePeek>
                   )}
                   {v.label}
