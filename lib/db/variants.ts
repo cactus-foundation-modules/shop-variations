@@ -187,12 +187,22 @@ export async function deleteVariant(id: string): Promise<void> {
 // Count of variant-enabled products (for the admin list) - parents that have at
 // least one variant row.
 export async function getProductIdsWithVariations(): Promise<string[]> {
+  // Order the parents newest-first to match the Products CSV export
+  // (lib/db/products.ts sorts "created_at" DESC, "id" DESC). Without an
+  // ORDER BY the UNION's row order is Postgres hash-dedup order, which is
+  // nondeterministic - two CSV downloads of the same catalogue could list
+  // parents differently, which is what let a Google-Sheet push flatten
+  // formulas. UNION already de-duplicates, so no DISTINCT is needed.
   const rows = await prisma.$queryRaw<{ product_id: string }[]>`
-    SELECT DISTINCT "product_id" FROM "svr_variants"
-    UNION
-    SELECT DISTINCT "product_id" FROM "svr_options"
-    UNION
-    SELECT DISTINCT "product_id" FROM "svr_addons"
+    SELECT u."product_id" FROM (
+      SELECT "product_id" FROM "svr_variants"
+      UNION
+      SELECT "product_id" FROM "svr_options"
+      UNION
+      SELECT "product_id" FROM "svr_addons"
+    ) u
+    JOIN "shp_products" p ON p."id" = u."product_id"
+    ORDER BY p."created_at" DESC, p."id" DESC
   `
   return rows.map((r) => r.product_id)
 }
