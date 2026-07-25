@@ -9,8 +9,9 @@ import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
-import { getVariants, getVariantValueMap, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
+import { getVariants, getVariantValueMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
+import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
 // Stable key for a combination: its option-value ids, sorted, joined. Two
@@ -401,6 +402,34 @@ export async function getVariantSelectorPayloadBySlug(slug: string): Promise<Var
   const product = await getProductBySlug(slug)
   if (!product || product.catalogueHidden) return null
   return getVariantSelectorPayload(product.id)
+}
+
+export type VariantDeepLink = {
+  // The parent product whose page should render under the variant's own URL.
+  parent: ShpProduct
+  // The option-value ids that pick this exact variant, handed to the selector so
+  // it opens on that combination.
+  optionValueIds: string[]
+}
+
+// Resolve a variant child product - the catalogue-hidden row a shopper buys
+// through its parent's page - to the parent whose page should render under the
+// child's own URL, plus the picks that select it. That URL is the link the cart
+// already builds (and anyone can share); shop 404s the hidden child on its own
+// account, so this is what lets the link instead open the parent already
+// configured to the variant. Null for anything that is not a live variant child
+// of a visible, active parent: a normal product, an unknown slug, or a child
+// whose variant row or parent has since gone.
+export async function resolveVariantDeepLink(child: ShpProduct): Promise<VariantDeepLink | null> {
+  if (!child.catalogueHidden) return null
+  const variant = await getVariantByChildProductId(child.id)
+  if (!variant) return null
+  const parent = await getProductById(variant.productId)
+  if (!parent || parent.catalogueHidden || parent.status !== 'ACTIVE') return null
+  const valueMap = await getVariantValueMap(parent.id)
+  const optionValueIds = valueMap[variant.id] ?? []
+  if (optionValueIds.length === 0) return null
+  return { parent, optionValueIds }
 }
 
 export type VariationsSummary = {

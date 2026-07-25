@@ -39,6 +39,24 @@ export function currentProductSlug(): string | null {
   return productSlotRef().slug
 }
 
+// A second request-scoped slot, holding the option-value ids to open the
+// selector on when this page was reached through a variant's own deep link (the
+// hidden child product's URL). shop's product-page resolver records it as it
+// aliases the child slug to its parent (see lib/product-page-resolver.ts), and
+// getVariationBootstrap below carries it into the payload the storefront seeds
+// from. Request-scoped by the same cache() trick as the slug, so one shopper's
+// deep link can never bleed a preselection into another's page. Null on a normal
+// product page, which opens unchosen.
+const preselectSlotRef = cache((): { optionValueIds: string[] | null } => ({ optionValueIds: null }))
+
+export function rememberPreselectOptionValues(optionValueIds: string[]): void {
+  preselectSlotRef().optionValueIds = optionValueIds
+}
+
+export function currentPreselectOptionValues(): string[] | null {
+  return preselectSlotRef().optionValueIds
+}
+
 // One payload per product per request, however many blocks ask for it: the
 // composite block alone would otherwise repeat this query five times over.
 export const getVariationBootstrap = cache(async (slug: string): Promise<VariationBootstrap | null> => {
@@ -47,7 +65,17 @@ export const getVariationBootstrap = cache(async (slug: string): Promise<Variati
     getShopConfigCached(),
   ])
   if (!payload) return null
-  return { payload, currencySymbol: config.currencySymbol }
+  // A deep-linked variant's picks, if this request arrived through one. Only
+  // ones this payload actually carries are passed on, so a stale or foreign id
+  // can never seed a pick the controls have no value for. Absent otherwise.
+  const preselect = currentPreselectOptionValues()
+  const known = preselect ? new Set(payload.options.flatMap((o) => o.values.map((v) => v.id))) : null
+  const preselectOptionValueIds = preselect?.filter((id) => known?.has(id))
+  return {
+    payload,
+    currencySymbol: config.currencySymbol,
+    ...(preselectOptionValueIds && preselectOptionValueIds.length > 0 ? { preselectOptionValueIds } : {}),
+  }
 })
 
 // What every RSC block half calls. A null here is not a failure: it means we

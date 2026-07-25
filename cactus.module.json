@@ -1,6 +1,6 @@
 {
   "name": "shop-variations",
-  "version": "0.1.76",
+  "version": "0.1.77",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
@@ -58,6 +58,12 @@
       "id": "variations-detail-parts",
       "import": "./lib/detail-parts-provider",
       "component": "shopVariationsDetailParts"
+    },
+    {
+      "point": "shop.product-page-resolver",
+      "id": "variations-deep-link",
+      "import": "./lib/product-page-resolver",
+      "component": "shopVariationsProductPageResolver"
     },
     {
       "point": "core.media-reference-rewriters",

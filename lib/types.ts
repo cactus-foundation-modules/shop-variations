@@ -153,4 +153,11 @@ export type VariantSelectorPayload = {
 export type VariationBootstrap = {
   payload: VariantSelectorPayload
   currencySymbol: string
+  // Option-value ids the selector should open on, set only when the page was
+  // reached through a variant's own deep link (its hidden child product's URL,
+  // the same link the cart builds). The store seeds these as the shopper's
+  // opening picks so the linked combination is chosen on arrival, its price and
+  // gallery already showing. Absent on a normal product page, which opens with
+  // nothing chosen (see selection-logic).
+  preselectOptionValueIds?: string[]
 }

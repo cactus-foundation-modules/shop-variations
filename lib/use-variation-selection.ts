@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, effectiveSelection, unavailableWith, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, effectiveSelection, unavailableWith, valueToOptionMap, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -49,14 +49,33 @@ function newEntry(slug: string): Entry {
   return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, subs: new Set() }
 }
 
+// Turn a flat list of option-value ids (a deep-linked variant's combination)
+// into the store's optionId -> valueId shape, dropping any value the payload's
+// options don't carry. This seeds the opening selection when a page is reached
+// through a variant's own deep link.
+function optionValuesFromValueIds(payload: VariantSelectorPayload, valueIds: string[]): OptionSelection {
+  const valueToOption = valueToOptionMap(payload)
+  const selection: OptionSelection = {}
+  for (const valueId of valueIds) {
+    const optionId = valueToOption.get(valueId)
+    if (optionId) selection[optionId] = valueId
+  }
+  return selection
+}
+
 // An entry that already holds everything the server resolved: no fetch to do and
-// no empty first render. The options open unchosen (see selection-logic), so the
-// controls arrive in the HTML with nothing picked in them.
+// no empty first render. The options normally open unchosen (see selection-logic),
+// so the controls arrive in the HTML with nothing picked in them - unless the
+// bootstrap carries a deep link's preselection, in which case they open on that
+// combination, the same picks the shopper would have made by hand.
 function seededEntry(slug: string, bootstrap: VariationBootstrap): Entry {
   const entry = newEntry(slug)
   entry.payload = bootstrap.payload
   entry.currencySymbol = bootstrap.currencySymbol
   entry.loaded = true
+  if (bootstrap.preselectOptionValueIds && bootstrap.preselectOptionValueIds.length > 0) {
+    entry.optionValues = optionValuesFromValueIds(bootstrap.payload, bootstrap.preselectOptionValueIds)
+  }
   return entry
 }
 
