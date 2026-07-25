@@ -115,6 +115,22 @@ export async function getVariantByChildProductId(childProductId: string): Promis
   return rows[0] ? mapVariant(rows[0]) : null
 }
 
+// child product id -> parent product id for a whole batch of child ids, so the
+// cart resolver can map every variant line back to its parent in one query
+// rather than a getVariantByChildProductId per line. Ids that are not variant
+// children are simply absent from the map.
+export async function getVariantParentsByChild(childProductIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const unique = [...new Set(childProductIds)].filter(Boolean)
+  if (unique.length === 0) return map
+  const rows = await prisma.$queryRaw<{ child_product_id: string; product_id: string }[]>`
+    SELECT "child_product_id", "product_id" FROM "svr_variants"
+    WHERE "child_product_id" IN (${Prisma.join(unique)})
+  `
+  for (const r of rows) map.set(r.child_product_id, r.product_id)
+  return map
+}
+
 // option_value_ids for each variant of a product, keyed by variant id.
 export async function getVariantValueMap(productId: string): Promise<Record<string, string[]>> {
   const rows = await prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`

@@ -5,8 +5,8 @@
 //
 // Server-safe: runs inside shop's lib/checkout.ts. Precedent for a server-function
 // extension point: contact-form.thread-messages -> getCaughtReplyThreadMessages.
-import { getVariantByChildProductId } from '@/modules/shop-variations/lib/db/variants'
-import { getAddons } from '@/modules/shop-variations/lib/db/addons'
+import { getAddonsForLine, prefetchAddons } from '@/modules/shop-variations/lib/addon-cache'
+import { buildVariantTitle, prefetchVariantTitles } from '@/modules/shop-variations/lib/variant-title-cache'
 import { getUploadByToken } from '@/modules/shop-variations/lib/db/uploads'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import type { CartLineResolution } from '@/modules/shop/lib/line-meta'
@@ -15,16 +15,18 @@ import type { ShpProduct } from '@/modules/shop/lib/types'
 const NOOP: CartLineResolution = { valid: true, priceAdjust: 0, persistMeta: null }
 
 export async function resolveVariationLineMeta(product: ShpProduct, meta: Record<string, unknown> | undefined): Promise<CartLineResolution> {
-  // Add-ons live on the parent product. If this line is a variant child, look up
-  // its parent; otherwise the product owns its own add-ons directly.
-  let ownerId = product.id
-  if (product.catalogueHidden) {
-    const variant = await getVariantByChildProductId(product.id)
-    if (variant) ownerId = variant.productId
-  }
+  // A variant child's cart name ("Parent - Red / L") is split into a base name +
+  // chosen options so the cart can show them on separate lines. Computed for
+  // every variant line, add-ons or not (a plain variant has no add-on fields but
+  // still wants its options lifted off the name line). Null for a non-variant.
+  const displayTitle = await buildVariantTitle(product)
 
-  const addons = await getAddons(ownerId)
-  if (addons.length === 0) return NOOP
+  // Add-ons live on the parent product. If this line is a variant child, its
+  // owner is the parent; otherwise the product owns its own add-ons directly.
+  // getAddonsForLine serves this from the request batch cache when shop
+  // prefetched the whole cart, and falls back to the per-line lookups otherwise.
+  const addons = await getAddonsForLine(product)
+  if (addons.length === 0) return { ...NOOP, displayTitle }
 
   const rawAddons = (meta && typeof meta.addons === 'object' && meta.addons) ? (meta.addons as Record<string, unknown>) : {}
 
@@ -50,5 +52,14 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
     priceAdjust: pricing.priceAdjust,
     persistMeta: pricing.fields.length ? { fields: pricing.fields } : null,
     reason: pricing.reason,
+    displayTitle,
   }
+}
+
+// shop.cart-line-resolver-prefetch: map every cart line to its add-on owner and
+// load all owners' add-ons in two batched queries before shop folds the lines,
+// so resolveVariationLineMeta above is a cache read per line instead of two
+// queries. Called once per cart validate / checkout resolve with the whole set.
+export async function prefetchVariationLineMeta(products: ShpProduct[]): Promise<void> {
+  await Promise.all([prefetchAddons(products), prefetchVariantTitles(products)])
 }
