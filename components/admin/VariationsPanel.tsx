@@ -7,6 +7,7 @@ import { uploadOneFile } from '@/lib/media/upload-client'
 import { preflightUploadError } from '@/lib/media/limits'
 import {
   useProductEditorCurrency, useProductEditorSave, useProductEditorTabBadge,
+  useSetProductEditorPriceManaged,
 } from '@/modules/shop/components/admin/product-editor/context'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
 import {
@@ -199,6 +200,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
 
   useProductEditorSave({ dirty, save })
   useProductEditorTabBadge(data && data.variants.length > 0 ? String(data.variants.length) : null)
+  // Once a product has variations it is priced per variation, so tell the shop's
+  // Pricing tab to lock its own Price boxes - the storefront shows a "From £…"
+  // range built from these, and a figure set on the parent would never be seen.
+  useSetProductEditorPriceManaged(data != null && data.variants.length > 0)
 
   // Where a freshly uploaded variation or swatch image is filed: the product's
   // own library folder (Shop / <category> / <product>), resolved at the moment

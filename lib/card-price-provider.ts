@@ -1,0 +1,50 @@
+// Fills shop's `shop.product-card-prices` point: given a batch of products, hands
+// back the cheapest a shopper could actually pay for each one that has
+// variations, so the storefront card shows it as "From £…" rather than the
+// parent's own (unshown) price.
+//
+// Server-safe, batched: a grid asks once for all its products, and this runs two
+// queries for the whole set rather than one per card. Precedent for a provider
+// registered through extensionPoints: shop.product-detail-parts ->
+// lib/detail-parts-provider.ts.
+import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { effectivePrice } from '@/modules/shop/lib/pricing'
+import type { ShopCardPriceProvider } from '@/modules/shop/lib/card-price'
+import { getVariantsForProducts, getChildProductFields } from '@/modules/shop-variations/lib/db/variants'
+
+export const shopVariationsCardPrices: ShopCardPriceProvider = {
+  async fromPrices(productIds) {
+    const out: Record<string, string> = {}
+    if (productIds.length === 0) return out
+
+    const variantsByProduct = await getVariantsForProducts(productIds)
+    if (variantsByProduct.size === 0) return out
+
+    // Every enabled variant's hidden child product, loaded in one query. A
+    // switched-off variant is not on sale, so it does not count towards "from".
+    const childIds = [...variantsByProduct.values()]
+      .flat()
+      .filter((v) => v.enabled)
+      .map((v) => v.childProductId)
+    if (childIds.length === 0) return out
+
+    // Sale price only undercuts where the shop has sale prices switched on;
+    // effectivePrice is shop's own, so a "from" figure and the price the shopper
+    // is finally charged can never disagree.
+    const { enabledPriceTypes } = await getShopConfigCached()
+    const fields = await getChildProductFields(childIds)
+
+    for (const [productId, variants] of variantsByProduct) {
+      let cheapest: number | null = null
+      for (const v of variants) {
+        if (!v.enabled) continue
+        const child = fields.get(v.childProductId)
+        if (!child) continue
+        const price = effectivePrice(child, enabledPriceTypes)
+        if (cheapest == null || price < cheapest) cheapest = price
+      }
+      if (cheapest != null) out[productId] = cheapest.toFixed(2)
+    }
+    return out
+  },
+}

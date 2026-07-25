@@ -624,12 +624,19 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   const sel = useVariationSelection(slug, initial)
   if (preview) return <Skeleton label="Variant price" />
   if (!slug || !sel.loaded || !sel.payload) return null
+  // Until a full combination is settled, the exact price is unknown, so show the
+  // cheapest as "From £…" rather than the parent's own (which is not on sale and
+  // may be the dearest). Once every option is chosen the resolved price stands.
+  const showFrom = sel.hasOptions && !sel.allOptionsChosen
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
-      <span>{money(sel.price, sel.currencySymbol)}</span>
+      {showFrom
+        ? <span><span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>From </span>{money(sel.fromPrice, sel.currencySymbol)}</span>
+        : <span>{money(sel.price, sel.currencySymbol)}</span>}
       {/* The chosen combination's own normal price, struck through, when that
-          combination is the one on offer. */}
-      {sel.compareAtPrice != null && sel.compareAtPrice > sel.price && (
+          combination is the one on offer. Not while showing a "From" range -
+          there is no single figure to strike against. */}
+      {!showFrom && sel.compareAtPrice != null && sel.compareAtPrice > sel.price && (
         <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--color-text-muted)', textDecoration: 'line-through' }}>
           {money(sel.compareAtPrice, sel.currencySymbol)}
         </span>

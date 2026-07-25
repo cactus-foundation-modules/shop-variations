@@ -230,6 +230,12 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   const anyOptionChosen = payload ? payload.options.some((o) => !!optionValues[o.id]) : false
   const basePrice = variant ? variant.price : payload?.basePrice ?? 0
   const price = basePrice + addonPricing.priceAdjust
+  // The cheapest a shopper could pay across the variations on offer, for the
+  // "From £…" shown before a combination is settled. Enabled variants only - a
+  // switched-off one is not on sale - and falls back to the parent's own price
+  // if somehow none carry one, so this is never blank.
+  const enabledVariantPrices = payload ? payload.variants.filter((v) => v.enabled).map((v) => v.price) : []
+  const fromPrice = enabledVariantPrices.length > 0 ? Math.min(...enabledVariantPrices) : (payload?.basePrice ?? 0)
   // The chosen variant's own "was" figure. Personalisation surcharges are added
   // to both sides so the saving stays honest: strike the price this same
   // configuration would have cost off offer, not the bare variant price.
@@ -270,6 +276,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     addonValues,
     variant,
     price,
+    fromPrice,
     compareAtPrice,
     basePrice,
     image,
