@@ -138,7 +138,13 @@ function VariantOptionsAccordion({
   swatchPreview: SwatchPreview
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
-    if (initial === 'all') return new Set(options.map((o) => o.id))
+    // Arriving on a variation link seeds every pick before first paint (the URL
+    // named a specific variant). With the whole configuration already chosen, a
+    // stack of collapsed headers hides the answer the shopper came in on - so
+    // open every section and show it. This wins over the block's initial
+    // setting, which only governs a fresh page the shopper hasn't chosen on yet.
+    const preselected = options.some((o) => !!sel.optionValues[o.id])
+    if (preselected || initial === 'all') return new Set(options.map((o) => o.id))
     if (initial === 'first') return options[0] ? new Set([options[0].id]) : new Set<string>()
     return new Set<string>()
   })
