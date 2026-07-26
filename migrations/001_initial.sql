@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     -- the source's. A refresh then stops offering the source's name, and the same
     -- source can sit on a product twice under two names. See 005.
     "name_overridden" BOOLEAN NOT NULL DEFAULT false,
+    -- Whether this option also summarises itself on the product CARD in a grid,
+    -- what to call it there (null = the name above), and how many values to show
+    -- before the "+4" marker (null = all of them). See 006.
+    "card_display" BOOLEAN NOT NULL DEFAULT false,
+    "card_label" TEXT,
+    "card_limit" INTEGER,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,

@@ -30,6 +30,16 @@ export type SvrOption = {
   // unique per product all but one of those copies is renamed - so a refresh
   // must stop offering the source's name back once this is set.
   nameOverridden: boolean
+  // Whether this option also summarises itself on the product card in a grid -
+  // the swatches, or a comma-separated list of value labels, under the product's
+  // name. Off until the owner asks for it, per option. See card-options-provider.ts.
+  cardDisplay: boolean
+  // What to call the option on a card, when the product page's name is too long
+  // for a tile. Null (and empty) fall back to `name`.
+  cardLabel: string | null
+  // How many values a card shows before the "+4" marker. Null shows every value
+  // and never marks an overflow.
+  cardLimit: number | null
 }
 
 export type SvrOptionValue = {

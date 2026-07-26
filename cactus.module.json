@@ -1,13 +1,13 @@
 {
   "name": "shop-variations",
-  "version": "0.1.87",
+  "version": "0.1.88",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.123"
+      "minVersion": "0.1.128"
     }
   ],
   "permissions": [],
@@ -84,6 +84,12 @@
       "component": "shopVariationsCardMedia"
     },
     {
+      "point": "shop.card-media",
+      "id": "variations-card-options",
+      "import": "./lib/card-options-provider",
+      "component": "shopVariationsCardOptions"
+    },
+    {
       "point": "core.media-reference-rewriters",
       "id": "shop-variations",
       "import": "./lib/media-reference-rewriter",
@@ -145,6 +151,15 @@
       "rscImport": "./components/puck/variant-parts.rsc",
       "layoutTypes": [
         "shopProductDetail"
+      ]
+    },
+    {
+      "type": "ShopCardVariationOptions",
+      "import": "./components/puck/card-variation-options",
+      "component": "shopCardVariationOptionsPuckComponent",
+      "rscComponent": "shopCardVariationOptionsPuckRscComponent",
+      "layoutTypes": [
+        "shopProductCard"
       ]
     },
     {

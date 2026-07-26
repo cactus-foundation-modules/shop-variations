@@ -21,6 +21,10 @@ type Option = {
   // Set when the option was built from another module's source. Null on a
   // hand-typed option.
   sourceProvider: string | null; sourceRef: string | null
+  // Whether this option also summarises itself on the product card in a grid,
+  // what it is called there (null = the option's own name) and how many values
+  // are shown before the "+4" marker (null = all of them).
+  cardDisplay: boolean; cardLabel: string | null; cardLimit: number | null
   values: OptionValue[]
 }
 type VariantRow = {
@@ -283,7 +287,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     return { providerLabel: provider.label, sourceName: source?.name ?? null, groupLabel: source?.groupLabel ?? null }
   }
 
-  async function patchAndRefresh(url: string, patch: Record<string, string | boolean | null>, fallback: string): Promise<boolean> {
+  async function patchAndRefresh(url: string, patch: Record<string, string | number | boolean | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     if (!res.ok) {
@@ -302,6 +306,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // none yet simply show as plain buttons until the owner fills them in, which is
   // the same thing a brand-new swatch option does.
   const setControlType = (id: string, controlType: Option['controlType']) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { controlType }, 'Could not change how that option is shown.')
+  // Category-page summary. The label and the cap are sent as null when their box
+  // is emptied, which is the server's signal to drop the override rather than to
+  // store a blank.
+  const setCardDisplay = (id: string, cardDisplay: boolean) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardDisplay }, 'Could not change that setting.')
+  const setCardLabel = (id: string, cardLabel: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardLabel: cardLabel.trim() || null }, 'Could not save that label.')
+  const setCardLimit = (id: string, cardLimit: number | null) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardLimit }, 'Could not save that number.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
@@ -644,6 +654,17 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
 
         {optionError && <p className="spe-error" role="alert"><span aria-hidden>⚠</span>{optionError}</p>}
 
+        {/* Ticking "Display in categories" fills the summary, but something has to
+            draw it - and where it sits on a tile is the card layout's business, not
+            this product's. Said once, and only to an owner who has just asked for
+            it, rather than as a permanent line of small print. */}
+        {data.options.some((o) => o.cardDisplay) && (
+          <p className="spe-section-blurb">
+            To show these on category pages, add the <strong>Card: Variation options</strong> block to your Product Card
+            layout under Design. You only need to do that once for the whole shop.
+          </p>
+        )}
+
         {data.options.length === 0 ? (
           <p className="spe-empty">No options yet. Add one below and this product stays a plain single item.</p>
         ) : (
@@ -726,6 +747,14 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     Only show once every option above it is chosen
                   </label>
                 )}
+                <CardDisplayControls
+                  key={`${opt.cardLabel ?? ''}|${opt.cardLimit ?? ''}`}
+                  option={opt}
+                  disabled={busy}
+                  onToggle={(on) => setCardDisplay(opt.id, on)}
+                  onLabel={(label) => setCardLabel(opt.id, label)}
+                  onLimit={(limit) => setCardLimit(opt.id, limit)}
+                />
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
                   {opt.values.map((v, vi) => (
                     <span
@@ -1055,6 +1084,81 @@ function SupplierCell({ label, variantLabel, value, options, onChange }: {
       {options.map((name) => <option key={name} value={name}>{name}</option>)}
       <option value={ADD_NEW_SUPPLIER}>Add a new {label.toLowerCase()}…</option>
     </select>
+  )
+}
+
+// The "Display in categories" switch for one option, plus the two settings that
+// only matter once it is on: what the option is called on a card (the product
+// page's name is often too long for a tile) and how many of its values fit before
+// the "+4" marker. Both are stored as null when left empty, which reads as "use
+// the option's own name" and "show them all".
+//
+// Text and number commit on blur or Enter rather than per keystroke - each commit
+// is a PATCH followed by a refetch of the whole editor payload, and one of those
+// per character typed would be a poor trade for a label nobody edits twice.
+function CardDisplayControls({ option, disabled, onToggle, onLabel, onLimit }: {
+  option: Pick<Option, 'id' | 'name' | 'controlType' | 'cardDisplay' | 'cardLabel' | 'cardLimit'>
+  disabled: boolean
+  onToggle: (on: boolean) => void
+  onLabel: (label: string) => void
+  onLimit: (limit: number | null) => void
+}) {
+  // Drafts are seeded from what is stored and never synced back by an effect: the
+  // caller keys this component on the saved pair, so a commit that changes them
+  // remounts it with fresh initial state. Focus is not at risk - the only way to
+  // change them is to commit, and committing means the box has already been left.
+  const [label, setLabel] = useState(option.cardLabel ?? '')
+  const [limit, setLimit] = useState(option.cardLimit == null ? '' : String(option.cardLimit))
+
+  const showsSwatches = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
+  const countLabel = showsSwatches ? 'Swatches shown' : 'Options shown'
+  const rowText: CSSProperties = { display: 'inline-flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }
+  const box: CSSProperties = { padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.8125rem' }
+
+  function commitLimit() {
+    const trimmed = limit.trim()
+    if (!trimmed) { if (option.cardLimit != null) onLimit(null); return }
+    const n = Number.parseInt(trimmed, 10)
+    // Anything that is not a sensible count goes back to what is stored rather
+    // than being sent - the server would refuse it, and a red error under an
+    // option because someone typed "e" would be a poor way to say so.
+    if (!Number.isFinite(n) || n < 1 || n > 50) { setLimit(option.cardLimit == null ? '' : String(option.cardLimit)); return }
+    if (n !== option.cardLimit) onLimit(n)
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '0.375rem', marginTop: '0.5rem' }}>
+      <label style={rowText}>
+        <input type="checkbox" checked={option.cardDisplay} disabled={disabled} onChange={(e) => onToggle(e.target.checked)} />
+        Display in categories
+      </label>
+      {option.cardDisplay && (
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', paddingLeft: '1.375rem' }}>
+          <label style={rowText}>
+            Label
+            <input
+              type="text" value={label} disabled={disabled} placeholder={option.name} maxLength={80}
+              style={{ ...box, width: 160 }}
+              aria-label={`What ${option.name} is called on category pages`}
+              onChange={(e) => setLabel(e.target.value)}
+              onBlur={() => { if ((label.trim() || null) !== option.cardLabel) onLabel(label) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            />
+          </label>
+          <label style={rowText}>
+            {countLabel}
+            <input
+              type="number" value={limit} disabled={disabled} placeholder="All" min={1} max={50}
+              style={{ ...box, width: 80 }}
+              aria-label={`How many ${option.name} values a category page shows`}
+              onChange={(e) => setLimit(e.target.value)}
+              onBlur={commitLimit}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
   )
 }
 

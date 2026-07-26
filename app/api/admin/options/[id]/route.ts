@@ -8,6 +8,12 @@ const PatchBody = z.object({
   controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).optional(),
   position: z.number().int().optional(),
   requiresPreviousOption: z.boolean().optional(),
+  cardDisplay: z.boolean().optional(),
+  // Both nullable on purpose: null clears the override (back to the option's own
+  // name) or the cap (back to showing every value), which is how the editor's
+  // empty box is sent. Omitted leaves whatever is stored alone.
+  cardLabel: z.string().max(80).nullable().optional(),
+  cardLimit: z.number().int().min(1).max(50).nullable().optional(),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -32,9 +38,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // A rename here is always the owner's own choice, so it counts as an override:
   // a later refresh stops offering the source's name back, and the same source
   // can sit on the product twice under two different names.
+  // A blank card label is not a label, it is the owner clearing the override, so
+  // it is stored as null rather than as an empty string the card would then print
+  // in front of the swatches.
+  const cardLabel = parsed.data.cardLabel?.trim()
   await updateOption(id, {
     ...parsed.data,
     ...(name !== undefined ? { name, nameOverridden: true } : {}),
+    ...(parsed.data.cardLabel !== undefined ? { cardLabel: cardLabel || null } : {}),
   })
   return NextResponse.json({ ok: true })
 }
