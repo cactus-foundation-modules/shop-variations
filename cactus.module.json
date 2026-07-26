@@ -1,13 +1,13 @@
 {
   "name": "shop-variations",
-  "version": "0.1.84",
+  "version": "0.1.85",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.116"
+      "minVersion": "0.1.122"
     }
   ],
   "permissions": [],
@@ -76,6 +76,12 @@
       "id": "variations-card-prices",
       "import": "./lib/card-price-provider",
       "component": "shopVariationsCardPrices"
+    },
+    {
+      "point": "shop.card-media",
+      "id": "variations-card-media",
+      "import": "./lib/card-media-provider",
+      "component": "shopVariationsCardMedia"
     },
     {
       "point": "core.media-reference-rewriters",
