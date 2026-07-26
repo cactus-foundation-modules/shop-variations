@@ -44,7 +44,9 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
         const primary = media.find((m) => m.isPrimary) ?? media[0]
         // Alt is the media's own where set; empty otherwise - a supplementary
         // carousel image, with the product name already carried by the first.
-        if (primary) images.push({ url: primary.url, alt: primary.altText ?? '' })
+        // `sourceId` is the variation's child product id, so the card's 3D overlay
+        // can show this variation's own model/material when its photo is on screen.
+        if (primary) images.push({ url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId })
       }
       if (images.length > 0) out.set(productId, { images })
     }
