@@ -11,6 +11,7 @@ import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, t
 import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
+import { skusToClearForRearrange } from '@/modules/shop-variations/lib/sku-rearrange'
 import { resolveOptionSourceProviders, type OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
 
 // A variant can carry several images, so the single `Image` cell holds them all
@@ -515,7 +516,28 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     if (pending.length > 0) {
       const lastByChild = new Map<string, (typeof pending)[number]['update']>()
       for (const w of pending) lastByChild.set(w.childId, w.update)
-      await runPool([...lastByChild], 8, async ([childId, update]) => {
+      const writes = [...lastByChild]
+
+      // SKU carries a global UNIQUE index. When a sheet REARRANGES SKUs among this
+      // parent's variants - a swap, or a whole column shifted down - applying the
+      // per-variant writes in any order lands two variants on one SKU part way
+      // through, Postgres rejects it (23505), and the loser keeps its old code so
+      // the product ends up half-swapped. Clear the blocking SKUs to NULL first
+      // (a UNIQUE index permits many NULLs), then write the new values against rows
+      // that no longer hold them. Only variants standing in another's way are
+      // cleared; a genuine duplicate still errors below. See sku-rearrange.ts.
+      const clearSkuIds = skusToClearForRearrange(
+        writes.flatMap(([childId, update]) =>
+          'sku' in update
+            ? [{ id: childId, from: upsertCtx.currentFields?.get(childId)?.sku ?? null, to: update.sku ?? null }]
+            : [],
+        ),
+      )
+      if (clearSkuIds.length > 0) {
+        await prisma.$executeRaw`UPDATE "shp_products" SET "sku" = NULL WHERE "id" IN (${Prisma.join(clearSkuIds)})`
+      }
+
+      await runPool(writes, 8, async ([childId, update]) => {
         try {
           await updateProduct(childId, update)
         } catch (err) {
