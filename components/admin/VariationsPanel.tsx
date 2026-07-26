@@ -619,7 +619,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // (the section's own) so scrolled cells do not show through, and a right border
   // to mark where the frozen column ends. Body cells override the background per
   // row so an edited row's amber tint carries across.
-  const stickyCol: CSSProperties = { padding: '0.5rem', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
+  // Frozen first column. It caps its own width and lets a long variant name wrap
+  // onto a second line rather than stretching wide enough to swallow the rest of
+  // the table when scrolled.
+  const stickyCol: CSSProperties = { padding: '0.5rem', maxWidth: '16rem', whiteSpace: 'normal', overflowWrap: 'anywhere', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
   const stickyColHead: CSSProperties = { ...stickyCol, zIndex: 2 }
 
   // Header tick state: fully ticked, or a mix (drawn as the indeterminate dash).
@@ -895,7 +898,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     return (
                       <tr key={v.variantId} style={{ borderBottom: '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
                         <td style={{ ...stickyCol, background: changed ? 'var(--color-warning-subtle)' : 'var(--color-surface)' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                             <input
                               type="checkbox"
                               aria-label={`Select ${v.label || 'variant'}`}
