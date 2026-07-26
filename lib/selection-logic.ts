@@ -72,6 +72,44 @@ export function effectiveSelection(payload: VariantSelectorPayload, raw: OptionS
   return kept
 }
 
+// Like effectiveSelection, but where a change above has stranded an option the
+// shopper HAD chosen, fill it with the first value still available to it rather
+// than leaving it empty - so a valid combination is kept in hand at all times.
+// The shopper's own raw pick is never touched (it stays the "ghost" shown struck
+// through); only the derived selection carries the stand-in, so reverting the
+// upstream change restores their original picks untouched.
+//
+// Works top-down, one option at a time: prune the raw picks, fill the first
+// stranded option, then re-prune - because settling that option can in turn
+// strand one below it, exactly as a manual pick would cascade. An option the
+// shopper never chose is left empty for them to pick (single-value settling of
+// those is withAutoSelected's job). The fill is always chosen against the picks
+// kept ABOVE it, matching isValueAvailable's directional filter, so the result is
+// a genuinely buyable combination and not a directional near-miss.
+export function withStrandedFilled(payload: VariantSelectorPayload, raw: OptionSelection): OptionSelection {
+  let working = raw
+  // Bounded by the option count: each pass settles one more option for good.
+  for (let guard = 0; guard <= payload.options.length; guard++) {
+    const effective = effectiveSelection(payload, working)
+    let target = -1
+    for (let i = 0; i < payload.options.length; i++) {
+      const option = payload.options[i]
+      if (!option || effective[option.id]) continue // still has a reachable pick
+      if (!raw[option.id]) continue // never chosen - leave for the shopper
+      if (!payload.options.slice(0, i).every((prev) => !!effective[prev.id])) continue // wait on upstream
+      target = i
+      break
+    }
+    if (target < 0) return effective
+    const option = payload.options[target]
+    if (!option) return effective
+    const first = option.values.find((v) => isValueAvailable(payload, effective, option.id, v.id))
+    if (!first) return effective // nothing available to stand in - leave it empty
+    working = { ...effective, [option.id]: first.id }
+  }
+  return effectiveSelection(payload, working)
+}
+
 // The chosen upstream value(s) that make a given option value unreachable, as a
 // human label for a tooltip ("Not available with Oak, Large"). An upstream pick
 // is a culprit when no buyable variant carries both it and the target value.

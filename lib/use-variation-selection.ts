@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, effectiveSelection, unavailableWith, valueToOptionMap, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, valueToOptionMap, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -213,12 +213,14 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // the shopper sees what was there and why it no longer fits, rather than a
   // control silently emptying itself.
   const rawOptionValues = entry?.optionValues ?? {}
-  // Prune the raw picks to the ones still reachable, then settle any option a
-  // pick has narrowed to a single choice (cascading downward). The auto-settle
-  // is gated on the shopper having actually picked something: an untouched page
-  // opens unchosen, showing the parent's price, and must not quietly pick a
-  // first option just because it happens to have one value.
-  const effective = payload ? effectiveSelection(payload, rawOptionValues) : rawOptionValues
+  // Prune the raw picks to the ones still reachable; where a change above has
+  // stranded an option the shopper had chosen, stand in its first available value
+  // so a valid combination is always in hand (the stranded pick stays as a ghost,
+  // struck through - see below). Then settle any option a pick has narrowed to a
+  // single choice (cascading downward). Both steps are gated on the shopper having
+  // actually picked something: an untouched page opens unchosen, showing the
+  // parent's price, and must not quietly pick a first option for them.
+  const effective = payload ? withStrandedFilled(payload, rawOptionValues) : rawOptionValues
   const optionValues = payload && Object.keys(rawOptionValues).length > 0 ? withAutoSelected(payload, effective) : effective
   const addonValues = entry?.addonValues ?? {}
 
