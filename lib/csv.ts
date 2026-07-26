@@ -11,6 +11,7 @@ import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, t
 import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
+import { resolveOptionSourceProviders, type OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
 
 // A variant can carry several images, so the single `Image` cell holds them all
 // as a comma-separated list, primary first. One url still reads (and imports) as
@@ -169,6 +170,13 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   if (rows.length < 2) { result.errors.push({ row: 0, reason: 'No data rows found' }); return result }
 
   const providers = await resolveVariantFieldProviders()
+  // Option-source providers (attributes, say), resolved once for the whole
+  // import. A value Pull creates on a source-backed option inherits the source's
+  // swatch and ref from these, so a colour/image option filled in by a sheet
+  // shows its swatches straight away rather than needing them re-added by hand.
+  const optionSourceProviderById = new Map<string, OptionSourceProvider>(
+    (await resolveOptionSourceProviders()).map((p) => [p.id, p.provider]),
+  )
   const header = (rows[0] ?? []).map((h) => h.trim())
   const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase())
   const slugCol = idx('Parent Slug')
@@ -205,16 +213,36 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     // Ensure every option + value named in this group's rows exists, building a
     // (optionName|valueLabel) -> value id map as we go.
     const valueIdByKey = new Map<string, string>()
-    const optionByName = new Map<string, { id: string }>()
+    const optionByName = new Map<string, { id: string; sourceProvider: string | null; sourceRef: string | null }>()
     // Each value's owning option and current label, for the stable-id rename
     // pass below.
     const valueInfo = new Map<string, { optionId: string; optionName: string; label: string }>()
     for (const o of await getOptionsWithValues(parent.id)) {
-      optionByName.set(o.name.toLowerCase(), { id: o.id })
+      optionByName.set(o.name.toLowerCase(), { id: o.id, sourceProvider: o.sourceProvider, sourceRef: o.sourceRef })
       for (const v of o.values) {
         valueIdByKey.set(`${o.name.toLowerCase()}|${v.label.toLowerCase()}`, v.id)
         valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label })
       }
+    }
+
+    // A source-backed option's values, keyed by lowercased label, fetched from the
+    // provider the first time a new value on that option needs one and cached for
+    // the parent. A hand-typed option, an absent provider, or a source since
+    // deleted all cache an empty map and never ask again.
+    const sourceValuesByOption = new Map<string, Map<string, { ref: string; swatch: string | null }>>()
+    async function sourceValuesFor(option: { id: string; sourceProvider: string | null; sourceRef: string | null }): Promise<Map<string, { ref: string; swatch: string | null }>> {
+      const cached = sourceValuesByOption.get(option.id)
+      if (cached) return cached
+      const map = new Map<string, { ref: string; swatch: string | null }>()
+      if (option.sourceProvider && option.sourceRef) {
+        const provider = optionSourceProviderById.get(option.sourceProvider)
+        if (provider) {
+          const source = await provider.getSource(option.sourceRef).catch(() => null)
+          for (const v of source?.values ?? []) map.set(v.label.toLowerCase(), { ref: v.ref, swatch: v.swatch })
+        }
+      }
+      sourceValuesByOption.set(option.id, map)
+      return map
     }
 
     async function ensureValue(optName: string, valLabel: string): Promise<string> {
@@ -224,10 +252,14 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
       let option = optionByName.get(optName.toLowerCase())
       if (!option) {
         const created = await createOption(parent!.id, optName, 'DROPDOWN', optionByName.size)
-        option = { id: created.id }
+        option = { id: created.id, sourceProvider: null, sourceRef: null }
         optionByName.set(optName.toLowerCase(), option)
       }
-      const value = await createOptionValue(option.id, valLabel, null, valueIdByKey.size)
+      // New to this product but on the option's source list -> inherit the
+      // source's swatch and ref, so it matches by id on a later refresh rather
+      // than orphaning, and its swatch shows without a manual re-add.
+      const fromSource = (await sourceValuesFor(option)).get(valLabel.toLowerCase())
+      const value = await createOptionValue(option.id, valLabel, fromSource?.swatch ?? null, valueIdByKey.size, fromSource?.ref ?? null)
       valueIdByKey.set(key, value.id)
       return value.id
     }
