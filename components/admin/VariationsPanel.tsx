@@ -619,10 +619,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // (the section's own) so scrolled cells do not show through, and a right border
   // to mark where the frozen column ends. Body cells override the background per
   // row so an edited row's amber tint carries across.
-  // Frozen first column. It caps its own width and lets a long variant name wrap
-  // onto a second line rather than stretching wide enough to swallow the rest of
-  // the table when scrolled.
-  const stickyCol: CSSProperties = { padding: '0.5rem', maxWidth: '16rem', whiteSpace: 'normal', overflowWrap: 'anywhere', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
+  // Frozen first column. It holds a fixed width and lets a long variant name wrap
+  // onto extra lines rather than stretching wide enough to swallow the rest of
+  // the table when scrolled. width + minWidth stop the table auto-layout from
+  // collapsing the column to a sliver; break-word only splits a genuinely
+  // unbroken word, so normal names wrap at their spaces.
+  const stickyCol: CSSProperties = { padding: '0.5rem', width: '14rem', minWidth: '14rem', whiteSpace: 'normal', overflowWrap: 'break-word', position: 'sticky', left: 0, zIndex: 1, background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }
   const stickyColHead: CSSProperties = { ...stickyCol, zIndex: 2 }
 
   // Header tick state: fully ticked, or a mix (drawn as the indeterminate dash).
