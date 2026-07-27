@@ -9,12 +9,12 @@
 // lib/detail-parts-provider.ts.
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice } from '@/modules/shop/lib/pricing'
-import type { ShopCardPriceProvider } from '@/modules/shop/lib/card-price'
+import type { ShopCardFromPrice, ShopCardPriceProvider } from '@/modules/shop/lib/card-price'
 import { getVariantsForProducts, getChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 
 export const shopVariationsCardPrices: ShopCardPriceProvider = {
   async fromPrices(productIds) {
-    const out: Record<string, string> = {}
+    const out: Record<string, ShopCardFromPrice> = {}
     if (productIds.length === 0) return out
 
     const variantsByProduct = await getVariantsForProducts(productIds)
@@ -36,14 +36,21 @@ export const shopVariationsCardPrices: ShopCardPriceProvider = {
 
     for (const [productId, variants] of variantsByProduct) {
       let cheapest: number | null = null
+      let dearest: number | null = null
       for (const v of variants) {
         if (!v.enabled) continue
         const child = fields.get(v.childProductId)
         if (!child) continue
         const price = effectivePrice(child, enabledPriceTypes)
         if (cheapest == null || price < cheapest) cheapest = price
+        if (dearest == null || price > dearest) dearest = price
       }
-      if (cheapest != null) out[productId] = cheapest.toFixed(2)
+      // Only a real spread is a range. Where every variation costs the same,
+      // the card says the price flat out rather than "From" it - a half-penny
+      // tolerance so floating-point crumbs cannot invent a range of nothing.
+      if (cheapest != null) {
+        out[productId] = { price: cheapest.toFixed(2), varies: (dearest ?? cheapest) - cheapest > 0.005 }
+      }
     }
     return out
   },

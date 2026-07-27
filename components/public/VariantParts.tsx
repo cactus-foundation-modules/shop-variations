@@ -633,7 +633,9 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   // Until a full combination is settled, the exact price is unknown, so show the
   // cheapest as "From £…" rather than the parent's own (which is not on sale and
   // may be the dearest). Once every option is chosen the resolved price stands.
-  const showFrom = sel.hasOptions && !sel.allOptionsChosen
+  // Where the choices all cost the same there is no range to count up from, so
+  // the one price shows plain - the hook already puts that figure in `price`.
+  const showFrom = sel.hasOptions && !sel.allOptionsChosen && sel.priceVaries
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
       {showFrom
