@@ -12,6 +12,7 @@ import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildP
 import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 import { skusToClearForRearrange } from '@/modules/shop-variations/lib/sku-rearrange'
+import { repointOnRename } from '@/modules/shop-variations/lib/rename-repoint'
 import { resolveOptionSourceProviders, type OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
 
 // A variant can carry several images, so the single `Image` cell holds them all
@@ -253,12 +254,12 @@ export async function importVariationsCsv(
     const optionByName = new Map<string, { id: string; sourceProvider: string | null; sourceRef: string | null }>()
     // Each value's owning option and current label, for the stable-id rename
     // pass below.
-    const valueInfo = new Map<string, { optionId: string; optionName: string; label: string }>()
+    const valueInfo = new Map<string, { optionId: string; optionName: string; label: string; swatch: string | null; sourceRef: string | null }>()
     for (const o of await getOptionsWithValues(parent.id)) {
       optionByName.set(o.name.toLowerCase(), { id: o.id, sourceProvider: o.sourceProvider, sourceRef: o.sourceRef })
       for (const v of o.values) {
         valueIdByKey.set(`${o.name.toLowerCase()}|${v.label.toLowerCase()}`, v.id)
-        valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label })
+        valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label, swatch: v.swatch, sourceRef: v.sourceRef })
       }
     }
 
@@ -282,6 +283,35 @@ export async function importVariationsCsv(
       return map
     }
 
+    // A label the option's source has never heard of, pushed up to that source
+    // before it is written here - the same way a value typed on the Variations
+    // tab is. Without this the traffic ran one way only: a sheet could invent
+    // "Beech & White" on a product whose Finish option came from an attribute,
+    // and the attribute never heard about it, so the value carried no swatch, no
+    // ref for a later Refresh to match on, and never appeared in the public
+    // filters. Null for a hand-typed option or a provider that cannot take
+    // values, which stays local as before.
+    //
+    // Same hard-stop rule the values POST route applies: a source that refuses
+    // fails the row rather than quietly writing the value locally, which would
+    // look like it worked while the attributes screen silently disagreed.
+    async function pushToSource(
+      option: { id: string; sourceProvider: string | null; sourceRef: string | null },
+      optName: string,
+      valLabel: string,
+    ): Promise<{ ref: string; swatch: string | null } | null> {
+      if (!option.sourceProvider || !option.sourceRef) return null
+      const provider = optionSourceProviderById.get(option.sourceProvider)
+      if (!provider?.createValue) return null
+      const created = await provider.createValue(option.sourceRef, { label: valLabel, swatch: null })
+      if (!created) throw new Error(`Could not add "${valLabel}" to the list "${optName}" takes its values from`)
+      // Into this parent's cache, so the next row naming the same new value
+      // reuses it instead of asking the source again for every row it appears on.
+      const entry = { ref: created.ref, swatch: created.swatch }
+      ;(await sourceValuesFor(option)).set(valLabel.toLowerCase(), entry)
+      return entry
+    }
+
     async function ensureValue(optName: string, valLabel: string): Promise<string> {
       const key = `${optName.toLowerCase()}|${valLabel.toLowerCase()}`
       const existing = valueIdByKey.get(key)
@@ -294,8 +324,12 @@ export async function importVariationsCsv(
       }
       // New to this product but on the option's source list -> inherit the
       // source's swatch and ref, so it matches by id on a later refresh rather
-      // than orphaning, and its swatch shows without a manual re-add.
-      const fromSource = (await sourceValuesFor(option)).get(valLabel.toLowerCase())
+      // than orphaning, and its swatch shows without a manual re-add. New to the
+      // source too -> it gets added there first and the copy inherits from that.
+      // The sheet's own spelling is kept either way: the source is the authority
+      // on what it stores, this option's label is what the sheet asked for.
+      const fromSource =
+        (await sourceValuesFor(option)).get(valLabel.toLowerCase()) ?? (await pushToSource(option, optName, valLabel))
       const value = await createOptionValue(option.id, valLabel, fromSource?.swatch ?? null, valueIdByKey.size, fromSource?.ref ?? null)
       valueIdByKey.set(key, value.id)
       return value.id
@@ -370,10 +404,41 @@ export async function importVariationsCsv(
         if (!covered) continue
         const newLabel = [...labels][0]!
         if (await optionValueLabelTaken(info.optionId, newLabel, valueId)) continue
-        await updateOptionValue(valueId, { label: newLabel })
+
+        // The label has moved; the link to the source has to move with it. Left
+        // alone, this value still answers to the source value it used to be, and
+        // that value's next swatch edit lands here - which is how a whole shelf
+        // of desks ended up showing Silver's grey under a "Black" swatch.
+        const option = optionByName.get(info.optionName)
+        const sourceList = option
+          ? [...(await sourceValuesFor(option)).entries()].map(([label, v]) => ({ label, ref: v.ref, swatch: v.swatch }))
+          : []
+        const repoint = repointOnRename({
+          currentSourceRef: info.sourceRef,
+          currentSwatch: info.swatch,
+          newLabel,
+          sourceValues: sourceList,
+          siblingRefs: [...valueInfo.entries()]
+            .filter(([id, i]) => id !== valueId && i.optionId === info.optionId)
+            .map(([, i]) => i.sourceRef),
+        })
+        const fields: { label: string; swatch?: string | null; sourceRef?: string | null } = { label: newLabel }
+        if (repoint.kind === 'adopt') {
+          fields.sourceRef = repoint.ref
+          if (repoint.swatch !== undefined) fields.swatch = repoint.swatch
+        } else if (repoint.kind === 'clear') {
+          fields.sourceRef = null
+        }
+
+        await updateOptionValue(valueId, fields)
         valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
         valueIdByKey.set(`${info.optionName}|${newLabel.toLowerCase()}`, valueId)
-        valueInfo.set(valueId, { ...info, label: newLabel })
+        valueInfo.set(valueId, {
+          ...info,
+          label: newLabel,
+          swatch: fields.swatch !== undefined ? fields.swatch : info.swatch,
+          sourceRef: fields.sourceRef !== undefined ? fields.sourceRef : info.sourceRef,
+        })
         renamedValues += 1
       }
     }
