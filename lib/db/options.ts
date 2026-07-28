@@ -183,11 +183,17 @@ export async function createOptionValue(
   return rows[0]
 }
 
-export async function updateOptionValue(id: string, fields: { label?: string; swatch?: string | null; position?: number }): Promise<void> {
+export async function updateOptionValue(
+  id: string,
+  fields: { label?: string; swatch?: string | null; position?: number; sourceRef?: string | null },
+): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.label !== undefined) sets.push(Prisma.sql`"label" = ${fields.label}`)
   if (fields.swatch !== undefined) sets.push(Prisma.sql`"swatch" = ${fields.swatch}`)
   if (fields.position !== undefined) sets.push(Prisma.sql`"position" = ${fields.position}`)
+  // Which source value this copy answers to. Moved when a rename makes it a
+  // different one of the source's values - see rename-repoint.ts.
+  if (fields.sourceRef !== undefined) sets.push(Prisma.sql`"source_ref" = ${fields.sourceRef}`)
   if (sets.length === 0) return
   await prisma.$executeRaw`UPDATE "svr_option_values" SET ${Prisma.join(sets, ', ')} WHERE "id" = ${id}`
 }
