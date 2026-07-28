@@ -469,11 +469,21 @@ export async function importVariationsCsv(
 
         // Hand the whole row (keyed by header label) to each extra-field provider
         // so it can pick out its own columns and write them onto this variant.
+        //
+        // `rowChanged` is asked FIRST, while the context still describes the
+        // variant as it was: `applyImportedRow` mutates that context, so asking
+        // afterwards would always answer "no". A provider that cannot answer is
+        // simply not counted, exactly as before.
+        let providerChanged = false
         if (providers.length > 0) {
           const rowRecord: Record<string, string> = {}
           header.forEach((h, i) => { rowRecord[h] = (gr.cols[i] ?? '').trim() })
           for (const { id, provider } of providers) {
-            await provider.applyImportedRow(parent.id, childProductId, rowRecord, providerCtx.get(id))
+            const ctx = providerCtx.get(id)
+            if (!providerChanged && provider.rowChanged && await provider.rowChanged(parent.id, childProductId, rowRecord, ctx)) {
+              providerChanged = true
+            }
+            await provider.applyImportedRow(parent.id, childProductId, rowRecord, ctx)
           }
         }
 
@@ -506,11 +516,12 @@ export async function importVariationsCsv(
         }
 
         // "Updated" means this row actually changed something - not every row the
-        // sheet happened to list. A provider-only change (a 3D file, an attribute
-        // value) isn't counted here since those already skip their own no-op
-        // writes; this count reflects the variant's own fields and image.
+        // sheet happened to list. That includes a provider-only change (a 3D file
+        // swapped, an attribute value retyped): leaving those out made a Pull that
+        // attached 152 models report "0 created, 0 updated", which reads as "it did
+        // nothing" and sends the owner round again.
         if (created) result.created += 1
-        else if (fieldsChanged || imageChanged || reassignedRow) result.updated += 1
+        else if (fieldsChanged || imageChanged || reassignedRow || providerChanged) result.updated += 1
       } catch (err) {
         result.errors.push({ row: gr.rowNum, reason: err instanceof Error ? err.message : 'Row failed' })
       }
