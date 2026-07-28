@@ -165,7 +165,18 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
   await Promise.all(workers)
 }
 
-export async function importVariationsCsv(text: string): Promise<ImportResult> {
+// Handed to `opts.onRow` as each row is picked up, so a caller running an import
+// on someone's behalf can name the variation being written right now rather than
+// only count them. Fired BEFORE the row's work, since that is the moment the
+// label is true ("Updating X - Black / High back…"). `index` counts announced
+// rows in processing order (rows are grouped by parent first, so it is not the
+// CSV order); `row` is the CSV row number the owner would count, header = 1.
+export type VariationRowProgress = { index: number; row: number; parent: string; label: string }
+
+export async function importVariationsCsv(
+  text: string,
+  opts?: { onRow?: (progress: VariationRowProgress) => void | Promise<void> },
+): Promise<ImportResult> {
   const rows = parseCsv(text)
   const result: ImportResult = { created: 0, updated: 0, errors: [] }
   if (rows.length < 2) { result.errors.push({ row: 0, reason: 'No data rows found' }); return result }
@@ -192,6 +203,26 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
     optionPairs.push({ nameCol, valueCol })
   }
 
+  // What this row calls itself: its option values, in header order. Read straight
+  // off the cells so a row can be announced before any lookup happens.
+  function rowLabel(cols: string[]): string {
+    const labels: string[] = []
+    for (const pair of optionPairs) {
+      const valLabel = (cols[pair.valueCol] ?? '').trim()
+      if (valLabel) labels.push(valLabel)
+    }
+    return labels.join(' / ')
+  }
+
+  // Rows announced so far, in processing order. A reporter's own failure must
+  // never fail the import - it is commentary, not work.
+  let announced = 0
+  async function announce(rowNum: number, parent: string, cols: string[]): Promise<void> {
+    if (!opts?.onRow) return
+    const progress = { index: announced++, row: rowNum, parent, label: rowLabel(cols) }
+    await Promise.resolve(opts.onRow(progress)).catch(() => {})
+  }
+
   // Group data rows by parent slug.
   const groups = new Map<string, Array<{ rowNum: number; cols: string[] }>>()
   for (let r = 1; r < rows.length; r++) {
@@ -207,7 +238,12 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
   for (const [slug, groupRows] of groups) {
     const parent = await getProductBySlug(slug)
     if (!parent || parent.catalogueHidden) {
-      for (const gr of groupRows) result.errors.push({ row: gr.rowNum, reason: `Parent product not found: ${slug}` })
+      for (const gr of groupRows) {
+        // Announced all the same: a caller counting rows off this callback would
+        // otherwise stall on a group it will never hear about again.
+        await announce(gr.rowNum, slug, gr.cols)
+        result.errors.push({ row: gr.rowNum, reason: `Parent product not found: ${slug}` })
+      }
       continue
     }
 
@@ -382,6 +418,7 @@ export async function importVariationsCsv(text: string): Promise<ImportResult> {
 
     let reassignedAny = false
     for (const gr of groupRows) {
+      await announce(gr.rowNum, parent.name, gr.cols)
       try {
         const optionValueIds: string[] = []
         const labels: string[] = []
