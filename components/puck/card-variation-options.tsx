@@ -49,12 +49,17 @@ const SAMPLE: CardOptionSummary[] = [
   { id: 'sample-size', label: 'Size', kind: 'text', values: [{ label: 'Small', swatch: null }, { label: 'Medium', swatch: null }, { label: 'Large', swatch: null }], more: 0 },
 ]
 
-const rootStyle: CSSProperties = { display: 'grid', gap: '0.25rem', margin: '0.5rem 0 0', padding: '0 16px' }
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: '0.375rem', flexWrap: 'wrap', fontSize: '0.75rem', lineHeight: 1.4, color: 'var(--color-text-muted)' }
+// Sized in em, never rem: the card sets its own font-size, and a surface may
+// shrink the whole text block by turning that one figure down (shop's two-up
+// mobile grid halves it). rem is root-relative, so these rows would have stayed
+// full size while the name and price beside them shrank. The figures are the same
+// as before at the card's normal 16px base.
+const rootStyle: CSSProperties = { display: 'grid', gap: '0.25em', margin: '0.5em 0 0', padding: '0 1em' }
+const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.75em', lineHeight: 1.4, color: 'var(--color-text-muted)' }
 const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)' }
-const swatchRowStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }
-const dotStyle: CSSProperties = { width: 14, height: 14, borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
-const thumbStyle: CSSProperties = { width: 18, height: 18, borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
+const swatchRowStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '0.333em', flexWrap: 'wrap' }
+const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
+const thumbStyle: CSSProperties = { width: '1.5em', height: '1.5em', borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
 const moreStyle: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
 
 // A swatch or image value with nothing to show falls back to its label, the same
