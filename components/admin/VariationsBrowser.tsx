@@ -106,6 +106,7 @@ export function VariationsBrowser() {
 
   const [data, setData] = useState<VariationListResult | null>(null)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [columns, setColumns] = useState<VariationListColumn[]>([])
 
   const [productId, setProductId] = useState('')
@@ -121,6 +122,7 @@ export function VariationsBrowser() {
 
   const refresh = useCallback(() => {
     setLoading(true)
+    setFailed(false)
     const params = new URLSearchParams()
     if (productId) params.set('product', productId)
     if (missing) params.set('missing', missing)
@@ -128,14 +130,16 @@ export function VariationsBrowser() {
     params.set('page', String(page))
     params.set('perPage', String(PER_PAGE))
     fetch(`/api/m/shop-variations/admin/variations?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: VariationListResult | null) => {
-        if (!d) return
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: VariationListResult) => {
         setData(d)
         // Keep the column set even across a page that happens to have none, so the
         // header does not flicker as the owner pages through.
         if (d.columns.length > 0 || page === 1) setColumns(d.columns)
       })
+      // A filter that fails has to say so. Swallowing it left the previous
+      // results on screen and looked exactly like a filter that found nothing.
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false))
   }, [productId, missing, searchDebounced, page])
 
@@ -149,6 +153,7 @@ export function VariationsBrowser() {
   const firstOnPage = total === 0 ? 0 : (page - 1) * PER_PAGE + 1
   const lastOnPage = Math.min(page * PER_PAGE, total)
   const hasFilters = Boolean(productId || missing || searchDebounced)
+  const isLost = missing.startsWith('lost:')
 
   // "Missing" options: image is always offered; a contributed column (the 3D file,
   // each attribute) is offered once it is known to exist.
@@ -186,12 +191,28 @@ export function VariationsBrowser() {
             ))}
           </optgroup>
         </select>
+        {/* A "Lost …" filter asks the media host about every file in the
+            catalogue, which takes real seconds - without this the page just sat
+            there looking like the filter had done nothing. */}
+        {loading && <span className="svb-spinner" role="status" aria-label="Applying filter" />}
         <input className="svb-search" aria-label="Search variations" placeholder="Search product or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {hasFilters && <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>}
-        {!loading && <span className="svb-count">{total} variation{total === 1 ? '' : 's'}</span>}
+        {!loading && !failed && <span className="svb-count">{total} variation{total === 1 ? '' : 's'}</span>}
       </div>
 
-      {loading && !data ? (
+      {isLost && !loading && !failed && (
+        <div className="svb-note svb-note-tight">
+          {data?.scanPartial
+            ? 'Checked as many files as there was time for, so there may be more. Narrow to one product to check the rest.'
+            : 'Every file checked. Anything the media host could not answer for is left off rather than flagged.'}
+        </div>
+      )}
+
+      {failed ? (
+        <div className="svb-note">
+          That filter could not be applied - the checks took too long or the connection dropped. Try again, or narrow to a single product first.
+        </div>
+      ) : loading && !data ? (
         <div className="svb-note">Loading variations…</div>
       ) : rows.length === 0 ? (
         <div className="svb-note">
@@ -220,7 +241,7 @@ export function VariationsBrowser() {
         </div>
       )}
 
-      {total > PER_PAGE && (
+      {!failed && total > PER_PAGE && (
         <div className="svb-pager">
           <span className="svb-muted">Showing {firstOnPage}–{lastOnPage} of {total}</span>
           <div className="svb-pager-btns">
@@ -276,6 +297,10 @@ const css = `
 .svb-count { color: var(--color-text-muted); font-size: var(--text-sm, 0.875rem); margin-left: auto; }
 .svb-muted { color: var(--color-text-muted); }
 .svb-note { color: var(--color-text-muted); padding: 1.5rem 0; }
+.svb-note-tight { padding: 0 0 0.75rem; font-size: var(--text-sm, 0.875rem); }
+.svb-spinner { width: 1rem; height: 1rem; flex: none; border-radius: 50%; border: 2px solid var(--color-border); border-top-color: var(--color-primary); animation: svb-spin 0.7s linear infinite; }
+@keyframes svb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .svb-spinner { animation-duration: 2.4s; } }
 .svb-wrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius, 8px); }
 .svb-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm, 0.875rem); }
 .svb-table th, .svb-table td { text-align: left; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; white-space: nowrap; }

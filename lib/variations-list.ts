@@ -59,6 +59,12 @@ export type VariationListResult = {
   columns: VariationListColumn[]
   /** Every product with at least one variation, for the filter dropdown. */
   products: Array<{ id: string; name: string }>
+  /**
+   * True when a "lost" filter ran out of time before every file had been asked
+   * about, so the list is a subset of what is actually broken. The browser says
+   * so rather than presenting a short list as the whole answer.
+   */
+  scanPartial?: boolean
 }
 
 export type VariationListParams = {
@@ -233,19 +239,22 @@ export async function getVariationsList(
   // inside findMissingUrls), then the rows are narrowed to the ones holding a
   // dead url. A url that cannot be checked is not dead, so this under-reports
   // rather than pointing the owner at working photography.
+  let scanPartial = false
   if (lost === 'image') {
-    const dead = await findMissingUrls(baseRows.map((r) => r.image_url).filter((u): u is string => !!u))
-    filtered = dead.size === 0 ? [] : baseRows.filter((r) => !!r.image_url && dead.has(r.image_url))
+    const scan = await findMissingUrls(baseRows.map((r) => r.image_url).filter((u): u is string => !!u))
+    scanPartial = !scan.complete
+    filtered = scan.missing.size === 0 ? [] : baseRows.filter((r) => !!r.image_url && scan.missing.has(r.image_url))
   } else if (lostOnField) {
     const urlsByChild = new Map<string, string[]>()
     for (const r of baseRows) {
       if (urlsByChild.has(r.child_product_id)) continue
       urlsByChild.set(r.child_product_id, fileUrlsFromValue(mergeValues(fieldByChild.get(r.child_product_id), columns)[lost]))
     }
-    const dead = await findMissingUrls([...urlsByChild.values()].flat())
-    filtered = dead.size === 0
+    const scan = await findMissingUrls([...urlsByChild.values()].flat())
+    scanPartial = !scan.complete
+    filtered = scan.missing.size === 0
       ? []
-      : baseRows.filter((r) => (urlsByChild.get(r.child_product_id) ?? []).some((u) => dead.has(u)))
+      : baseRows.filter((r) => (urlsByChild.get(r.child_product_id) ?? []).some((u) => scan.missing.has(u)))
   }
 
   const total = filtered.length
@@ -287,5 +296,6 @@ export async function getVariationsList(
     // only ever deals in the merged id.
     columns: columns.map(({ id, label, kind }) => ({ id, label, kind })),
     products,
+    scanPartial,
   }
 }

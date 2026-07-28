@@ -43,18 +43,19 @@ describe('findMissingUrls', () => {
       'https://cdn/deleted.webp': 410,
       'https://cdn/here.webp': 200,
     })
-    const missing = await findMissingUrls(['https://cdn/gone.webp', 'https://cdn/deleted.webp', 'https://cdn/here.webp'])
-    expect([...missing].sort()).toEqual(['https://cdn/deleted.webp', 'https://cdn/gone.webp'])
+    const scan = await findMissingUrls(['https://cdn/gone.webp', 'https://cdn/deleted.webp', 'https://cdn/here.webp'])
+    expect([...scan.missing].sort()).toEqual(['https://cdn/deleted.webp', 'https://cdn/gone.webp'])
+    expect(scan.complete).toBe(true)
   })
 
   it('treats an unanswerable url as fine rather than broken', async () => {
     // A timeout, a refused connection or a 500 says nothing about whether the
     // file is there. Flagging on it would point the owner at working photography.
     respondWith({ 'https://cdn/flaky.webp': 500 })
-    expect(await findMissingUrls(['https://cdn/flaky.webp'])).toEqual(new Set())
+    expect((await findMissingUrls(['https://cdn/flaky.webp'])).missing).toEqual(new Set())
     clearLostFileCache()
     respondWith({})
-    expect(await findMissingUrls(['https://cdn/unreachable.webp'])).toEqual(new Set())
+    expect((await findMissingUrls(['https://cdn/unreachable.webp'])).missing).toEqual(new Set())
   })
 
   it('re-asks with a ranged GET when HEAD is refused, and judges by that', async () => {
@@ -66,23 +67,51 @@ describe('findMissingUrls', () => {
       return { status: 404, ok: false } as Response
     }) as typeof fetch
 
-    expect(await findMissingUrls(['https://cdn/head-hostile.glb'])).toEqual(new Set(['https://cdn/head-hostile.glb']))
+    expect((await findMissingUrls(['https://cdn/head-hostile.glb'])).missing).toEqual(new Set(['https://cdn/head-hostile.glb']))
     expect(calls.map((c) => c.method)).toEqual(['HEAD', 'GET'])
+  })
+
+  it('stops asking a host for HEAD once it has refused one', async () => {
+    // The media Worker answers every HEAD with 405 whatever the file's state, so
+    // paying for that refusal per url doubled a whole catalogue's sweep - which
+    // is what pushed the "Lost image" filter past the route's time limit.
+    const calls: Array<{ url: string; method: string }> = []
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      calls.push({ url: String(input), method })
+      return (method === 'HEAD' ? { status: 405, ok: false } : { status: 404, ok: false }) as Response
+    }) as typeof fetch
+
+    // One at a time, so the first url's refusal is known before the second starts.
+    await findMissingUrls(['https://cdn/a.webp'])
+    await findMissingUrls(['https://cdn/b.webp'])
+    expect(calls.map((c) => c.method)).toEqual(['HEAD', 'GET', 'GET'])
+
+    // A different host has said nothing yet, so it still gets asked properly.
+    await findMissingUrls(['https://other/c.webp'])
+    expect(calls.filter((c) => c.method === 'HEAD')).toHaveLength(2)
+  })
+
+  it('gives up at the deadline and says the scan was partial', async () => {
+    respondWith({ 'https://cdn/slow.webp': 404 })
+    const scan = await findMissingUrls(['https://cdn/slow.webp'], 0)
+    expect(scan.complete).toBe(false)
+    expect(scan.missing).toEqual(new Set())
   })
 
   it('asks once per url however many variations share it, and caches the answer', async () => {
     const calls: Array<{ url: string; method: string }> = []
     respondWith({ 'https://cdn/shared.webp': 404 }, calls)
     const urls = ['https://cdn/shared.webp', 'https://cdn/shared.webp', 'https://cdn/shared.webp']
-    expect(await findMissingUrls(urls)).toEqual(new Set(['https://cdn/shared.webp']))
-    expect(await findMissingUrls(urls)).toEqual(new Set(['https://cdn/shared.webp']))
+    expect((await findMissingUrls(urls)).missing).toEqual(new Set(['https://cdn/shared.webp']))
+    expect((await findMissingUrls(urls)).missing).toEqual(new Set(['https://cdn/shared.webp']))
     expect(calls).toHaveLength(1)
   })
 
   it('never asks about a url it could not check anyway', async () => {
     const calls: Array<{ url: string; method: string }> = []
     respondWith({}, calls)
-    expect(await findMissingUrls(['/media/shop/desk.webp', 'not a url'])).toEqual(new Set())
+    expect((await findMissingUrls(['/media/shop/desk.webp', 'not a url'])).missing).toEqual(new Set())
     expect(calls).toHaveLength(0)
   })
 })
