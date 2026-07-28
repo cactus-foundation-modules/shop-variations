@@ -141,6 +141,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // the grid reloads (see the effect below), so a delete or rebuild can't leave
   // a phantom id selected.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // One chosen value id per option, which is exactly the choice a shopper makes
+  // on the product page - narrowing a 240-row matrix to the eight rows in Oak is
+  // the same question either way, so it is asked with the same controls. An
+  // option missing from the record, or holding '', means "any".
+  const [optionFilter, setOptionFilter] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [optionError, setOptionError] = useState<string | null>(null)
@@ -591,11 +596,14 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     editVariant(variantId, { supplier: name })
   }, [editVariant, loadSuppliers, promptText, showAlert, supplierField])
 
-  function bulkSet(field: 'price' | 'stockCount', value: number) {
-    if (!data) return
+  // Fills the rows on screen, which with no filter on is every row and with one
+  // on is the set the owner has just narrowed to - "every row in Oak, £340" being
+  // the whole reason for filtering in the first place. The control says which it
+  // is about to do.
+  function bulkSet(rows: VariantRow[], field: 'price' | 'stockCount', value: number) {
     setEdits((prev) => {
       const next = { ...prev }
-      for (const v of data.variants) next[v.variantId] = { ...next[v.variantId], [field]: value }
+      for (const v of rows) next[v.variantId] = { ...next[v.variantId], [field]: value }
       return next
     })
   }
@@ -604,6 +612,55 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     () => (data?.options.length ? data.options.reduce((acc, o) => acc * Math.max(o.values.length, 0), 1) : 0),
     [data],
   )
+  // --- The option filter ----------------------------------------------------
+  //
+  // Read rather than pruned. A rebuild or an edited option can retire a value
+  // that is currently filtered on, and reconciling that back into state would be
+  // a setState in an effect for something derivable in a line: a choice whose
+  // value has gone simply stops counting, and the dropdown falls back to "Any".
+  const liveValueIds = useMemo(
+    () => new Set((data?.options ?? []).flatMap((o) => o.values.map((v) => v.id))),
+    [data],
+  )
+  const activeFilter = useMemo(() => {
+    const kept: Record<string, string> = {}
+    for (const [optionId, valueId] of Object.entries(optionFilter)) {
+      if (valueId && liveValueIds.has(valueId)) kept[optionId] = valueId
+    }
+    return kept
+  }, [optionFilter, liveValueIds])
+  const filtering = Object.keys(activeFilter).length > 0
+
+  // A variant is shown when it carries every chosen value. Options left on "Any"
+  // ask nothing, so a partial choice narrows rather than matching nothing - the
+  // opposite of the storefront, where a half-made choice is not yet a product.
+  const visibleVariants = useMemo(() => {
+    if (!data) return []
+    const wanted = Object.values(activeFilter)
+    if (wanted.length === 0) return data.variants
+    return data.variants.filter((v) => wanted.every((id) => v.optionValueIds.includes(id)))
+  }, [data, activeFilter])
+
+  // Which of an option's values still lead anywhere, judged against every OTHER
+  // option's choice - so the dropdowns narrow each other the way the storefront's
+  // do, and an owner cannot pick their way into an empty table. The option's own
+  // choice is left out of its own test, or it would only ever offer itself back.
+  const reachableValues = useMemo(() => {
+    const byOption = new Map<string, Set<string>>()
+    if (!data) return byOption
+    for (const option of data.options) {
+      const others = Object.entries(activeFilter).filter(([id]) => id !== option.id).map(([, valueId]) => valueId)
+      const reachable = new Set<string>()
+      for (const v of data.variants) {
+        if (others.every((id) => v.optionValueIds.includes(id))) {
+          for (const valueId of v.optionValueIds) reachable.add(valueId)
+        }
+      }
+      byOption.set(option.id, reachable)
+    }
+    return byOption
+  }, [data, activeFilter])
+
   const matrixStale = data != null && expectedCount > 0 && expectedCount !== data.variants.length
   // Fewer rows than the options call for - a big matrix that has not finished
   // building yet. The build is resumable (generateMatrix only fills the gap), so
@@ -638,9 +695,19 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const stickyColHead: CSSProperties = { ...stickyCol, zIndex: 2 }
 
   // Header tick state: fully ticked, or a mix (drawn as the indeterminate dash).
-  const allSelected = data.variants.length > 0 && data.variants.every((v) => selected.has(v.variantId))
+  // Judged on the rows actually shown - with a filter on, "select every variant"
+  // has to mean the ones in front of you, or a tick box ticks rows you cannot see
+  // and the Delete button beside it takes them with it.
+  const allSelected = visibleVariants.length > 0 && visibleVariants.every((v) => selected.has(v.variantId))
   const someSelected = selected.size > 0 && !allSelected
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(data.variants.map((v) => v.variantId)))
+  const toggleAll = () => setSelected((prev) => {
+    const next = new Set(prev)
+    for (const v of visibleVariants) {
+      if (allSelected) next.delete(v.variantId)
+      else next.add(v.variantId)
+    }
+    return next
+  })
 
   return (
     <div className="spe-panel">
@@ -842,7 +909,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
       <section className="spe-section">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0 }}>
-            <h3 className="spe-section-head">Variants{data.variants.length > 0 ? ` (${data.variants.length})` : ''}</h3>
+            <h3 className="spe-section-head">
+              Variants
+              {data.variants.length > 0 && (filtering
+                ? ` (${visibleVariants.length} of ${data.variants.length})`
+                : ` (${data.variants.length})`)}
+            </h3>
             <p className="spe-section-blurb">
               One row per combination of your options. Give each its own price, stock and picture; untick any you do not
               actually sell.
@@ -883,6 +955,15 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
           </p>
         ) : (
           <>
+            <VariantFilterBar
+              options={data.options}
+              filter={activeFilter}
+              reachable={reachableValues}
+              shown={visibleVariants.length}
+              total={data.variants.length}
+              onChange={(optionId, valueId) => setOptionFilter((prev) => ({ ...prev, [optionId]: valueId }))}
+              onClear={() => setOptionFilter({})}
+            />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
               <div style={{ minHeight: 30, display: 'flex', alignItems: 'center' }}>
                 {selected.size > 0 && (
@@ -891,7 +972,13 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   </button>
                 )}
               </div>
-              <BulkControls currency={currency} onSetPrice={(v) => bulkSet('price', v)} onSetStock={(v) => bulkSet('stockCount', v)} disabled={busy} />
+              <BulkControls
+                currency={currency}
+                scoped={filtering}
+                onSetPrice={(v) => bulkSet(visibleVariants, 'price', v)}
+                onSetStock={(v) => bulkSet(visibleVariants, 'stockCount', v)}
+                disabled={busy}
+              />
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
@@ -923,7 +1010,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   </tr>
                 </thead>
                 <tbody>
-                  {data.variants.map((v) => {
+                  {visibleVariants.map((v) => {
                     const enabled = valueOf(v, 'enabled')
                     const changed = edits[v.variantId] != null
                     return (
@@ -1032,6 +1119,13 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                       </tr>
                     )
                   })}
+                  {visibleVariants.length === 0 && (
+                    <tr>
+                      <td colSpan={99} style={{ padding: '1.25rem 0.5rem', color: 'var(--color-text-muted)' }}>
+                        Nothing matches those choices. This product has no variant with that combination.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1619,24 +1713,96 @@ function AddSingleVariant({ options, disabled, onAdd }: {
   )
 }
 
-function BulkControls({ currency, onSetPrice, onSetStock, disabled }: {
+/**
+ * Narrow the variants table by the product's own options - the same choosers,
+ * in the same order, as the shopper meets on the product page.
+ *
+ * A matrix of four options is a few hundred rows, and finding the eight in Oak
+ * meant scrolling past the other two hundred and thirty-two. This asks the
+ * question the way the storefront asks it, so an owner checking "what does the
+ * 1600mm Oak with the arrowhead legs actually cost" answers it in three clicks.
+ *
+ * Plain dropdowns whatever the option's control type is: a swatch grid is how a
+ * shopper is sold a colour, and this is a filing cabinet. What matters is that
+ * the options, their order and their value names are the shopper's, which they
+ * are - they come off the same rows the product page renders.
+ *
+ * A value that leads nowhere given the other choices is dropped from its list
+ * (see reachableValues), so the dropdowns narrow each other rather than letting
+ * an owner pick their way into an empty table.
+ */
+function VariantFilterBar({ options, filter, reachable, shown, total, onChange, onClear }: {
+  options: Option[]
+  filter: Record<string, string>
+  reachable: Map<string, Set<string>>
+  shown: number
+  total: number
+  onChange: (optionId: string, valueId: string) => void
+  onClear: () => void
+}) {
+  const usable = options.filter((o) => o.values.length > 0)
+  const active = Object.keys(filter).length > 0
+  if (usable.length === 0) return null
+
+  return (
+    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+      {usable.map((option) => {
+        const chosen = filter[option.id] ?? ''
+        const live = reachable.get(option.id)
+        // The chosen value always stays in its own list, whatever the others say
+        // - a dropdown that drops the value it is showing renders blank and
+        // leaves no way back to "Any".
+        const values = option.values.filter((v) => v.id === chosen || !live || live.has(v.id))
+        return (
+          <label key={option.id} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8125rem' }}>
+            <span style={{ color: 'var(--color-text-muted)' }}>{option.name}</span>
+            <select
+              value={chosen}
+              onChange={(e) => onChange(option.id, e.target.value)}
+              style={{ padding: '0.375rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.875rem', minWidth: 120 }}
+            >
+              <option value="">Any {option.name.toLowerCase()}</option>
+              {values.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+            </select>
+          </label>
+        )
+      })}
+      {active && (
+        <>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClear}>Show all</button>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', paddingBottom: '0.4375rem' }} role="status">
+            Showing {shown} of {total}
+          </span>
+        </>
+      )}
+    </div>
+  )
+}
+
+// `scoped` is set while the option filter is narrowing the table. It changes no
+// behaviour here - the parent already hands these buttons the rows they will act
+// on - but "Fill every row" beside a filtered table would be a lie, and this is
+// the one control on the tab that can rewrite a hundred prices in a click.
+function BulkControls({ currency, scoped, onSetPrice, onSetStock, disabled }: {
   currency: string
+  scoped: boolean
   onSetPrice: (v: number) => void
   onSetStock: (v: number) => void
   disabled: boolean
 }) {
   const [price, setPrice] = useState('')
   const [stock, setStock] = useState('')
+  const scopeWord = scoped ? 'every row shown' : 'every variant'
   const small: CSSProperties = { padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: 80, fontSize: '0.8125rem', background: 'var(--color-bg)', color: 'var(--color-text)' }
   return (
     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8125rem' }}>
-      <span style={{ color: 'var(--color-text-muted)' }}>Fill every row:</span>
+      <span style={{ color: 'var(--color-text-muted)' }}>{scoped ? 'Fill the rows shown:' : 'Fill every row:'}</span>
       <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-        {currency}<input type="number" min={0} step="0.01" placeholder="price" aria-label="Price for every variant" value={price} onChange={(e) => setPrice(e.target.value)} style={small} />
+        {currency}<input type="number" min={0} step="0.01" placeholder="price" aria-label={`Price for ${scopeWord}`} value={price} onChange={(e) => setPrice(e.target.value)} style={small} />
         <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || price === ''} onClick={() => onSetPrice(Number(price))}>Apply</button>
       </span>
       <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-        <input type="number" step="1" placeholder="stock" aria-label="Stock for every variant" value={stock} onChange={(e) => setStock(e.target.value)} style={small} />
+        <input type="number" step="1" placeholder="stock" aria-label={`Stock for ${scopeWord}`} value={stock} onChange={(e) => setStock(e.target.value)} style={small} />
         <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || stock === ''} onClick={() => onSetStock(Number(stock))}>Apply</button>
       </span>
     </div>
