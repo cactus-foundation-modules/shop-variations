@@ -5,8 +5,9 @@ import { getVariationsList } from '@/modules/shop-variations/lib/variations-list
 // Cross-product variations list for the Variations tab on Shop > Products. Every
 // variant across every product, with its image, option-value label, price/SKU/
 // stock and any contributed columns (3D file, attributes). Filterable by product,
-// by missing image, and by a missing contributed column. Gated like the product
-// editor's Variations tab it complements.
+// by missing image, by a missing contributed column, and by a "lost" file - an
+// image or 3D file still recorded against the variation whose url no longer
+// resolves. Gated like the product editor's Variations tab it complements.
 export async function GET(request: Request) {
   const gate = await requireShopUser('shop.products', { allowAccess: true })
   if (gate.error) return gate.error

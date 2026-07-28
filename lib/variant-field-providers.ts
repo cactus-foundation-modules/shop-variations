@@ -28,6 +28,14 @@ export type VariantFieldColumn = {
   label: string
   /** Where the column sits among the grid's own. Unordered columns go last. */
   order?: number
+  /**
+   * What the column's value string holds. 'file' means one or more urls pointing
+   * at stored files (pipe-separated, like the 3D column); anything else is plain
+   * text. Only declared so the cross-product browser can offer a "lost <column>"
+   * filter - which checks whether those urls still resolve - without knowing what
+   * any particular provider contributes. Omitted reads as 'text'.
+   */
+  kind?: 'text' | 'file'
 }
 
 export type VariantFieldCellProps = {

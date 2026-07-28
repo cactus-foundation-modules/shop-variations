@@ -2,6 +2,14 @@ import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import type { getSessionFromCookie } from '@/lib/auth/session'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
+import { fileUrlsFromValue, findMissingUrls } from '@/modules/shop-variations/lib/lost-files'
+import {
+  memberColumnId,
+  mergeContributedColumns,
+  mergeValues,
+  type ColumnContribution,
+  type MergedVariationColumn,
+} from '@/modules/shop-variations/lib/variation-columns'
 
 // The data layer behind the cross-product Variations browser (the Variations tab
 // on Shop > Products). It lists every variant across every product, joins each to
@@ -9,9 +17,20 @@ import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/vari
 // other modules contribute through the `variant-field-provider` point - which is
 // how the 3D file and attribute values reach the grid without this module knowing
 // what either is. All the browser's filters (a specific product, missing image,
-// missing any contributed column) resolve here.
+// missing any contributed column, and the "lost" pair - an image or file column
+// whose url no longer resolves) resolve here.
+//
+// Contributed columns are merged by heading before they leave: a provider keys
+// its columns per product, so one attribute used across fifty products arrives as
+// fifty keys under one heading, and the browser wants one column and one filter
+// entry for it. See collectColumns.
 
-export type VariationListColumn = { id: string; label: string }
+export type VariationListColumn = {
+  id: string
+  label: string
+  /** 'file' when the column's value holds file urls, so a "lost" filter applies. */
+  kind?: 'text' | 'file'
+}
 
 export type VariationListRow = {
   variantId: string
@@ -45,11 +64,19 @@ export type VariationListResult = {
 export type VariationListParams = {
   productId?: string
   search?: string
-  /** '' = no filter, 'image' = missing image, otherwise a contributed column id. */
+  /**
+   * '' = no filter. 'image' = no image at all; a bare contributed column id = that
+   * column is empty. Prefix either with `lost:` ('lost:image', 'lost:<column id>')
+   * to instead find the ones that DO have a file recorded whose url no longer
+   * resolves - a reference left behind by a rename or a deletion.
+   */
   missing?: string
   page?: number
   perPage?: number
 }
+
+/** The `lost:` prefix on the `missing` param, split off from the target. */
+export const LOST_PREFIX = 'lost:'
 
 const DEFAULT_PER_PAGE = 50
 const MAX_PER_PAGE = 200
@@ -83,25 +110,18 @@ function groupChildIdsByProduct(rows: Array<{ product_id: string; child_product_
   return byProduct
 }
 
-// The union of contributed columns across the products in view. A provider whose
-// columns depend on the product (attributes) is asked per product; one whose
-// column is fixed (the 3D file) returns the same column every time and collapses
-// to one. First-seen order wins, which keeps a provider's columns together.
-async function collectColumns(providers: Providers, childIdsByProduct: Map<string, string[]>): Promise<VariationListColumn[]> {
-  const columns: VariationListColumn[] = []
-  const seen = new Set<string>()
-  for (const { id: provId, provider } of providers) {
+// Every contributed column across the products in view, merged by heading so one
+// attribute used across the catalogue is one column and one filter entry rather
+// than one per product. The merge itself lives in variation-columns.ts; this only
+// gathers the contributions to feed it.
+async function collectColumns(providers: Providers, childIdsByProduct: Map<string, string[]>): Promise<MergedVariationColumn[]> {
+  const contributions: ColumnContribution[] = []
+  for (const { id: providerId, provider } of providers) {
     for (const productId of childIdsByProduct.keys()) {
-      const cols = (await provider.listColumns(productId)).slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-      for (const col of cols) {
-        const colId = `${provId}:${col.key}`
-        if (seen.has(colId)) continue
-        seen.add(colId)
-        columns.push({ id: colId, label: col.label })
-      }
+      contributions.push({ providerId, columns: await provider.listColumns(productId) })
     }
   }
-  return columns
+  return mergeContributedColumns(contributions)
 }
 
 // Every contributed cell value for the given variants, keyed child id -> column id
@@ -113,7 +133,7 @@ async function collectValues(providers: Providers, childIdsByProduct: Map<string
       const values = await provider.getValues(productId, childIds)
       for (const [childId, byKey] of Object.entries(values)) {
         const rec = byChild.get(childId) ?? {}
-        for (const [key, val] of Object.entries(byKey)) rec[`${provId}:${key}`] = val
+        for (const [key, val] of Object.entries(byKey)) rec[memberColumnId(provId, key)] = val
         byChild.set(childId, rec)
       }
     }
@@ -127,7 +147,12 @@ export async function getVariationsList(
 ): Promise<VariationListResult> {
   const page = Math.max(1, params.page ?? 1)
   const perPage = Math.min(MAX_PER_PAGE, Math.max(1, params.perPage ?? DEFAULT_PER_PAGE))
-  const missing = params.missing?.trim() || ''
+  const filter = params.missing?.trim() || ''
+  // A `lost:` filter looks at the ones that DO have a file recorded and asks
+  // whether its url still resolves, so it is the exact opposite selection to the
+  // plain "missing" filter of the same target - never a variation of it.
+  const lost = filter.startsWith(LOST_PREFIX) ? filter.slice(LOST_PREFIX.length) : ''
+  const missing = lost ? '' : filter
   const search = params.search?.trim() || ''
 
   // Base filters that SQL can answer: a specific product, a name/SKU search, and
@@ -188,16 +213,39 @@ export async function getVariationsList(
   // <column>" filter is active (it filters on them); otherwise fetching them for
   // the current page alone is enough and far cheaper on a big catalogue.
   const columns = providers.length > 0 ? await collectColumns(providers, groupChildIdsByProduct(baseRows)) : []
-  const filteringOnField = missing !== '' && missing !== 'image'
+  const lostOnField = lost !== '' && lost !== 'image'
+  const filteringOnField = (missing !== '' && missing !== 'image') || lostOnField
 
   let fieldByChild = new Map<string, Record<string, string>>()
   let filtered = baseRows
   if (providers.length > 0 && filteringOnField) {
     fieldByChild = await collectValues(providers, groupChildIdsByProduct(baseRows))
+  }
+  if (missing !== '' && missing !== 'image') {
     filtered = baseRows.filter((r) => {
-      const v = fieldByChild.get(r.child_product_id)?.[missing]
+      const v = mergeValues(fieldByChild.get(r.child_product_id), columns)[missing]
       return !v || v.trim() === ''
     })
+  }
+
+  // "Lost <thing>": the file is still recorded but its url no longer resolves.
+  // Every candidate url in the set is checked at once (deduplicated and cached
+  // inside findMissingUrls), then the rows are narrowed to the ones holding a
+  // dead url. A url that cannot be checked is not dead, so this under-reports
+  // rather than pointing the owner at working photography.
+  if (lost === 'image') {
+    const dead = await findMissingUrls(baseRows.map((r) => r.image_url).filter((u): u is string => !!u))
+    filtered = dead.size === 0 ? [] : baseRows.filter((r) => !!r.image_url && dead.has(r.image_url))
+  } else if (lostOnField) {
+    const urlsByChild = new Map<string, string[]>()
+    for (const r of baseRows) {
+      if (urlsByChild.has(r.child_product_id)) continue
+      urlsByChild.set(r.child_product_id, fileUrlsFromValue(mergeValues(fieldByChild.get(r.child_product_id), columns)[lost]))
+    }
+    const dead = await findMissingUrls([...urlsByChild.values()].flat())
+    filtered = dead.size === 0
+      ? []
+      : baseRows.filter((r) => (urlsByChild.get(r.child_product_id) ?? []).some((u) => dead.has(u)))
   }
 
   const total = filtered.length
@@ -230,12 +278,14 @@ export async function getVariationsList(
       trackInventory: r.track_inventory,
       stockCount: r.stock_count == null ? null : Number(r.stock_count),
       imageUrl: r.image_url ?? null,
-      fields: fieldByChild.get(r.child_product_id) ?? {},
+      fields: mergeValues(fieldByChild.get(r.child_product_id), columns),
     })),
     total,
     page,
     perPage,
-    columns,
+    // `members` is internal bookkeeping (a product's assignment ids); the browser
+    // only ever deals in the merged id.
+    columns: columns.map(({ id, label, kind }) => ({ id, label, kind })),
     products,
   }
 }

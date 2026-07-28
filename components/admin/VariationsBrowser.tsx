@@ -10,7 +10,8 @@ import type { VariationListColumn, VariationListResult, VariationListRow } from 
 // The cross-product Variations browser: the Variations tab on Shop > Products.
 // Lists every variation across the catalogue with its image, option-value label,
 // price/SKU/stock and any contributed columns (3D file, attributes), and lets the
-// owner narrow to one product or to variations missing an image or a 3D file. It
+// owner narrow to one product, to variations missing an image or a contributed
+// value, or to ones whose image or 3D file is a broken link ("Lost …"). It
 // is a read-only overview: each row links back to its product's Variations tab,
 // which is where a variation is actually edited.
 
@@ -156,6 +157,14 @@ export function VariationsBrowser() {
     [columns],
   )
 
+  // "Lost" options only make sense where the value is a file: an image, or a
+  // column whose provider says it holds file urls. Asking whether a variation's
+  // "Overall Height" is a broken link would be nonsense.
+  const lostOptions = useMemo(
+    () => [{ id: 'image', label: 'Image' }, ...columns.filter((c) => c.kind === 'file').map((c) => ({ id: c.id, label: c.label }))],
+    [columns],
+  )
+
   function clearFilters() { setProductId(''); setMissing(''); setSearch(''); setPage(1) }
 
   return (
@@ -166,9 +175,16 @@ export function VariationsBrowser() {
         <ProductFilter products={products} value={productId} onChange={(id) => { setProductId(id); setPage(1) }} />
         <select className="svb-select" aria-label="Show only variations missing" value={missing} onChange={(e) => { setMissing(e.target.value); setPage(1) }}>
           <option value="">All variations</option>
-          {missingOptions.map((o) => (
-            <option key={o.id} value={o.id}>Without {o.label}</option>
-          ))}
+          <optgroup label="Nothing set">
+            {missingOptions.map((o) => (
+              <option key={o.id} value={o.id}>Without {o.label}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Broken links">
+            {lostOptions.map((o) => (
+              <option key={o.id} value={`lost:${o.id}`}>Lost {o.label}</option>
+            ))}
+          </optgroup>
         </select>
         <input className="svb-search" aria-label="Search variations" placeholder="Search product or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {hasFilters && <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>}
