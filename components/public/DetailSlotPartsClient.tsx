@@ -274,7 +274,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
 }
 
 // ---- Price ---------------------------------------------------------------
-export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePct, currencySymbol, classNames, initial }: Seeded<ShopDetailPriceSlotProps>) {
+export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePct, currencySymbol, classNames, priceSuffix, initial }: Seeded<ShopDetailPriceSlotProps>) {
   const sel = useVariationSelection(slug, initial)
   const base = Number(basePrice)
   // Shop's own price until the selection resolves, so the figure never blanks.
@@ -289,6 +289,9 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
   // it. Its saving is worked out here against that same figure.
   const variantWas = sel.loaded && sel.payload ? sel.compareAtPrice : null
   const variantSavePct = variantWas != null && variantWas > live ? Math.round(((variantWas - live) / variantWas) * 100) : null
+  // Shop's wording until the payload lands, the payload's after - they are the
+  // same string, so the note never flickers or arrives late.
+  const suffix = (sel.loaded && sel.payload ? sel.priceSuffix : priceSuffix) ?? ''
 
   return (
     <div className={classNames.block}>
@@ -297,6 +300,7 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
       {atBase && savePct != null && savePct > 0 && <span className={classNames.save}>Save {savePct}%</span>}
       {!atBase && variantWas != null && <span className={classNames.was}>{money(variantWas, symbol)}</span>}
       {!atBase && variantSavePct != null && variantSavePct > 0 && <span className={classNames.save}>Save {variantSavePct}%</span>}
+      {suffix && <span className="spd-price-taxnote">{suffix}</span>}
       {/* The way back out of a chosen combination belongs with the price it moved,
           not buried under the last option. Shop's price block is a wrapping flex
           row, so on a narrow screen this drops to its own line rather than

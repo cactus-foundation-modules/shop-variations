@@ -305,6 +305,11 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // fetch path's. Preferring the entry's is what keeps a server render from
     // printing the default symbol and then hydrating into the real one.
     currencySymbol: entry?.currencySymbol ?? currencySymbol,
+    // Wording the shop appends to a price ("inc. VAT"), or '' where it has set
+    // none. Every figure above is already on the side of tax it describes - the
+    // payload arrives converted (see getVariantSelectorPayload), so nothing here
+    // does tax arithmetic.
+    priceSuffix: payload?.priceSuffix ?? '',
     setOption: (optionId: string, valueId: string) => slug && setOptionValue(slug, optionId, valueId),
     resetOptions: () => slug && resetOptionValues(slug),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),

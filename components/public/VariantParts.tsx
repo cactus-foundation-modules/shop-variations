@@ -653,6 +653,9 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
           not the same as nothing available, and saying so over the parent's
           price would turn every options product into a sold-out one. */}
       {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--color-danger)' }}>Out of stock</span>}
+      {/* Which side of tax the figure beside it sits on, where the shop has set
+          the wording. The payload arrives already converted to match. */}
+      {sel.priceSuffix && <span style={{ fontSize: '0.8125rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>{sel.priceSuffix}</span>}
       <ResetOptionsLink sel={sel} />
     </div>
   )

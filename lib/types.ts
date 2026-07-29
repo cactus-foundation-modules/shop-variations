@@ -154,6 +154,13 @@ export type VariantSelectorPayload = {
   options: SvrOptionWithValues[]
   variants: VariantSelectorVariant[]
   addons: SvrAddon[]
+  // Wording the shop appends to every price it prints ("inc. VAT"), or '' where
+  // it has set none - Shop settings > Tax & shipping. Every money figure in this
+  // payload (base price, each variant's price, each add-on's surcharges) has
+  // ALREADY been converted server-side to match it, so the picker formats what
+  // it is handed and does no tax arithmetic of its own. Optional so an island
+  // rendering a payload from an older cached bundle still compiles.
+  priceSuffix?: string
 }
 
 // The same payload, plus the currency symbol, resolved on the server and handed

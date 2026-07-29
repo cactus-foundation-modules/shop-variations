@@ -8,11 +8,12 @@ import { createProduct, updateProduct, deleteProduct, getProductById, getProduct
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
+import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
 import type { ShpProduct } from '@/modules/shop/lib/types'
-import type { SvrAddon, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
+import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
 // Stable key for a combination: its option-value ids, sorted, joined. Two
 // combinations are the same variant iff they have the same set of values.
@@ -329,6 +330,18 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // payload even with the storefront row switched off.
   const exposeSupplier = config.supplierFieldEnabled && config.supplierShowOnFrontend && config.supplierFieldScope === 'PRODUCTS_AND_VARIATIONS'
 
+  // Whether the shop prints its prices net or gross is shop's own setting, and
+  // it applies to a variation exactly as it does to an ordinary product - so
+  // every figure below is converted here, on the way out, at the PARENT's tax
+  // class. Doing it once on the payload rather than in the picker keeps the tax
+  // arithmetic off the client entirely and means a surcharge can never end up
+  // on the other side of tax from the price it is added to. Nothing here is
+  // authoritative: the cart re-resolves each line from the products, so what a
+  // shopper is charged is unaffected by what this payload says.
+  const taxDisplay = await resolveTaxDisplay()
+  const adjust = makeDisplayAdjuster(taxDisplay, parent.taxClassId)
+  const shown = (amount: number) => (adjust ? adjust(amount) : amount)
+
   const [options, variants, valueMap, addons, baseMedia] = await Promise.all([
     getOptionsWithValues(parentId),
     getVariants(parentId),
@@ -375,8 +388,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       childProductId: v.childProductId,
       optionValueIds: valueMap[v.id] ?? [],
       enabled: v.enabled,
-      price: effectivePrice(priced, enabledPriceTypes),
-      compareAtPrice: isOnSale(priced, enabledPriceTypes) ? Number(priced.price) : null,
+      price: shown(effectivePrice(priced, enabledPriceTypes)),
+      compareAtPrice: isOnSale(priced, enabledPriceTypes) ? shown(Number(priced.price)) : null,
       inStock,
       stockCount: tracks ? stockCount : null,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
@@ -388,11 +401,24 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   return {
     productId: parentId,
     productName: parent.name,
-    basePrice: Number(parent.price),
+    basePrice: shown(Number(parent.price)),
     baseImages: baseMedia.filter((m) => m.type === 'IMAGE').map((m) => ({ url: m.url, alt: m.altText ?? parent.name })),
     options,
     variants: selectorVariants,
-    addons,
+    addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,
+    priceSuffix: taxDisplay.display.suffix,
+  }
+}
+
+// An add-on's surcharges, converted alongside the prices they are added to. Only
+// the money keys are touched; everything else (limits, help text, choice labels)
+// is passed through as it stands.
+function adjustAddonPrices(config: SvrAddonConfig, shown: (amount: number) => number): SvrAddonConfig {
+  return {
+    ...config,
+    flatPrice: config.flatPrice != null ? shown(config.flatPrice) : config.flatPrice,
+    pricePerChar: config.pricePerChar != null ? shown(config.pricePerChar) : config.pricePerChar,
+    choices: config.choices?.map((c) => (c.price != null ? { ...c, price: shown(c.price) } : c)),
   }
 }
 
