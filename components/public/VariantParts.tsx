@@ -60,6 +60,145 @@ function Skeleton({ label }: { label: string }) {
 
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
+// The same figure with a bare `.00` trimmed off, for the price hints that sit
+// under an option's choices. Those are a glance, not an invoice - "from £246"
+// reads at 12px where "from £246.00" is mostly decimal point - and a price with
+// real pence still shows them.
+const moneyShort = (n: number, symbol: string) => {
+  const full = money(n, symbol)
+  return full.endsWith('.00') ? full.slice(0, -3) : full
+}
+
+// The price hint under one of an option's choices: what the shopper would pay if
+// they picked it. "from" only where that choice still leaves a range - a value
+// that pins the price exactly says the one figure plainly. Null where the value is
+// unreachable.
+//
+// Deliberately does NOT ask whether the option moves the money: that answer is the
+// same for every value in the option, and asking it here would walk the whole
+// option's variants once PER VALUE. Callers hoist it (`showPrices`) and gate on it.
+function valuePriceHint(sel: ReturnType<typeof useVariationSelection>, optionId: string, valueId: string): string | null {
+  const range = sel.valuePrice(optionId, valueId)
+  if (!range) return null
+  const varies = range.max - range.min > 0.005
+  return `${varies ? 'from ' : ''}${moneyShort(range.min, sel.currencySymbol)}`
+}
+
+// "Choose Width and Storage first" - the options the shopper still owes us, named,
+// for the locked buy button's tooltip and its written note. An Oxford-free list
+// because this is a sentence a shopper reads, not a data structure.
+export function missingOptionsSentence(names: string[]): string | null {
+  if (names.length === 0) return null
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  return `Choose ${list} first`
+}
+
+// The numbered marker beside an option's name: an outlined circle while the option
+// is still open, filled once the shopper has answered it. It is a progress count
+// through the configuration, which is why it numbers the options as SHOWN - an
+// option held back by the progressive reveal has no number yet, and the one after
+// it does not skip ahead to fill the gap.
+//
+// aria-hidden: the number is a visual aid, and a screen reader reading "2 Storage"
+// would be reading out a decoration. The option's name is already its label.
+function OptionNumber({ n, done }: { n: number; done: boolean }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 22, height: 22, flex: 'none', marginRight: '0.5rem',
+        borderRadius: 999, fontSize: '0.75rem', fontWeight: 700, lineHeight: 1,
+        border: `1.5px solid ${done ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        background: done ? 'var(--color-primary)' : 'transparent',
+        color: done ? 'var(--color-on-primary)' : 'var(--color-text-muted)',
+        verticalAlign: 'middle',
+      }}
+    >
+      {n}
+    </span>
+  )
+}
+
+// The tick that lands on a chosen value, overlapping its top-right corner. Filled
+// with the theme's primary and ringed in the surface colour so it reads as a badge
+// stuck on the choice rather than a mark inside it, on any background the theme
+// puts behind the row.
+function ChosenTick() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        position: 'absolute', top: -5, right: -5, width: 18, height: 18,
+        borderRadius: 999, background: 'var(--color-primary)',
+        boxShadow: '0 0 0 2px var(--color-surface)',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--color-on-primary)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+    </span>
+  )
+}
+
+// What the shopper has settled on, read back to them just above the buy button so
+// the thing they are about to pay for is written down in words rather than only
+// implied by which pills happen to be lit. Only shows once the configuration is
+// complete: a half-answered list would be a running commentary, and the pills
+// already say that better than a sentence can.
+export function SelectionSummary({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+  if (!sel.hasOptions || !sel.allOptionsChosen) return null
+  if (sel.chosenSummary.length === 0) return null
+  return (
+    <div
+      // role="status" so a screen reader hears the configuration settle as the
+      // last option is picked, which is the moment the button unlocks.
+      role="status"
+      style={{
+        display: 'flex', alignItems: 'center', gap: '0.5rem',
+        marginTop: '18px', padding: '0.625rem 0.875rem',
+        borderRadius: 10, border: '1px solid var(--color-success-border)',
+        background: 'var(--color-success-bg)', color: 'var(--color-success)',
+        fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.35,
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: 'none' }}>
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+      <span>
+        Ready to add: {sel.chosenSummary.map((c) => c.valueLabel).join(' · ')}
+      </span>
+    </div>
+  )
+}
+
+// The pill that sits over the gallery stage once the shopper has settled on a
+// combination and the stage is showing THAT combination - its own photograph or
+// its own 3D model - rather than the product's general pictures. It answers the
+// question a configurator quietly raises: is this picture the thing I just built,
+// or is it the one off the catalogue page?
+export function YourChoicePill() {
+  return (
+    <span
+      style={{
+        position: 'absolute', top: 10, left: 10, zIndex: 3, pointerEvents: 'none',
+        display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+        padding: '5px 10px', borderRadius: 999,
+        background: 'var(--color-primary)', color: 'var(--color-on-primary)',
+        fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '.02em', lineHeight: 1,
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+      Your choice
+    </span>
+  )
+}
+
 // A layout effect on the client, a plain effect on the server. The accordion's
 // auto-advance (below) must open the next section BEFORE the browser paints the
 // shopper's choice - a plain post-paint effect leaves one painted frame with the
@@ -106,8 +245,8 @@ export function VariantOptionsPart({
       {displayMode === 'accordion' ? (
         <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
       ) : (
-        visibleOptions.map((option) => (
-          <OptionControl key={option.id} option={option} sel={sel} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
+        visibleOptions.map((option, index) => (
+          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
         ))
       )}
     </div>
@@ -178,7 +317,7 @@ function VariantOptionsAccordion({
 
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
-      {options.map((option) => {
+      {options.map((option, index) => {
         // How many of this option's values the shopper can still reach given the
         // picks above it. A section with one or none has nothing left to decide -
         // its single value is already auto-chosen upstream (withAutoSelected) - so
@@ -203,7 +342,13 @@ function VariantOptionsAccordion({
         }
         const headerInner = (
           <>
-            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{option.name}</span>
+            {/* The heading IS the option's label in this layout, so the numbered
+                marker belongs here rather than on the control inside (which is
+                drawn with its own label hidden). */}
+            <span style={{ display: 'inline-flex', alignItems: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
+              <OptionNumber n={index + 1} done={!!chosenId} />
+              {option.name}
+            </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
               {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
               {collapsible && (
@@ -360,7 +505,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; onChoose?: () => void }) {
+export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -392,22 +537,35 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
   // against.
   const beside = !hideLabel && labelPlacement === 'beside'
   const label = hideLabel ? null : (
+    // inline-flex, not block, now that the name may carry a numbered marker: the
+    // two have to sit on one baseline. The float path still works - a floated box
+    // is block-level whatever `display` asked for - and the width is left to the
+    // content so the float only shortens the line boxes it actually occupies.
     <span style={{
-      fontWeight: 600, fontSize: '0.875rem', display: 'block',
-      marginBottom: beside ? 0 : '0.375rem',
+      fontWeight: 600, fontSize: '0.875rem', display: 'inline-flex', alignItems: 'center',
+      ...(beside ? null : { marginBottom: '0.375rem' }),
       // Top padding is the pill's own top padding plus its border, so the name's
       // text sits on the same line as the text of the choices beside it.
       ...(beside ? { float: 'left' as const, marginRight: '0.75rem', paddingTop: '0.5rem' } : null),
     }}>
+      {index != null && <OptionNumber n={index} done={!!chosen} />}
       {option.name}
     </span>
   )
+  // The name is inline-flex now, so on the stacked path it needs a block wrapper
+  // to sit on its own line above the choices - `display:block` on the span itself
+  // would undo the flex the numbered marker needs.
+  const labelRow = label && !beside ? <span style={{ display: 'block' }}>{label}</span> : label
   const rowStyle = beside ? { display: 'flow-root' } : undefined
+  // Whether this option is one whose choices move the money. Worked out once here
+  // rather than per value: it walks every value's variants, and the answer is the
+  // same for all of them.
+  const showPrices = sel.optionAffectsPrice(option.id)
 
   if (option.controlType === 'DROPDOWN') {
     return (
       <label style={rowStyle}>
-        {label}
+        {labelRow}
         <select
           value={chosen ?? ''} onChange={(e) => { sel.setOption(option.id, e.target.value); onChoose?.() }}
           style={{ padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', minWidth: 180, background: 'var(--color-surface)', color: 'var(--color-text)' }}
@@ -420,7 +578,10 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
               the control never blanks out under the shopper. */}
           {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
             const available = sel.isAvailable(option.id, v.id)
-            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{available ? '' : ' - unavailable'}</option>
+            // A native <option> takes text and nothing else, so the price hint the
+            // pill controls put on a second line rides the label here instead.
+            const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : ' - unavailable'}</option>
           })}
         </select>
       </label>
@@ -440,7 +601,7 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
   const mediaPx = isImage ? 28 : isSwatch ? 16 : 0
   return (
     <div style={rowStyle}>
-      {label}
+      {labelRow}
       {/* Beside drops out of flex entirely (see the note above the float): the
           buttons lay out as inline boxes so their line boxes wrap around the
           floated name. `gap` does nothing to inline layout, so the spacing moves
@@ -467,6 +628,14 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
           const previewNode = swatchPreview === 'show' && v.swatch && (isSwatch || isImage)
             ? <ValuePreview src={isImage ? v.swatch : undefined} colour={isSwatch ? v.swatch : undefined} />
             : undefined
+          // The second line under the value's name: what it is chosen, and what it
+          // would cost before that - but only where the option moves the money, and
+          // never in the swatch-only look, which has deliberately given up its text
+          // to show the colour bigger and has nowhere to put a line of it.
+          const subLabel = swatchOnly ? null
+            : active ? 'Selected'
+            : available && showPrices ? valuePriceHint(sel, option.id, v.id)
+            : null
           return (
             <button
               key={v.id} type="button" disabled={!available}
@@ -475,6 +644,7 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
               aria-label={swatchOnly ? v.label : undefined}
               aria-pressed={active}
               style={{
+                position: 'relative',
                 display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
                 padding: isSwatch || isImage ? '0.375rem 0.5rem' : '0.375rem 0.75rem',
                 boxSizing: 'border-box',
@@ -484,7 +654,14 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
                 ...(mediaPx ? { minHeight: `calc(${mediaPx}px + 0.75rem + 4px)` } : null),
                 borderRadius: 999,
                 border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                background: active ? 'var(--color-bg-subtle)' : 'var(--color-surface)',
+                // A chosen value is tinted rather than filled solid: the label and
+                // its "Selected" line still have to read, and a wash of the theme's
+                // primary over the surface colour keeps the text contrast the
+                // surface already had - in both light and dark - while saying
+                // plainly that this one is picked. The tick badge does the rest.
+                background: active
+                  ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))'
+                  : 'var(--color-surface)',
                 color: 'var(--color-text)',
                 cursor: available ? 'pointer' : 'not-allowed',
                 opacity: available ? 1 : 0.4,
@@ -497,6 +674,10 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
                 ...(beside ? { marginRight: '0.5rem', marginBottom: '0.5rem', verticalAlign: 'top' as const } : null),
               }}
             >
+              {/* Overlaps the button's own corner, so it needs the button to be a
+                  positioned ancestor (above) and must not be clipped - which is why
+                  nothing in this row uses overflow:hidden. */}
+              {active && <ChosenTick />}
               {swatchOnly ? (
                 // Swatch or thumbnail alone: the name has nowhere else to go, so it
                 // always rides the hover chip, with the enlarged preview above it
@@ -520,7 +701,21 @@ export function OptionControl({ option, sel, labelPlacement = 'above', hideLabel
                       <SwatchImg src={v.swatch} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
                     </ValuePeek>
                   )}
-                  {v.label}
+                  {/* Name over sub-line. A grid rather than two spans so the pair
+                      stays centred as a block whatever the sub-line's width, and so
+                      a value with no sub-line renders exactly as it always did -
+                      one centred label, same height. */}
+                  <span style={{ display: 'grid', justifyItems: 'center', lineHeight: 1.2 }}>
+                    <span>{v.label}</span>
+                    {subLabel && (
+                      <span style={{
+                        fontSize: '0.75rem', fontWeight: active ? 600 : 400,
+                        color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                      }}>
+                        {subLabel}
+                      </span>
+                    )}
+                  </span>
                 </>
               )}
             </button>
@@ -670,31 +865,41 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
   if (preview) return <Skeleton label="Add to cart" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
-  const reason = !sel.allOptionsChosen ? 'Choose your options'
+  // Why the button is locked, naming the options still outstanding rather than
+  // waving at "your options" - a shopper eight pickers down a long configuration
+  // should not have to audit the page to find the one they missed.
+  const reason = !sel.allOptionsChosen ? (missingOptionsSentence(sel.missingOptionNames) ?? 'Choose your options')
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
+      <SelectionSummary sel={sel} />
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
         <input
           type="number" min={1} value={qty} aria-label="Quantity"
           onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
           style={{ width: 64, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)' }}
         />
-        <button
-          type="button" disabled={!sel.canAdd}
-          onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
-          style={{
-            flex: 1, background: sel.canAdd ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
-            color: sel.canAdd ? 'var(--color-on-primary)' : 'var(--color-text-muted)',
-            border: 'none', borderRadius: 8, padding: '0.75rem 1.25rem', fontWeight: 600,
-            cursor: sel.canAdd ? 'pointer' : 'not-allowed',
-          }}
-        >
-          {added ? 'Added ✓' : (label || 'Add to cart')}
-        </button>
+        {/* The tooltip goes on a wrapper, not on the button: a disabled control
+            takes no pointer events, so its own `title` never appears - which is
+            exactly the state we need to explain. The wrapper takes the flex growth
+            the button used to, and the button fills it. */}
+        <span title={reason ?? undefined} style={{ flex: 1, display: 'flex' }}>
+          <button
+            type="button" disabled={!sel.canAdd}
+            onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
+            style={{
+              flex: 1, background: sel.canAdd ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
+              color: sel.canAdd ? 'var(--color-on-primary)' : 'var(--color-text-muted)',
+              border: 'none', borderRadius: 8, padding: '0.75rem 1.25rem', fontWeight: 600,
+              cursor: sel.canAdd ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {added ? 'Added ✓' : (label || 'Add to cart')}
+          </button>
+        </span>
       </div>
       {reason && <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{reason}</p>}
     </div>
@@ -721,6 +926,15 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the manual thumbnail override in response to a variant change is the intended reset, not derived render state
   useEffect(() => { setOverride(null) }, [variantImageKey])
 
+  // Reset options puts the gallery back to the product's own pictures. Not just
+  // the image: a contributed stage (a 3D model of the variation the shopper had
+  // built) is handed back too, because it is the most specific "this is yours" on
+  // the page and leaving it up after the picks have gone says the choice is still
+  // live. Watching the reset counter rather than "nothing is chosen" is the point
+  // - a page opens with nothing chosen and must keep its opening view.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- putting the chosen variation's view away in response to a reset is the intended reset, not derived render state
+  useEffect(() => { setOverride(null); setPicked(null) }, [sel.resetEpoch])
+
   if (preview) return <Skeleton label="Variant gallery" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
@@ -733,6 +947,12 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
     .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
   const activeProductId = sel.variant?.childProductId ?? null
+  // Whether what is on the stage is the shopper's own configuration rather than
+  // the product's general pictures: a contributed stage (their variation's 3D
+  // model), or one of the variant's own photographs. A base photo they have
+  // clicked back to is the catalogue's, not theirs, so it earns no pill.
+  const showingChoice = sel.hasOptions && sel.allOptionsChosen
+    && (activeExtra !== null || (main !== null && variantImages.includes(main)))
 
   // A product whose only picture is a contributed item still has a gallery worth
   // drawing, so this bails only when there is nothing at all to show.
@@ -750,14 +970,19 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
 .svr-gallery-thumb.on{border-color:var(--color-primary)}
 ` }} />
       )}
-      {activeExtra && picked ? (
-        <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-          <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
-        </div>
-      ) : main ? (
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img src={main} alt={sel.payload.productName} style={{ width: '100%', borderRadius: 10, objectFit: 'cover', aspectRatio: '1 / 1', border: '1px solid var(--color-border)' }} />
-      ) : null}
+      {/* The stage, wrapped so the "Your choice" pill has a positioned box to sit
+          in the corner of - whichever of the two things is on it. */}
+      <div style={{ position: 'relative' }}>
+        {showingChoice && <YourChoicePill />}
+        {activeExtra && picked ? (
+          <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+            <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
+          </div>
+        ) : main ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={main} alt={sel.payload.productName} style={{ width: '100%', borderRadius: 10, objectFit: 'cover', aspectRatio: '1 / 1', border: '1px solid var(--color-border)' }} />
+        ) : null}
+      </div>
       {thumbs.length + extras.length > 1 ? (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Contributed media (a 3D model, say) leads the strip, so the richer
@@ -765,7 +990,11 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               what the stage opens on, and the two should agree. */}
           {extras.map((extra) => (
             <extra.Thumbs
-              key={extra.id}
+              // Reset counter in the key: a contributor may hold state of its own
+              // about the variation the shopper had settled on, and a null
+              // activeProductId cannot tell it a reset from a mid-reconfigure gap.
+              // See the same note in DetailSlotPartsClient.
+              key={`${extra.id}:${sel.resetEpoch}`}
               payload={extra.payload}
               activeProductId={activeProductId}
               activeKey={picked?.id === extra.id ? picked.key : null}
@@ -789,7 +1018,8 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
         // needed with nothing to pick between, so it mounts invisibly rather than
         // inside the visible strip.
         extras.map((extra) => (
-          <div key={extra.id} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+          // Keyed on the reset counter for the same reason as the visible strip.
+          <div key={`${extra.id}:${sel.resetEpoch}`} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
             <extra.Thumbs
               payload={extra.payload}
               activeProductId={activeProductId}

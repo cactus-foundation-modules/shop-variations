@@ -27,7 +27,7 @@ import type {
   ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
-import { AddonControl, OptionControl, ResetOptionsLink } from '@/modules/shop-variations/components/public/VariantParts'
+import { AddonControl, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: VariationBootstrap | null }
 
@@ -124,6 +124,16 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the override in response to a variant change is the intended reset, not derived render state
   useEffect(() => { setOverride(null); setTapped(false) }, [variantImageKey])
 
+  // Reset options hands the stage back to the product's own pictures. The image
+  // would go on its own (the variant's gone, so variantImageKey changes), but a
+  // contributed stage would not: a 3D model of the variation the shopper had built
+  // is the most specific "this is yours" on the page, and leaving it up after the
+  // picks have been cleared says the choice is still live. Keyed on the reset
+  // counter and not "nothing is chosen", because a page opens with nothing chosen
+  // and must keep the view it opened on.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- putting the chosen variation's view away in response to a reset is the intended reset, not derived render state
+  useEffect(() => { setOverride(null); setPicked(null); setTapped(false) }, [sel.resetEpoch])
+
   // Every image the chosen variant owns leads the strip, in its own order, with
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
@@ -137,6 +147,12 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // untouched rather than through a transform of ours.
   const zoomable = Boolean(zoom) && main !== null && !activeExtra
   const magnified = zoomable && (hovering || tapped)
+  // Whether what is on the stage is the shopper's own configuration rather than
+  // the product's general pictures: a contributed stage (their variation's 3D
+  // model), or one of the variant's own photographs. A base photo they have
+  // clicked back to belongs to the catalogue, not to them, so it earns no pill.
+  const showingChoice = sel.hasOptions && sel.allOptionsChosen
+    && (activeExtra !== null || (main !== null && variantImages.includes(main)))
 
   function track(e: ReactPointerEvent<HTMLDivElement>) {
     const box = e.currentTarget.getBoundingClientRect()
@@ -186,6 +202,10 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
       <style dangerouslySetInnerHTML={{ __html: stickyGalleryCss }} />
       <div ref={stickyColRef} className={classNames.col}>
       <div className={classNames.stage} style={stageStyle} {...zoomHandlers}>
+        {/* Shop's stage is a positioned box, so the pill sits in its corner and is
+            clipped to its rounded edge - over the photograph or over a contributed
+            3D stage alike, since both fill the same box. */}
+        {showingChoice && <YourChoicePill />}
         {activeExtra && picked ? (
           <activeExtra.Stage payload={activeExtra.payload} itemKey={picked.key} activeProductId={activeProductId} />
         ) : main ? (
@@ -218,7 +238,13 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               what the stage opens on, and the two should agree. */}
           {extras.map((extra) => (
             <extra.Thumbs
-              key={extra.id}
+              // The reset counter is in the key deliberately: a contributor may be
+              // holding state of its own about the variation the shopper had settled
+              // on (the 3D module remembers the last resolved variation so its model
+              // does not blink out mid-reconfigure), and a null activeProductId alone
+              // cannot tell it a reset from that gap. Remounting on a reset puts the
+              // strip back to the product's own media, which is where it opened.
+              key={`${extra.id}:${sel.resetEpoch}`}
               payload={extra.payload}
               activeProductId={activeProductId}
               activeKey={picked?.id === extra.id ? picked.key : null}
@@ -250,7 +276,10 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
         // needed with nothing to pick between, so it mounts invisibly rather than
         // inside the visible strip.
         extras.map((extra) => (
-          <div key={extra.id} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+          // Keyed on the reset counter for the same reason as the visible strip
+          // above - the wrapper carries it here because the wrapper is the sibling
+          // React is keying.
+          <div key={`${extra.id}:${sel.resetEpoch}`} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
             <extra.Thumbs
               payload={extra.payload}
               activeProductId={activeProductId}
@@ -349,7 +378,12 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
     )
   }
 
-  const reason = !sel.allOptionsChosen ? 'Choose your options'
+  // Why the button is locked, naming the options still outstanding rather than
+  // waving at "your options" - a shopper eight pickers down a long configuration
+  // should not have to audit the page to find the one they missed. It rides the
+  // button's tooltip AND stays written under it, because a tooltip is no use to a
+  // shopper on a phone or a screen reader.
+  const reason = !sel.allOptionsChosen ? (missingOptionsSentence(sel.missingOptionNames) ?? 'Choose your options')
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
@@ -363,9 +397,15 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
         // Configure action scrolls here rather than to the buy button, and the
         // scroll margin keeps the landing clear of the header and a sticky bar.
         <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', marginTop: '18px', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
-          {sel.payload.options.map((option, index) => (
-            sel.isOptionVisible(index) ? <OptionControl key={option.id} option={option} sel={sel} /> : null
-          ))}
+          {/* The numbered marker counts the options the shopper can actually see,
+              so one held back by the progressive reveal leaves no gap in the
+              sequence - hence the running count rather than the payload index. */}
+          {sel.payload.options
+            .map((option, index) => ({ option, index }))
+            .filter(({ index }) => sel.isOptionVisible(index))
+            .map(({ option }, shown) => (
+              <OptionControl key={option.id} option={option} sel={sel} index={shown + 1} />
+            ))}
         </div>
       )}
       {!addonsPlaced && sel.payload.addons.length > 0 && (
@@ -379,6 +419,9 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
         </div>
       )}
 
+      {/* What they have built, written out just above the button that buys it. */}
+      <SelectionSummary sel={sel} />
+
       <div className={classNames.row}>
         {showStepper && (
           <div className={classNames.stepper}>
@@ -390,12 +433,22 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
             <button type="button" onClick={() => setQty((q) => q + 1)} aria-label="Increase quantity">+</button>
           </div>
         )}
-        <button
-          type="button" className={classNames.add} disabled={!sel.canAdd}
-          onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
-        >
-          {added ? 'Added ✓' : label}
-        </button>
+        {/* The tooltip goes on a wrapper, not on the button: a disabled control
+            takes no pointer events, so its own `title` never shows - which is
+            precisely the state that needs explaining. The wrapper takes the flex
+            growth shop's `.spd-add` asks for and the button fills it, so the row
+            lays out exactly as it did. No min-width of its own, deliberately: left
+            at `auto` a flex item cannot shrink below its content's own minimum, so
+            the button's 200px floor still makes the row wrap on a narrow screen
+            rather than squeezing the call to action into a sliver. */}
+        <span title={reason ?? undefined} style={{ flex: 1, display: 'flex' }}>
+          <button
+            type="button" className={classNames.add} disabled={!sel.canAdd}
+            onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
+          >
+            {added ? 'Added ✓' : label}
+          </button>
+        </span>
       </div>
       {reason && <p className={classNames.outOfStock}>{reason}</p>}
     </div>

@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, valueToOptionMap, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -29,6 +29,13 @@ type Entry = {
   // the shop's symbol with it. Null on the fetch path, where the symbol is a
   // page-wide lookup rather than a per-product one - hence the fallback below.
   currencySymbol: string | null
+  // Bumped every time the shopper presses Reset options. An island that showed
+  // something CHOSEN - the variation's own photograph, its 3D model - has to put
+  // it away again on a reset, and "the picks are empty" is not the same question:
+  // a page opens empty too, and a gallery must not tear its opening view down for
+  // that. A counter rather than a flag, so an island watches it as an effect
+  // dependency and there is nothing to clear afterwards.
+  resetEpoch: number
   subs: Set<() => void>
 }
 
@@ -46,7 +53,7 @@ let currencyFetched = false
 const isServer = typeof window === 'undefined'
 
 function newEntry(slug: string): Entry {
-  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, subs: new Set() }
+  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, subs: new Set() }
 }
 
 // Turn a flat list of option-value ids (a deep-linked variant's combination)
@@ -126,6 +133,7 @@ function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): vo
   // Carry over anything an unseeded island already collected for this slug.
   if (existing) {
     entry.addonValues = existing.addonValues
+    entry.resetEpoch = existing.resetEpoch
     for (const cb of existing.subs) entry.subs.add(cb)
   }
   store.set(slug, entry)
@@ -158,6 +166,7 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
 export function resetOptionValues(slug: string): void {
   const entry = getEntry(slug)
   entry.optionValues = {}
+  entry.resetEpoch += 1
   notify(entry)
 }
 
@@ -259,11 +268,33 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   const variantImages = variant?.imageUrls ?? []
   const image = variantImages[0] ?? payload?.baseImages[0]?.url ?? null
   const allOptionsChosen = payload ? payload.options.every((o) => !!optionValues[o.id]) : true
+  // The options still waiting on the shopper, by name and in display order, so the
+  // buy button can say which ones rather than "choose your options" - and so a
+  // shopper looking at eight pickers is told which two they missed.
+  const missingOptionNames = payload
+    ? payload.options.filter((o) => !optionValues[o.id]).map((o) => o.name)
+    : []
+  // What the shopper has settled on, in display order, ready to be read back to
+  // them above the buy button. Only the options that are actually showing count:
+  // one held back by the progressive reveal has nothing to report yet.
+  const chosenSummary = payload
+    ? payload.options.flatMap((o, index) => {
+        if (!isOptionVisible(payload, optionValues, index)) return []
+        const valueId = optionValues[o.id]
+        if (!valueId) return []
+        const label = o.values.find((v) => v.id === valueId)?.label
+        return label ? [{ optionId: o.id, optionName: o.name, valueLabel: label }] : []
+      })
+    : []
 
   // In-stock: with options, the resolved variant must be buyable; with none, the
   // parent product's own availability governs (shop already gates that on the page).
   const inStock = hasOptions ? !!(variant && variant.enabled && variant.inStock) : true
-  const canAdd = !!payload && (!hasOptions || inStock) && addonPricing.valid
+  // allOptionsChosen is spelled out rather than left to fall out of `inStock`
+  // (which needs a resolved variant, and so a full combination, to be true). The
+  // two happened to agree, and relying on that made "the button is locked until
+  // every option is picked" an accident of the stock check rather than a rule.
+  const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid
 
   function add(quantity: number): boolean {
     if (!payload || !canAdd) return false
@@ -299,8 +330,13 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     hasOptions,
     allOptionsChosen,
     anyOptionChosen,
+    missingOptionNames,
+    chosenSummary,
     addonPricing,
     canAdd,
+    // Counts the shopper's presses of Reset options. Islands showing something
+    // they chose watch this and put it away - see the Entry field above.
+    resetEpoch: entry?.resetEpoch ?? 0,
     // A seeded entry carries the shop's symbol; the module-level one is the
     // fetch path's. Preferring the entry's is what keeps a server render from
     // printing the default symbol and then hydrating into the real one.
@@ -328,6 +364,14 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // Whether the option at this display index is shown yet, or still held back
     // waiting on the option before it (see isOptionVisible in selection-logic).
     isOptionVisible: (index: number) => (payload ? isOptionVisible(payload, optionValues, index) : true),
+    // What picking this value would cost, cheapest to dearest, given the picks
+    // above it - so a control can print "from £246" under a choice that moves the
+    // money. Null where nothing buyable carries it.
+    valuePrice: (optionId: string, valueId: string) => (payload ? valuePriceRange(payload, optionValues, optionId, valueId) : null),
+    // Whether this option's values differ in price at all. False means every
+    // choice starts from the same figure, and a price under each one would be
+    // four copies of the same number.
+    optionAffectsPrice: (optionId: string) => (payload ? optionAffectsPrice(payload, optionValues, optionId) : false),
     add,
   }
 }

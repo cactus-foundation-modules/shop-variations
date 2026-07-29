@@ -110,6 +110,60 @@ export function withStrandedFilled(payload: VariantSelectorPayload, raw: OptionS
   return effectiveSelection(payload, working)
 }
 
+// What a shopper could still end up paying if they picked a given option value,
+// as the cheapest and dearest buyable combination that carries it and agrees with
+// every pick made ABOVE it - the same directional filter isValueAvailable uses,
+// so the figures describe exactly the choices the control is offering. Null when
+// nothing buyable carries the value, which is the same case that greys it out.
+//
+// Deliberately ignores the picks BELOW the option, for the same reason
+// isValueAvailable does: a later choice must never change what an earlier option
+// says it costs, or the price under a value would jump about as the shopper works
+// down the list.
+export function valuePriceRange(
+  payload: VariantSelectorPayload,
+  selection: OptionSelection,
+  optionId: string,
+  valueId: string,
+): { min: number; max: number } | null {
+  const v2o = valueToOptionMap(payload)
+  const targetIndex = payload.options.findIndex((o) => o.id === optionId)
+  let min = Infinity
+  let max = -Infinity
+  for (const variant of payload.variants) {
+    if (!isBuyable(variant)) continue
+    if (variantValueForOption(variant, optionId, v2o) !== valueId) continue
+    let agrees = true
+    for (let i = 0; i < targetIndex; i++) {
+      const o = payload.options[i]
+      if (!o) continue
+      const sel = selection[o.id]
+      if (sel && variantValueForOption(variant, o.id, v2o) !== sel) { agrees = false; break }
+    }
+    if (!agrees) continue
+    if (variant.price < min) min = variant.price
+    if (variant.price > max) max = variant.price
+  }
+  return min === Infinity ? null : { min, max }
+}
+
+// Whether THIS option is one that moves the money: its reachable values do not
+// all start from the same figure. Where they do, printing a price under every
+// value would say the same thing four times and tell the shopper nothing, so the
+// controls only show the hint when this is true. Half a penny of tolerance so
+// floating-point crumbs cannot invent a difference out of identical figures.
+export function optionAffectsPrice(payload: VariantSelectorPayload, selection: OptionSelection, optionId: string): boolean {
+  const option = payload.options.find((o) => o.id === optionId)
+  if (!option) return false
+  const floors: number[] = []
+  for (const value of option.values) {
+    const range = valuePriceRange(payload, selection, optionId, value.id)
+    if (range) floors.push(range.min)
+  }
+  if (floors.length < 2) return false
+  return Math.max(...floors) - Math.min(...floors) > 0.005
+}
+
 // The chosen upstream value(s) that make a given option value unreachable, as a
 // human label for a tooltip ("Not available with Oak, Large"). An upstream pick
 // is a culprit when no buyable variant carries both it and the target value.
