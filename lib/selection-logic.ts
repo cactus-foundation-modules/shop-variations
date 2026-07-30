@@ -282,12 +282,11 @@ function rangeStart(first: string, last: string): string | null {
   return null
 }
 
-// The values half of the line under an out-of-reach choice, saying where it IS
-// to be had: "160 to 180cm" for an unbroken run of three or more, otherwise the
-// labels listed out ("160cm or 180cm"). Empty string when there's nothing to
-// say, which is the caller's cue to fall back to a plain "unavailable".
-export function availableWithSentence(groups: AvailableWithGroup[]): string {
-  const parts = groups.map((group) => {
+// One phrase per group of values, before any preposition is put in front of it:
+// "160 to 180cm" for an unbroken run of three or more, otherwise the labels
+// listed out ("160cm or 180cm").
+function groupPhrases(groups: AvailableWithGroup[]): string[] {
+  return groups.map((group) => {
     const labels = group.labels
     const first = labels[0]
     const last = labels[labels.length - 1]
@@ -299,7 +298,34 @@ export function availableWithSentence(groups: AvailableWithGroup[]): string {
     }
     return `${labels.slice(0, -1).join(', ')} or ${last}`
   }).filter(Boolean)
-  return parts.join(' and ')
+}
+
+// A value whose own label is already a preposition phrase - "With Headrest",
+// "Without Arms" - carries its own grammar, and "available in With Headrest" is
+// not English. Those take no "in"; everything else does.
+function carriesOwnPreposition(phrase: string): boolean {
+  return /^with(out)?\b/i.test(phrase)
+}
+
+// The whole line printed under an out-of-reach choice: "available in 160 to
+// 180cm", or "available With Headrest" where the value says its own preposition.
+// Empty string when there's nothing honest to say, which is the caller's cue to
+// fall back to a plain "unavailable".
+//
+// Where two options both have to move, only the FIRST plain phrase takes the
+// "in" - "available in 160 to 180cm and Oak", not "…and in Oak" - since one
+// preposition already governs the list. A phrase carrying its own never takes it
+// and never spends the one going, so "available With Headrest and in 160 to
+// 180cm" still reads.
+export function availableWithPhrase(groups: AvailableWithGroup[]): string {
+  let inSpent = false
+  const parts = groupPhrases(groups).map((phrase) => {
+    if (carriesOwnPreposition(phrase)) return phrase
+    if (inSpent) return phrase
+    inSpent = true
+    return `in ${phrase}`
+  })
+  return parts.length === 0 ? '' : `available ${parts.join(' and ')}`
 }
 
 // Whether an option should currently be shown to the shopper. An option flagged

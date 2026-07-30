@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithSentence, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
@@ -377,11 +377,13 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // Tooltip text for an unreachable value: which chosen upstream value(s)
     // rule it out. Falls back to a generic line when no single pick is the culprit.
     unavailableWith: (optionId: string, valueId: string) => (payload ? unavailableWith(payload, optionValues, optionId, valueId) : ''),
-    // The other half of that: where the value IS to be had ("160 to 180cm"), so
-    // an out-of-reach choice can be shown struck through with a line underneath
-    // pointing the shopper at the sizes that carry it, rather than vanishing and
-    // taking the answer with it. Empty string when no single pick is the culprit.
-    availableIn: (optionId: string, valueId: string) => (payload ? availableWithSentence(availableWith(payload, optionValues, optionId, valueId)) : ''),
+    // The other half of that: where the value IS to be had ("available in 160 to
+    // 180cm"), so an out-of-reach choice can be shown struck through with a line
+    // underneath pointing the shopper at the sizes that carry it, rather than
+    // vanishing and taking the answer with it. The preposition comes with the
+    // phrase, since a value named "With Headrest" says its own and must not be
+    // handed a second one. Empty string when no single pick is the culprit.
+    availabilityNote: (optionId: string, valueId: string) => (payload ? availableWithPhrase(availableWith(payload, optionValues, optionId, valueId)) : ''),
     // Whether the option at this display index is shown yet, or still held back
     // waiting on the option before it (see isOptionVisible in selection-logic).
     isOptionVisible: (index: number) => (payload ? isOptionVisible(payload, optionValues, index) : true),

@@ -555,13 +555,16 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // it no longer fits. Null when the current pick still fits (or there isn't one).
   const ghost = sel.ghostValue(option.id)
   // Where an out-of-reach choice IS to be had, as the line printed under it:
-  // "available in 160 to 180cm". Empty when no single upstream pick is the
-  // culprit, in which case there is nothing honest to point the shopper at and
-  // the choice simply reads as unavailable.
-  const availableIn = (v: SvrOptionWithValues['values'][number]) => sel.availableIn(option.id, v.id)
+  // "available in 160 to 180cm", or "available With Headrest" for a value whose
+  // own label already carries the preposition. The whole phrase comes from the
+  // hook rather than being glued together here, because only the hook knows which
+  // of the two it is. Empty when no single upstream pick is the culprit, in which
+  // case there is nothing honest to point the shopper at and the choice simply
+  // reads as unavailable.
+  const availabilityNote = (v: SvrOptionWithValues['values'][number]) => sel.availabilityNote(option.id, v.id)
   const unavailableTitle = (v: SvrOptionWithValues['values'][number]) => {
-    const where = availableIn(v)
-    if (where) return `${v.label} - available in ${where}`
+    const note = availabilityNote(v)
+    if (note) return `${v.label} - ${note}`
     const clash = sel.unavailableWith(option.id, v.id)
     return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
   }
@@ -637,8 +640,8 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             // A native <option> takes text and nothing else, so the price hint the
             // pill controls put on a second line rides the label here instead.
             const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
-            const where = available ? '' : availableIn(v)
-            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : where ? ` - available in ${where}` : ' - unavailable'}</option>
+            const note = available ? '' : availabilityNote(v)
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : note ? ` - ${note}` : ' - unavailable'}</option>
           })}
         </select>
       </label>
@@ -691,9 +694,9 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // look has no room for it on the button, having given up its text to show
           // the colour bigger, so there it moves onto the hover chip instead
           // (peekSub, below) rather than being dropped.
-          const where = available ? '' : availableIn(v)
+          const note = available ? '' : availabilityNote(v)
           const subLabel = swatchOnly ? null
-            : !available ? (where ? `available in ${where}` : 'unavailable')
+            : !available ? (note || 'unavailable')
             : active ? 'Selected'
             : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
@@ -702,7 +705,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // availability note travels, not "Selected" or the price hint - the tick
           // badge says the first and the chip is a hover affordance, no place to
           // put money a shopper has to hover to find.
-          const peekSub = available ? null : where ? `available in ${where}` : 'unavailable'
+          const peekSub = available ? null : (note || 'unavailable')
           // And for an out-of-reach swatch the chip has to hang on a WRAPPER round
           // the button rather than sit inside it: a disabled control takes no
           // pointer events, so a chip listening from within never hears the hover -
