@@ -11,7 +11,7 @@ import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, t
 import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
-import { skusToClearForRearrange } from '@/modules/shop-variations/lib/sku-rearrange'
+import { skusToClearForRearrange, externalSkuBlockers, type SkuHolder } from '@/modules/shop-variations/lib/sku-rearrange'
 import { repointOnRename } from '@/modules/shop-variations/lib/rename-repoint'
 import { resolveOptionSourceProviders, type OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
 
@@ -482,6 +482,9 @@ export async function importVariationsCsv(
     }
 
     let reassignedAny = false
+    // Which CSV row each child's deferred write came from, so a failure at flush
+    // time can name the owner's row instead of "row 0".
+    const rowNumByChild = new Map<string, number>()
     for (const gr of groupRows) {
       await announce(gr.rowNum, parent.name, gr.cols)
       try {
@@ -531,6 +534,7 @@ export async function importVariationsCsv(
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
         }, upsertCtx)
+        rowNumByChild.set(childProductId, gr.rowNum)
 
         // Hand the whole row (keyed by header label) to each extra-field provider
         // so it can pick out its own columns and write them onto this variant.
@@ -650,11 +654,36 @@ export async function importVariationsCsv(
         await prisma.$executeRaw`UPDATE "shp_products" SET "sku" = NULL WHERE "id" IN (${Prisma.join(clearSkuIds)})`
       }
 
-      await runPool(writes, 8, async ([childId, update]) => {
+      // The clearing above frees SKUs held INSIDE the batch; a SKU held by any
+      // product OUTSIDE it (an orphaned child of a since-deleted parent, or a
+      // plain product typed with the same code) would fail 23505 - and, because
+      // the sheet still disagrees with the database afterwards, fail again on
+      // every import until the blocker is dug out. Name the blocking product up
+      // front, drop only the SKU from that write (the row's other fields still
+      // land), and record the error against the owner's own row.
+      const wantedSkus: Array<{ id: string; sku: string }> = writes.flatMap(([childId, update]) =>
+        'sku' in update && typeof update.sku === 'string' ? [{ id: childId, sku: update.sku }] : [],
+      )
+      if (wantedSkus.length > 0) {
+        const holders = await prisma.$queryRaw<SkuHolder[]>`
+          SELECT "id", "sku", "name" FROM "shp_products" WHERE "sku" IN (${Prisma.join([...new Set(wantedSkus.map((w) => w.sku))])})
+        `
+        for (const b of externalSkuBlockers(wantedSkus, holders, new Set(clearSkuIds))) {
+          result.errors.push({
+            row: rowNumByChild.get(b.wanterId) ?? 0,
+            reason: `SKU "${b.sku}" is already used by another product: "${b.blocker.name}". Free it up there (or delete that product) and import again.`,
+          })
+          const update = lastByChild.get(b.wanterId)
+          if (update) delete update.sku
+        }
+      }
+
+      // A write whose only change was a blocked SKU has nothing left to say.
+      await runPool(writes.filter(([, update]) => Object.keys(update).length > 0), 8, async ([childId, update]) => {
         try {
           await updateProduct(childId, update)
         } catch (err) {
-          result.errors.push({ row: 0, reason: `Failed to save variant ${childId}: ${err instanceof Error ? err.message : 'write failed'}` })
+          result.errors.push({ row: rowNumByChild.get(childId) ?? 0, reason: `Failed to save variant ${childId}: ${err instanceof Error ? err.message : 'write failed'}` })
         }
       })
     }

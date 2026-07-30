@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { skusToClearForRearrange, type SkuMove } from '@/modules/shop-variations/lib/sku-rearrange'
+import { skusToClearForRearrange, externalSkuBlockers, type SkuMove, type SkuHolder } from '@/modules/shop-variations/lib/sku-rearrange'
 
 // Sort so a set-equality assertion doesn't depend on input order.
 const cleared = (moves: SkuMove[]): string[] => skusToClearForRearrange(moves).sort()
@@ -68,5 +68,32 @@ describe('skusToClearForRearrange', () => {
       { id: 'B', from: null, to: null },
     ]
     expect(cleared(moves)).toEqual([])
+  })
+})
+
+describe('externalSkuBlockers', () => {
+  const orphan: SkuHolder = { id: 'orphan', sku: 'OSL0232', name: 'Oslo Volta Oval Boardroom Table - 3200mm' }
+
+  it('names a product outside the batch that holds a wanted SKU', () => {
+    // The live case: a deleted parent left its child behind with the SKU intact,
+    // and every later import of that SKU failed against it.
+    const blockers = externalSkuBlockers([{ id: 'A', sku: 'OSL0232' }], [orphan], new Set())
+    expect(blockers).toEqual([{ wanterId: 'A', sku: 'OSL0232', blocker: orphan }])
+  })
+
+  it('does not report a variant that already holds its own target', () => {
+    const holders: SkuHolder[] = [{ id: 'A', sku: 'S1', name: 'Self' }]
+    expect(externalSkuBlockers([{ id: 'A', sku: 'S1' }], holders, new Set())).toEqual([])
+  })
+
+  it('does not report a holder the clearing pass is about to NULL', () => {
+    // B holds S1 but is inside the batch and queued for the pre-clear - the
+    // rearrangement handles it, so it is not an external blocker.
+    const holders: SkuHolder[] = [{ id: 'B', sku: 'S1', name: 'Sibling variant' }]
+    expect(externalSkuBlockers([{ id: 'A', sku: 'S1' }], holders, new Set(['B']))).toEqual([])
+  })
+
+  it('reports nothing when no one holds the wanted SKU', () => {
+    expect(externalSkuBlockers([{ id: 'A', sku: 'S9' }], [], new Set())).toEqual([])
   })
 })

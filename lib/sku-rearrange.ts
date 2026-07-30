@@ -43,3 +43,45 @@ export function skusToClearForRearrange(moves: readonly SkuMove[]): string[] {
   }
   return out
 }
+
+// A product that currently holds a SKU some write in the batch wants.
+export type SkuHolder = {
+  id: string
+  sku: string
+  name: string
+}
+
+export type ExternalSkuBlocker = {
+  // The child product whose write wants the SKU.
+  wanterId: string
+  sku: string
+  // The product standing on it.
+  blocker: SkuHolder
+}
+
+// The clearing pass above only ever clears variants INSIDE the batch, because
+// those are the only rows it knows about. A SKU held by any product outside the
+// batch - most often an orphaned child left behind by a deleted parent, but
+// equally a plain product typed with the same code - fails the write with 23505
+// and, because the sheet still differs from the database afterwards, fails it
+// again on every future import until someone digs the blocker out by hand. This
+// names them up front so the import can say WHICH product is in the way instead
+// of parroting Postgres.
+//
+// A holder whose id is the wanter itself (already holds its own target), or one
+// the clearing pass is about to set to NULL, is not a blocker.
+export function externalSkuBlockers(
+  wanted: ReadonlyArray<{ id: string; sku: string }>,
+  holders: readonly SkuHolder[],
+  clearedIds: ReadonlySet<string>,
+): ExternalSkuBlocker[] {
+  const holderBySku = new Map<string, SkuHolder>()
+  for (const h of holders) holderBySku.set(h.sku, h)
+  const out: ExternalSkuBlocker[] = []
+  for (const w of wanted) {
+    const holder = holderBySku.get(w.sku)
+    if (!holder || holder.id === w.id || clearedIds.has(holder.id)) continue
+    out.push({ wanterId: w.id, sku: w.sku, blocker: holder })
+  }
+  return out
+}
