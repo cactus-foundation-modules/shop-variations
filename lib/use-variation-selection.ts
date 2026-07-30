@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithSentence, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
+import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 type Entry = {
@@ -295,6 +296,21 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // two happened to agree, and relying on that made "the button is locked until
   // every option is picked" an accident of the stock check rather than a rule.
   const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid
+
+  // Tell the rest of the page which variation is in hand. Other modules' blocks
+  // (the delivery module's service picker, say) have no way into this store and
+  // must not import from it, so the answer goes out as a browser event - see
+  // lib/selection-broadcast.ts. Published from the hook rather than the store so
+  // it reflects the same resolved variant every part on the page is showing;
+  // repeat publishes from the other islands are dropped there.
+  useEffect(() => {
+    publishVariantSelection({
+      slug: slug ?? '',
+      parentProductId: payload?.productId ?? null,
+      productId: variant?.childProductId ?? null,
+      allOptionsChosen,
+    })
+  }, [slug, payload?.productId, variant?.childProductId, allOptionsChosen])
 
   function add(quantity: number): boolean {
     if (!payload || !canAdd) return false
