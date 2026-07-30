@@ -1,6 +1,7 @@
 import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
   type OptionLabelPlacement, type VariantDisplayMode, type AccordionInitial, type AccordionOnSelect, type SwatchDisplay, type SwatchPreview,
+  type UnavailableDisplay,
 } from '@/modules/shop-variations/components/public/VariantParts'
 
 // Granular storefront parts (mirror shop's ShopDetail* parts) for the Product
@@ -20,6 +21,7 @@ export type ShopVariantOptionsProps = {
   accordionOnSelect?: AccordionOnSelect
   swatchDisplay?: SwatchDisplay
   swatchPreview?: SwatchPreview
+  unavailable?: UnavailableDisplay
 }
 export function ShopVariantOptions(props: ShopVariantOptionsProps) {
   return (
@@ -31,6 +33,7 @@ export function ShopVariantOptions(props: ShopVariantOptionsProps) {
       accordionOnSelect={props.accordionOnSelect}
       swatchDisplay={props.swatchDisplay}
       swatchPreview={props.swatchPreview}
+      unavailable={props.unavailable}
     />
   )
 }
@@ -87,9 +90,17 @@ export const shopVariantOptionsPuckComponent = {
         { label: 'No preview', value: 'hide' },
       ],
     },
+    unavailable: {
+      type: 'radio' as const,
+      label: 'Choices this combination cannot have',
+      options: [
+        { label: 'Show them, with where they are available', value: 'show' },
+        { label: 'Hide them', value: 'hide' },
+      ],
+    },
   },
   defaultProps: {
-    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: 'show',
+    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: 'show', unavailable: 'show',
   } as ShopVariantOptionsProps,
   // The accordion-only settings appear only in accordion mode, and "after a
   // choice is made" whenever there's a next section left to auto-open - closed

@@ -42,6 +42,7 @@ export async function ShopVariantOptionsRsc(props: ShopVariantOptionsProps) {
       accordionOnSelect={props.accordionOnSelect}
       swatchDisplay={props.swatchDisplay}
       swatchPreview={props.swatchPreview}
+      unavailable={props.unavailable}
     />
   )
 }

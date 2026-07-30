@@ -191,6 +191,117 @@ export function unavailableWith(payload: VariantSelectorPayload, selection: Opti
   return labels.join(', ')
 }
 
+// The mirror of unavailableWith: not which pick rules a value out, but which
+// picks would bring it back. For every chosen upstream value that rules the
+// target out on its own, the values of that same option which WOULD allow it, in the
+// option's own display order.
+export type AvailableWithGroup = {
+  optionId: string
+  optionName: string
+  labels: string[]
+  // Whether those values are one unbroken run of the option's display order, so
+  // a caller may collapse them to "160 to 180cm" instead of listing each. False
+  // for a gappy set, which has to be listed in full or the summary would promise
+  // a combination that isn't on offer.
+  contiguous: boolean
+}
+
+// Empty when no single upstream pick is the culprit - a clash that needs a
+// combination of picks, or a value nothing buyable carries at all. The caller
+// falls back to a bare "unavailable" there rather than inventing a reason.
+export function availableWith(
+  payload: VariantSelectorPayload,
+  selection: OptionSelection,
+  optionId: string,
+  valueId: string,
+): AvailableWithGroup[] {
+  const v2o = valueToOptionMap(payload)
+  const targetIndex = payload.options.findIndex((o) => o.id === optionId)
+  if (targetIndex < 0) return []
+  // The upstream picks that, on their own, rule the target value out - exactly
+  // the ones unavailableWith names.
+  const culprits: number[] = []
+  for (let i = 0; i < targetIndex; i++) {
+    const o = payload.options[i]
+    if (!o) continue
+    const sel = selection[o.id]
+    if (!sel) continue
+    const coexists = payload.variants.some((variant) =>
+      isBuyable(variant) &&
+      variantValueForOption(variant, optionId, v2o) === valueId &&
+      variantValueForOption(variant, o.id, v2o) === sel,
+    )
+    if (!coexists) culprits.push(i)
+  }
+  const groups: AvailableWithGroup[] = []
+  for (const index of culprits) {
+    const option = payload.options[index]
+    if (!option) continue
+    // Held against the upstream picks that are NOT culprits: those the shopper
+    // could keep. Relaxing this option is the change being described, and
+    // relaxing the other culprits too is implied by them getting their own group.
+    const indices: number[] = []
+    option.values.forEach((value, valueIndex) => {
+      const works = payload.variants.some((variant) => {
+        if (!isBuyable(variant)) return false
+        if (variantValueForOption(variant, optionId, v2o) !== valueId) return false
+        if (variantValueForOption(variant, option.id, v2o) !== value.id) return false
+        for (let i = 0; i < targetIndex; i++) {
+          if (culprits.includes(i)) continue
+          const other = payload.options[i]
+          if (!other) continue
+          const sel = selection[other.id]
+          if (sel && variantValueForOption(variant, other.id, v2o) !== sel) return false
+        }
+        return true
+      })
+      if (works) indices.push(valueIndex)
+    })
+    if (indices.length === 0) continue
+    const first = indices[0] ?? 0
+    const contiguous = indices.every((n, k) => n === first + k)
+    groups.push({
+      optionId: option.id,
+      optionName: option.name,
+      labels: indices.map((n) => option.values[n]?.label ?? '').filter(Boolean),
+      contiguous,
+    })
+  }
+  return groups
+}
+
+// Two labels that end in a number and the same unit ("160cm", "180cm") read as a
+// range with the unit said once, which is how a shopper would say it out loud:
+// the opening label with its unit trimmed off, ready for "… to 180cm". Null for
+// anything that isn't a pair of measurements - "Oak to Walnut" is not a range, it
+// is two colours with a word between them, so those get listed out instead.
+function rangeStart(first: string, last: string): string | null {
+  const a = /^(.*[0-9])([^0-9]*)$/.exec(first)
+  const b = /^(.*[0-9])([^0-9]*)$/.exec(last)
+  if (a && b && a[1] && a[2] === b[2]) return a[1]
+  return null
+}
+
+// The values half of the line under an out-of-reach choice, saying where it IS
+// to be had: "160 to 180cm" for an unbroken run of three or more, otherwise the
+// labels listed out ("160cm or 180cm"). Empty string when there's nothing to
+// say, which is the caller's cue to fall back to a plain "unavailable".
+export function availableWithSentence(groups: AvailableWithGroup[]): string {
+  const parts = groups.map((group) => {
+    const labels = group.labels
+    const first = labels[0]
+    const last = labels[labels.length - 1]
+    if (!first || !last) return ''
+    if (labels.length === 1) return first
+    if (labels.length >= 3 && group.contiguous) {
+      const start = rangeStart(first, last)
+      if (start) return `${start} to ${last}`
+    }
+    return `${labels.slice(0, -1).join(', ')} or ${last}`
+  }).filter(Boolean)
+  return parts.join(' and ')
+}
+
 // Whether an option should currently be shown to the shopper. An option flagged
 // `requiresPreviousOption` stays hidden until *every* option before it (in
 // display order) has a value chosen - not merely the one immediately before, so

@@ -46,6 +46,15 @@ export type SwatchDisplay = 'pill' | 'swatchOnly'
 // it just gains the picture above the name when previews are on.
 export type SwatchPreview = 'show' | 'hide'
 
+// What becomes of a choice the picks above it have put out of reach. 'show'
+// keeps it in the row, struck through and unpickable, with a line underneath
+// saying where it IS to be had ("available in 160 to 180cm") - a shopper who
+// wanted that choice is told which other pick would get them it, rather than
+// being left wondering why it went. 'hide' drops it from the row entirely, the
+// older behaviour, for an option whose values are too many for that to read as
+// anything but clutter.
+export type UnavailableDisplay = 'show' | 'hide'
+
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
 // block) or dropped independently (the granular Product Detail parts).
@@ -215,11 +224,12 @@ export type VariantOptionsPartProps = PartProps & {
   accordionOnSelect?: AccordionOnSelect
   swatchDisplay?: SwatchDisplay
   swatchPreview?: SwatchPreview
+  unavailable?: UnavailableDisplay
 }
 export function VariantOptionsPart({
   preview, slug: explicitSlug, initial, labelPlacement,
   displayMode = 'inline', accordionInitial = 'closed', accordionOnSelect = 'openNext', swatchDisplay = 'pill',
-  swatchPreview = 'show',
+  swatchPreview = 'show', unavailable = 'show',
 }: VariantOptionsPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
@@ -243,10 +253,10 @@ export function VariantOptionsPart({
     // keeps the landing clear of the header and a sticky bar.
     <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
       {displayMode === 'accordion' ? (
-        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
+        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} />
       ) : (
         visibleOptions.map((option, index) => (
-          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} />
+          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} />
         ))
       )}
     </div>
@@ -267,7 +277,7 @@ export function VariantOptionsPart({
 // not a plain one, so the next section opens in the same paint as the choice -
 // a post-paint effect left a frame with it still shut, which read as a lag.
 function VariantOptionsAccordion({
-  options, sel, initial, onSelect, swatchDisplay, swatchPreview,
+  options, sel, initial, onSelect, swatchDisplay, swatchPreview, unavailable,
 }: {
   options: SvrOptionWithValues[]
   sel: ReturnType<typeof useVariationSelection>
@@ -275,6 +285,7 @@ function VariantOptionsAccordion({
   onSelect: AccordionOnSelect
   swatchDisplay: SwatchDisplay
   swatchPreview: SwatchPreview
+  unavailable: UnavailableDisplay
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
     // Arriving on a variation link seeds every pick before first paint (the URL
@@ -325,7 +336,12 @@ function VariantOptionsAccordion({
         // shopper cannot usefully use is just noise. It goes back to a normal,
         // openable section the moment an upstream change widens it past one again.
         const availableCount = option.values.filter((v) => sel.isAvailable(option.id, v.id)).length
-        const collapsible = availableCount > 1
+        // Where out-of-reach choices are on show, they are part of what the panel
+        // has to say - "available in 160 to 180cm" is the whole point of them - so
+        // the section stays openable even when only one choice can actually be
+        // picked. Hidden, there would be nothing behind the disclosure but the
+        // one value already chosen for the shopper.
+        const collapsible = (unavailable === 'show' ? option.values.length : availableCount) > 1
         const open = collapsible && openIds.has(option.id)
         const chosenId = sel.optionValues[option.id]
         const chosenLabel = chosenId ? option.values.find((v) => v.id === chosenId)?.label ?? null : null
@@ -380,7 +396,7 @@ function VariantOptionsAccordion({
             {open && (
               <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)', borderRadius: '0 0 7px 7px' }}>
                 <OptionControl
-                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay} swatchPreview={swatchPreview}
+                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable}
                   onChoose={autoNext ? () => setPending(option.id) : undefined}
                 />
               </div>
@@ -505,16 +521,29 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; onChoose?: () => void }) {
+export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', unavailable = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; unavailable?: UnavailableDisplay; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
   // it no longer fits. Null when the current pick still fits (or there isn't one).
   const ghost = sel.ghostValue(option.id)
+  // Where an out-of-reach choice IS to be had, as the line printed under it:
+  // "available in 160 to 180cm". Empty when no single upstream pick is the
+  // culprit, in which case there is nothing honest to point the shopper at and
+  // the choice simply reads as unavailable.
+  const availableIn = (v: SvrOptionWithValues['values'][number]) => sel.availableIn(option.id, v.id)
   const unavailableTitle = (v: SvrOptionWithValues['values'][number]) => {
+    const where = availableIn(v)
+    if (where) return `${v.label} - available in ${where}`
     const clash = sel.unavailableWith(option.id, v.id)
     return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
   }
+  // Which values the row draws. Under 'show' every one of them, so a choice the
+  // picks above have ruled out still says its piece; under 'hide' only what the
+  // shopper can actually pick - plus the current pick and any ghost, which stay
+  // either way rather than letting the control blank out beneath them.
+  const shownValues = option.values.filter((v) =>
+    unavailable === 'show' || sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id)
   // Beside: the name sits on the first row of choices rather than above them.
   //
   // The name is FLOATED, not a flex item, and this is the whole trick. Flex would
@@ -571,17 +600,18 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           style={{ padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--color-border)', minWidth: 180, background: 'var(--color-surface)', color: 'var(--color-text)' }}
         >
           <option value="" disabled>Choose {option.name.toLowerCase()}</option>
-          {/* An unbuyable combination is left out rather than shown greyed, so
-              the shopper never meets a dead end they can pick. The exceptions are
+          {/* An unbuyable combination is listed disabled, saying where it IS to
+              be had, so a shopper who came for it is pointed at the pick that
+              carries it. Set to 'hide' it drops out of the list entirely - bar
               the current pick and a pick an upstream change has just stranded
-              (the ghost): both stay listed, disabled and flagged unavailable, so
-              the control never blanks out under the shopper. */}
-          {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
+              (the ghost), which stay listed so the control never blanks out. */}
+          {shownValues.map((v) => {
             const available = sel.isAvailable(option.id, v.id)
             // A native <option> takes text and nothing else, so the price hint the
             // pill controls put on a second line rides the label here instead.
             const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
-            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : ' - unavailable'}</option>
+            const where = available ? '' : availableIn(v)
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : where ? ` - available in ${where}` : ' - unavailable'}</option>
           })}
         </select>
       </label>
@@ -610,11 +640,11 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
       <div style={beside
         ? { marginBottom: '-0.5rem' }
         : { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-        {/* Unbuyable values drop out of the row entirely, so the shopper only ever
-            sees choices that lead somewhere. Two stay put: the current pick, and a
-            pick an upstream change has just stranded (the ghost) - both shown as a
-            struck-through, disabled button rather than letting the row empty out. */}
-        {option.values.filter((v) => sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id).map((v) => {
+        {/* An unbuyable value stays in the row, struck through and unpickable,
+            with a line underneath naming where it IS to be had - see
+            UnavailableDisplay. Set to 'hide' it drops out and only the current
+            pick and a stranded one (the ghost) remain, so the row never empties. */}
+        {shownValues.map((v) => {
           const available = sel.isAvailable(option.id, v.id)
           const active = chosen === v.id
           // Swatch-only drops the value's name to a hover tooltip and shows just
@@ -628,13 +658,17 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           const previewNode = swatchPreview === 'show' && v.swatch && (isSwatch || isImage)
             ? <ValuePreview src={isImage ? v.swatch : undefined} colour={isSwatch ? v.swatch : undefined} />
             : undefined
-          // The second line under the value's name: what it is chosen, and what it
-          // would cost before that - but only where the option moves the money, and
-          // never in the swatch-only look, which has deliberately given up its text
-          // to show the colour bigger and has nowhere to put a line of it.
+          // The second line under the value's name: where an out-of-reach choice
+          // IS to be had, what it is when chosen, and what it would cost before
+          // that - the last only where the option moves the money. Never in the
+          // swatch-only look, which has deliberately given up its text to show the
+          // colour bigger and has nowhere to put a line of it (the same wording
+          // rides its tooltip and aria-label instead, via unavailableTitle).
+          const where = available ? '' : availableIn(v)
           const subLabel = swatchOnly ? null
+            : !available ? (where ? `available in ${where}` : 'unavailable')
             : active ? 'Selected'
-            : available && showPrices ? valuePriceHint(sel, option.id, v.id)
+            : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
           return (
             <button
@@ -653,7 +687,10 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                 // one that has.
                 ...(mediaPx ? { minHeight: `calc(${mediaPx}px + 0.75rem + 4px)` } : null),
                 borderRadius: 999,
-                border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                // Dashed for a choice that isn't on offer here: the shape says
+                // "not one of these" at a glance, before the strike-through or
+                // the line underneath are read at all.
+                border: `2px ${available ? 'solid' : 'dashed'} ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 // A chosen value is tinted rather than filled solid: the label and
                 // its "Selected" line still have to read, and a wash of the theme's
                 // primary over the surface colour keeps the text contrast the
@@ -662,10 +699,13 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                 background: active
                   ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))'
                   : 'var(--color-surface)',
-                color: 'var(--color-text)',
+                color: available ? 'var(--color-text)' : 'var(--color-text-muted)',
                 cursor: available ? 'pointer' : 'not-allowed',
-                opacity: available ? 1 : 0.4,
-                textDecoration: available ? 'none' : 'line-through',
+                // Muted text and a dashed edge carry "not here" on their own. The
+                // old 0.4 wash is gone deliberately: the line underneath now says
+                // which size DOES carry the choice, and a note faded past reading
+                // is worse than no note at all.
+                textDecoration: 'none',
                 fontSize: '0.875rem',
                 // Beside lays these out inline, so they carry their own spacing
                 // (the wrapper's `gap` only works on the flex path). `top` keeps a
@@ -706,10 +746,13 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                       a value with no sub-line renders exactly as it always did -
                       one centred label, same height. */}
                   <span style={{ display: 'grid', justifyItems: 'center', lineHeight: 1.2 }}>
-                    <span>{v.label}</span>
+                    {/* The strike belongs to the name alone. On the button it
+                        struck the line underneath too, which is the one part of an
+                        out-of-reach choice the shopper is meant to read. */}
+                    <span style={{ textDecoration: available ? 'none' : 'line-through' }}>{v.label}</span>
                     {subLabel && (
                       <span style={{
-                        fontSize: '0.75rem', fontWeight: active ? 600 : 400,
+                        fontSize: '0.75rem', fontWeight: active || !available ? 600 : 400,
                         color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
                       }}>
                         {subLabel}
