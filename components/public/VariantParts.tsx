@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useState } from 'react'
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
@@ -414,16 +414,22 @@ function VariantOptionsAccordion({
 // name, so it asks for the preview alone; the swatch-only look always asks for
 // the name and adds the preview above it when previews are on.
 //
-// With neither to show it gets out of the way entirely and renders the swatch on
+// `sub` is the same line the pill choices print under their name - where an
+// out-of-reach choice IS to be had ("available in 160 to 180cm"). The swatch-only
+// look gave up its text to show the colour bigger, so the chip is the only place
+// that line can go, and `struck` puts the same strike through the name that the
+// pill's own label carries.
+//
+// With nothing to show it gets out of the way entirely and renders the swatch on
 // its own - no listeners, no wrapper state. The name also rides the button's
 // `title` and `aria-label`, so it is never hover-only for a keyboard or screen
 // reader shopper.
-function ValuePeek({ label, preview, children }: { label?: string; preview?: React.ReactNode; children: React.ReactNode }) {
+function ValuePeek({ label, sub, struck = false, preview, wrapStyle, children }: { label?: string; sub?: string | null; struck?: boolean; preview?: React.ReactNode; wrapStyle?: React.CSSProperties; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   if (!label && !preview) return <>{children}</>
   return (
     <span
-      style={{ position: 'relative', display: 'inline-flex' }}
+      style={{ position: 'relative', display: 'inline-flex', ...wrapStyle }}
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}
     >
       {children}
@@ -441,7 +447,28 @@ function ValuePeek({ label, preview, children }: { label?: string; preview?: Rea
           }}
         >
           {preview}
-          {label && <span style={{ padding: preview ? '0 4px 2px' : 0 }}>{label}</span>}
+          {label && (
+            // Name over sub-line, mirroring the pill: a grid so the pair stays
+            // centred as a block whatever the sub-line's width, and so a value
+            // with no sub-line renders exactly the single centred name it always
+            // did. The strike belongs to the name alone - it struck the line
+            // underneath too when it sat on the wrapper, and that line is the one
+            // part of an out-of-reach choice the shopper is meant to read.
+            <span style={{ display: 'grid', justifyItems: 'center', lineHeight: 1.3, padding: preview ? '0 4px 2px' : 0 }}>
+              <span style={{ textDecoration: struck ? 'line-through' : 'none' }}>{label}</span>
+              {sub && (
+                // Wraps, unlike the rest of the chip: a list of upstream values
+                // ("available in 160, 180 or 200cm") can run long, and a chip
+                // wider than the page is worse than two tidy lines.
+                <span style={{
+                  whiteSpace: 'normal', maxWidth: 180, textAlign: 'center',
+                  fontWeight: 600, color: 'var(--color-text-muted)',
+                }}>
+                  {sub}
+                </span>
+              )}
+            </span>
+          )}
         </span>
       )}
     </span>
@@ -660,22 +687,46 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             : undefined
           // The second line under the value's name: where an out-of-reach choice
           // IS to be had, what it is when chosen, and what it would cost before
-          // that - the last only where the option moves the money. Never in the
-          // swatch-only look, which has deliberately given up its text to show the
-          // colour bigger and has nowhere to put a line of it (the same wording
-          // rides its tooltip and aria-label instead, via unavailableTitle).
+          // that - the last only where the option moves the money. The swatch-only
+          // look has no room for it on the button, having given up its text to show
+          // the colour bigger, so there it moves onto the hover chip instead
+          // (peekSub, below) rather than being dropped.
           const where = available ? '' : availableIn(v)
           const subLabel = swatchOnly ? null
             : !available ? (where ? `available in ${where}` : 'unavailable')
             : active ? 'Selected'
             : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
-          return (
+          // The out-of-reach line for the swatch-only chip: the same wording the
+          // pill prints, under the name it already shows there. Only the
+          // availability note travels, not "Selected" or the price hint - the tick
+          // badge says the first and the chip is a hover affordance, no place to
+          // put money a shopper has to hover to find.
+          const peekSub = available ? null : where ? `available in ${where}` : 'unavailable'
+          // And for an out-of-reach swatch the chip has to hang on a WRAPPER round
+          // the button rather than sit inside it: a disabled control takes no
+          // pointer events, so a chip listening from within never hears the hover -
+          // on precisely the value whose line the shopper needs (same reason the
+          // locked buy button wears its title on a wrapper, further down).
+          const peekOutside = swatchOnly && !available
+          // The swatch-only look has no text of its own, so the name is the button's
+          // aria-label - and for an out-of-reach value the whole sentence, since a
+          // screen reader shopper gets neither the strike-through nor the hover chip
+          // that carry it.
+          const peekAria = available ? v.label : unavailableTitle(v)
+          // The swatch itself, hoisted out of the JSX below because it is rendered
+          // either inside a hover chip or bare, depending on where the chip lives.
+          const swatchNode = swatchOnly
+            ? (isSwatch
+                ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
+                : <SwatchImg src={v.swatch!} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />)
+            : null
+          const button = (
             <button
-              key={v.id} type="button" disabled={!available}
+              type="button" disabled={!available}
               onClick={() => { sel.setOption(option.id, v.id); onChoose?.() }}
               title={available ? v.label : unavailableTitle(v)}
-              aria-label={swatchOnly ? v.label : undefined}
+              aria-label={swatchOnly ? peekAria : undefined}
               aria-pressed={active}
               style={{
                 position: 'relative',
@@ -721,12 +772,10 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
               {swatchOnly ? (
                 // Swatch or thumbnail alone: the name has nowhere else to go, so it
                 // always rides the hover chip, with the enlarged preview above it
-                // when previews are on.
-                <ValuePeek label={v.label} preview={previewNode}>
-                  {isSwatch
-                    ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
-                    : <SwatchImg src={v.swatch!} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />}
-                </ValuePeek>
+                // when previews are on. An out-of-reach one gets the same chip from
+                // the wrapper outside the button instead (peekOutside), so the swatch
+                // goes in bare here and is not double-wrapped.
+                peekOutside ? swatchNode : <ValuePeek label={v.label} preview={previewNode}>{swatchNode}</ValuePeek>
               ) : (
                 <>
                   {/* The pill shows the name already, so its hover chip carries the
@@ -763,6 +812,18 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
               )}
             </button>
           )
+          // `verticalAlign` moves to the wrapper on the beside path: the wrapper is
+          // now the inline box the row aligns, and left at its baseline default an
+          // image swatch would drag the row about. The button keeps its own margins -
+          // they still space the wrapper, being its only content.
+          return peekOutside ? (
+            <ValuePeek
+              key={v.id} label={v.label} sub={peekSub} struck preview={previewNode}
+              wrapStyle={beside ? { verticalAlign: 'top' } : undefined}
+            >
+              {button}
+            </ValuePeek>
+          ) : <Fragment key={v.id}>{button}</Fragment>
         })}
       </div>
     </div>
