@@ -24,6 +24,7 @@ function mapValue(r: Record<string, unknown>): SvrOptionValue {
     id: r.id as string,
     optionId: r.option_id as string,
     label: r.label as string,
+    slug: r.slug as string,
     swatch: (r.swatch as string | null) ?? null,
     position: r.position as number,
     sourceRef: (r.source_ref as string | null) ?? null,
@@ -147,9 +148,11 @@ export async function getOptionValueOwner(id: string): Promise<{ optionId: strin
   return row ? { optionId: row.option_id, productId: row.product_id } : null
 }
 
-// Case-insensitive duplicate checks. Two options on a product sharing a name, or
-// two values in one option sharing a label, make the generated variant names
-// ambiguous, so renames are refused rather than allowed to collide.
+// Case-insensitive duplicate check. Two options on a product sharing a name make
+// the spreadsheet importer's option matching (and the product page) ambiguous,
+// so renames are refused rather than allowed to collide. Value LABELS carry no
+// such check any more: two values may read "Black" as long as their slugs differ
+// - the slug, not the label, is a value's identity within its option.
 export async function optionNameTaken(productId: string, name: string, exceptId: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT "id" FROM "svr_options"
@@ -159,25 +162,40 @@ export async function optionNameTaken(productId: string, name: string, exceptId:
   return rows.length > 0
 }
 
-export async function optionValueLabelTaken(optionId: string, label: string, exceptId: string): Promise<boolean> {
-  const rows = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "svr_option_values"
-    WHERE "option_id" = ${optionId} AND lower("label") = lower(${label}) AND "id" <> ${exceptId}
-    LIMIT 1
+// The value on an option holding a slug, if any. Slugs are unique per option, so
+// this is the lookup the importer resolves "(slug)Label" cells with.
+export async function findOptionValueBySlug(optionId: string, slug: string): Promise<SvrOptionValue | null> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT * FROM "svr_option_values" WHERE "option_id" = ${optionId} AND "slug" = ${slug} LIMIT 1
   `
-  return rows.length > 0
+  return rows[0] ? mapValue(rows[0]) : null
+}
+
+// First free spelling of `base` on the option: "black", then "black-2", "black-3".
+// Same convention every other slug on the platform follows.
+export async function ensureUniqueOptionValueSlug(optionId: string, base: string, exceptId?: string): Promise<string> {
+  let slug = base
+  for (let n = 2; ; n++) {
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "svr_option_values"
+      WHERE "option_id" = ${optionId} AND "slug" = ${slug} AND "id" <> ${exceptId ?? ''} LIMIT 1
+    `
+    if (rows.length === 0) return slug
+    slug = `${base}-${n}`
+  }
 }
 
 export async function createOptionValue(
   optionId: string,
   label: string,
+  slug: string,
   swatch: string | null,
   position: number,
   sourceRef?: string | null,
 ): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
-    INSERT INTO "svr_option_values" ("option_id", "label", "swatch", "position", "source_ref")
-    VALUES (${optionId}, ${label}, ${swatch}, ${position}, ${sourceRef ?? null})
+    INSERT INTO "svr_option_values" ("option_id", "label", "slug", "swatch", "position", "source_ref")
+    VALUES (${optionId}, ${label}, ${slug}, ${swatch}, ${position}, ${sourceRef ?? null})
     RETURNING "id"
   `
   return rows[0]
@@ -185,10 +203,11 @@ export async function createOptionValue(
 
 export async function updateOptionValue(
   id: string,
-  fields: { label?: string; swatch?: string | null; position?: number; sourceRef?: string | null },
+  fields: { label?: string; slug?: string; swatch?: string | null; position?: number; sourceRef?: string | null },
 ): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.label !== undefined) sets.push(Prisma.sql`"label" = ${fields.label}`)
+  if (fields.slug !== undefined) sets.push(Prisma.sql`"slug" = ${fields.slug}`)
   if (fields.swatch !== undefined) sets.push(Prisma.sql`"swatch" = ${fields.swatch}`)
   if (fields.position !== undefined) sets.push(Prisma.sql`"position" = ${fields.position}`)
   // Which source value this copy answers to. Moved when a rename makes it a

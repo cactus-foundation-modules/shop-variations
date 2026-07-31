@@ -22,9 +22,9 @@ function option(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
     cardLabel: null,
     cardLimit: null,
     values: [
-      { id: 'v1', optionId: 'opt1', label: 'Red', swatch: '#f00', position: 0, sourceRef: null },
-      { id: 'v2', optionId: 'opt1', label: 'Green', swatch: '#0f0', position: 1, sourceRef: null },
-      { id: 'v3', optionId: 'opt1', label: 'Blue', swatch: '#00f', position: 2, sourceRef: null },
+      { id: 'v1', optionId: 'opt1', label: 'Red', slug: 'red', swatch: '#f00', position: 0, sourceRef: null },
+      { id: 'v2', optionId: 'opt1', label: 'Green', slug: 'green', swatch: '#0f0', position: 1, sourceRef: null },
+      { id: 'v3', optionId: 'opt1', label: 'Blue', slug: 'blue', swatch: '#00f', position: 2, sourceRef: null },
     ],
     ...over,
   }
@@ -76,7 +76,7 @@ describe('summariseOptionForCard', () => {
 
   it('carries a value with no swatch through, so the card can fall back to its label', () => {
     const summary = summariseOptionForCard(option({
-      values: [{ id: 'v1', optionId: 'opt1', label: 'Oak', swatch: null, position: 0, sourceRef: null }],
+      values: [{ id: 'v1', optionId: 'opt1', label: 'Oak', slug: 'oak', swatch: null, position: 0, sourceRef: null }],
     }))!
     expect(summary.values).toEqual([{ label: 'Oak', swatch: null }])
   })

@@ -23,6 +23,14 @@ export type OptionSourceValue = {
   /** Stable id of the value in the provider's own storage. Opaque to us. */
   ref: string
   label: string
+  /**
+   * The value's slug in the provider's storage, e.g. "black-mfc". Copies made
+   * from this value take it as their own slug (deduped per option), so the
+   * spreadsheet spelling "(black-mfc)Black" reads the same on the attributes
+   * screen and on every product. Optional: a provider without slugs leaves it
+   * off and copies slugify their label instead.
+   */
+  slug?: string | null
   /** Hex colour or image url, matching the meaning svr_option_values.swatch has. */
   swatch: string | null
 }
@@ -57,7 +65,7 @@ export type OptionSourceProvider = {
    * Optional. A provider whose storage is read-only (or not the owner's to write
    * to) simply leaves it off, and a typed value stays local to the product.
    */
-  createValue?(ref: string, input: { label: string; swatch: string | null }): Promise<OptionSourceValue | null>
+  createValue?(ref: string, input: { label: string; swatch: string | null; slug?: string | null }): Promise<OptionSourceValue | null>
 }
 
 const POINT = 'shop-variations.option-source'

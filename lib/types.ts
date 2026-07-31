@@ -46,6 +46,10 @@ export type SvrOptionValue = {
   id: string
   optionId: string
   label: string
+  // The value's identity within its option. Labels may repeat (two "Black"s told
+  // apart by their swatches); slugs may not. The spreadsheet round-trip writes
+  // each value cell as "(slug)Label" so a sheet can name either one.
+  slug: string
   // What the control shows beside the label: a hex colour for SWATCH, an image
   // url for IMAGE. Null for DROPDOWN/PILL, and for a SWATCH/IMAGE value nobody
   // has given one to yet - both of those render as the bare label.

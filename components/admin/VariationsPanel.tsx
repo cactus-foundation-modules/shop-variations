@@ -15,7 +15,7 @@ import {
 } from '@/modules/shop-variations/components/admin/OptionSourcePicker'
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 
-type OptionValue = { id: string; label: string; swatch: string | null; position: number; sourceRef: string | null }
+type OptionValue = { id: string; label: string; slug: string; swatch: string | null; position: number; sourceRef: string | null }
 type Option = {
   id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean
   // Set when the option was built from another module's source. Null on a
@@ -822,6 +822,22 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   onLabel={(label) => setCardLabel(opt.id, label)}
                   onLimit={(limit) => setCardLimit(opt.id, limit)}
                 />
+                {/* Duplicate labels are legal now (two "Black"s, told apart by
+                    slug and swatch) - but a dropdown or pill control shows text
+                    only, so there the duplicates would read identically to a
+                    shopper. Warn, don't block: the fix is the owner's call. */}
+                {(() => {
+                  const counts = new Map<string, number>()
+                  for (const v of opt.values) { const k = v.label.trim().toLowerCase(); counts.set(k, (counts.get(k) ?? 0) + 1) }
+                  const hasDuplicates = [...counts.values()].some((n) => n > 1)
+                  if (!hasDuplicates || (opt.controlType !== 'DROPDOWN' && opt.controlType !== 'PILL')) return null
+                  return (
+                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: 'var(--color-warning, var(--color-text-muted))' }}>
+                      Two or more values here share a name. This control shows text only, so shoppers cannot tell
+                      them apart - switch to a swatch or picture control, or rename one of them.
+                    </p>
+                  )
+                })()}
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
                   {opt.values.map((v, vi) => (
                     <span
@@ -851,6 +867,13 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                       )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
+                      {/* The slug surfaces only when the label alone is ambiguous
+                          on this option - it is what the spreadsheet writes as
+                          "(slug)Label", and here it is what tells two Blacks
+                          apart. */}
+                      {opt.values.some((s) => s.id !== v.id && s.label.trim().toLowerCase() === v.label.trim().toLowerCase()) && (
+                        <span title={`Spreadsheet spelling: (${v.slug})${v.label}`} style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>({v.slug})</span>
+                      )}
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
                   ))}

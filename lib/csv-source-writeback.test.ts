@@ -40,7 +40,9 @@ vi.mock('@/modules/shop-variations/lib/db/options', () => ({
   createOption: (...args: unknown[]) => createOption(...(args as [])),
   createOptionValue: (...args: unknown[]) => createOptionValue(...(args as [])),
   updateOptionValue: vi.fn(),
-  optionValueLabelTaken: vi.fn(async () => false),
+  // The importer dedupes against the option in memory before it ever calls this,
+  // so handing the base back untouched is the honest stub.
+  ensureUniqueOptionValueSlug: vi.fn(async (_optionId: string, base: string) => base),
   deleteOptionValue: vi.fn(),
 }))
 vi.mock('@/modules/shop-variations/lib/variant-field-providers', () => ({
@@ -75,7 +77,7 @@ function sourcedFinishOption() {
       name: 'Finish',
       sourceProvider: 'product-attributes',
       sourceRef: 'attr-finish',
-      values: [{ id: 'val-oak', label: 'Oak', swatch: 'https://cdn/oak.webp', sourceRef: 'src-oak' }],
+      values: [{ id: 'val-oak', label: 'Oak', slug: 'oak', swatch: 'https://cdn/oak.webp', sourceRef: 'src-oak' }],
     },
   ]
 }
@@ -97,10 +99,10 @@ describe('importVariationsCsv option-source write-back', () => {
     )
 
     expect(result.errors).toEqual([])
-    expect(createValue).toHaveBeenCalledWith('attr-finish', { label: 'Oak & White', swatch: null })
+    expect(createValue).toHaveBeenCalledWith('attr-finish', { label: 'Oak & White', swatch: null, slug: null })
     // Local copy keeps the sheet's spelling but takes the source's ref, which is
     // what a later Refresh matches on.
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Oak & White', null, expect.any(Number), 'src-new')
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Oak & White', 'oak-white', null, expect.any(Number), 'src-new')
   })
 
   it('inherits an existing source value rather than adding it twice', async () => {
@@ -123,7 +125,7 @@ describe('importVariationsCsv option-source write-back', () => {
 
     await importVariationsCsv([HEADER, 'desk,Finish,Beech & White,100'].join('\n'))
 
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', '#123456', expect.any(Number), 'src-new')
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', '#123456', expect.any(Number), 'src-new')
   })
 
   it('fails the row rather than writing locally when the source refuses', async () => {
@@ -145,6 +147,6 @@ describe('importVariationsCsv option-source write-back', () => {
 
     expect(result.errors).toEqual([])
     expect(createValue).not.toHaveBeenCalled()
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', null, expect.any(Number), null)
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', null, expect.any(Number), null)
   })
 })

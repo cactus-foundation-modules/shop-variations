@@ -4,9 +4,10 @@ import { requireShopUser } from '@/modules/shop/lib/access'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import {
   createOptionValue,
+  ensureUniqueOptionValueSlug,
   getOptionWithValues,
-  optionValueLabelTaken,
 } from '@/modules/shop-variations/lib/db/options'
+import { slugify } from '@/modules/shop/lib/slug'
 import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { resolveOptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
 import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
@@ -63,6 +64,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // the value locally anyway would look like it worked while the attributes
   // screen silently disagreed, and the two would drift apart unnoticed.
   let sourceRef: string | null = null
+  let sourceSlug: string | null = null
   let label = parsed.data.label.trim()
   let swatch = parsed.data.swatch ?? null
   if (!label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
@@ -79,13 +81,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       sourceRef = created.ref
       label = created.label
       swatch = created.swatch
-      if (await optionValueLabelTaken(id, label, '')) {
-        return NextResponse.json({ error: `This option already has a value called "${label}".` }, { status: 409 })
-      }
+      // A reused source value the option already copied down would land here as
+      // a duplicate slug; the dedupe below turns that into "-2" rather than a
+      // refusal, and duplicate LABELS are allowed outright (two "Black"s with
+      // different swatches are the point, not a mistake).
+      sourceSlug = created.slug ?? null
     }
   }
 
-  const value = await createOptionValue(id, label, swatch, option?.values.length ?? 0, sourceRef)
+  const slug = await ensureUniqueOptionValueSlug(id, sourceSlug || slugify(label) || 'value')
+  const value = await createOptionValue(id, label, slug, swatch, option?.values.length ?? 0, sourceRef)
 
   // File an image-swatch picture in the product's colours folder (a no-op for a
   // hex colour swatch or an externally-hosted url).
@@ -100,8 +105,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
  * Skips rather than fails on the two collisions that matter, because the owner
  * ticking five values should not have the lot rejected over one of them:
  *   - a ref already copied here, so ticking it twice is harmless
- *   - a label already used on this option by hand, which would make the
- *     generated variant names ambiguous (the same bar rename and refresh apply)
+ *   - a slug already used on this option by hand: the owner typed the same value
+ *     before the source knew it, and a second copy would be a true duplicate.
+ *     Duplicate LABELS alone are fine - two "Black"s with different slugs and
+ *     swatches are the point of slugs.
  * Both are counted and handed back so the UI can say what happened.
  */
 async function addFromSource(optionId: string, productId: string, valueRefs: string[]) {
@@ -125,12 +132,16 @@ async function addFromSource(optionId: string, productId: string, valueRefs: str
   }
 
   let position = option.values.reduce((max, v) => Math.max(max, v.position + 1), 0)
+  const slugsHeld = new Set(option.values.map((v) => v.slug))
   const added: string[] = []
   const skipped: string[] = []
   for (const v of incoming) {
-    if (await optionValueLabelTaken(optionId, v.label, '')) { skipped.push(v.label); continue }
-    const created = await createOptionValue(optionId, v.label, v.swatch ?? null, position, v.ref)
+    const wantedSlug = v.slug || slugify(v.label) || 'value'
+    if (slugsHeld.has(wantedSlug)) { skipped.push(v.label); continue }
+    const slug = await ensureUniqueOptionValueSlug(optionId, wantedSlug)
+    const created = await createOptionValue(optionId, v.label, slug, v.swatch ?? null, position, v.ref)
     if (v.swatch) await fileSwatchImage(productId, created.id, v.swatch)
+    slugsHeld.add(slug)
     position += 1
     added.push(v.label)
   }

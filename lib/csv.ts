@@ -9,7 +9,9 @@ import { getProductBySlug, setProductMedia, updateProduct } from '@/modules/shop
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
 import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, type VariantUpsertContext } from '@/modules/shop-variations/lib/variants-service'
 import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
-import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, optionValueLabelTaken, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
+import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, ensureUniqueOptionValueSlug, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
+import { serialiseValueCell, parseValueCell } from '@/modules/shop-variations/lib/value-cell'
+import { slugify } from '@/modules/shop/lib/slug'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 import { skusToClearForRearrange, externalSkuBlockers, type SkuHolder } from '@/modules/shop-variations/lib/sku-rearrange'
 import { repointOnRename } from '@/modules/shop-variations/lib/rename-repoint'
@@ -107,7 +109,10 @@ export async function exportVariationsCsv(): Promise<string> {
       const pairs: string[] = []
       for (const option of p.options) {
         const value = option.values.find((val) => v.optionValueIds.includes(val.id))
-        pairs.push(option.name, value?.label ?? '')
+        // Every value cell carries its slug - "(black-mfc)Black" - so two values
+        // sharing a label stay tellable apart, and a Pull can rename a label
+        // while the slug pins down which value it means.
+        pairs.push(option.name, value ? serialiseValueCell(value.slug, value.label) : '')
       }
       while (pairs.length < maxOptions * 2) pairs.push('')
       const fieldCells = fieldHeaderOrder.map((label) => {
@@ -205,11 +210,12 @@ export async function importVariationsCsv(
   }
 
   // What this row calls itself: its option values, in header order. Read straight
-  // off the cells so a row can be announced before any lookup happens.
+  // off the cells so a row can be announced before any lookup happens. The slug
+  // prefix is stripped - "(black-mfc)Black" announces as "Black".
   function rowLabel(cols: string[]): string {
     const labels: string[] = []
     for (const pair of optionPairs) {
-      const valLabel = (cols[pair.valueCol] ?? '').trim()
+      const valLabel = parseValueCell(cols[pair.valueCol] ?? '').label
       if (valLabel) labels.push(valLabel)
     }
     return labels.join(' / ')
@@ -248,39 +254,52 @@ export async function importVariationsCsv(
       continue
     }
 
-    // Ensure every option + value named in this group's rows exists, building a
-    // (optionName|valueLabel) -> value id map as we go.
+    // Ensure every option + value named in this group's rows exists. Two lookup
+    // maps: slug is the identity ("(black-mfc)Black" resolves by slug however the
+    // label reads), and the label map serves bare-label cells from legacy sheets
+    // - where duplicate labels exist, first in position order wins there, which
+    // is exactly why the export always writes the slug.
     const valueIdByKey = new Map<string, string>()
+    const valueIdBySlug = new Map<string, string>()
     const optionByName = new Map<string, { id: string; sourceProvider: string | null; sourceRef: string | null }>()
     // Each value's owning option and current label, for the stable-id rename
     // pass below.
-    const valueInfo = new Map<string, { optionId: string; optionName: string; label: string; swatch: string | null; sourceRef: string | null }>()
+    const valueInfo = new Map<string, { optionId: string; optionName: string; label: string; slug: string; swatch: string | null; sourceRef: string | null }>()
     for (const o of await getOptionsWithValues(parent.id)) {
       optionByName.set(o.name.toLowerCase(), { id: o.id, sourceProvider: o.sourceProvider, sourceRef: o.sourceRef })
       for (const v of o.values) {
-        valueIdByKey.set(`${o.name.toLowerCase()}|${v.label.toLowerCase()}`, v.id)
-        valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label, swatch: v.swatch, sourceRef: v.sourceRef })
+        const labelKey = `${o.name.toLowerCase()}|${v.label.toLowerCase()}`
+        if (!valueIdByKey.has(labelKey)) valueIdByKey.set(labelKey, v.id)
+        valueIdBySlug.set(`${o.name.toLowerCase()}|${v.slug}`, v.id)
+        valueInfo.set(v.id, { optionId: o.id, optionName: o.name.toLowerCase(), label: v.label, slug: v.slug, swatch: v.swatch, sourceRef: v.sourceRef })
       }
     }
 
-    // A source-backed option's values, keyed by lowercased label, fetched from the
-    // provider the first time a new value on that option needs one and cached for
-    // the parent. A hand-typed option, an absent provider, or a source since
-    // deleted all cache an empty map and never ask again.
-    const sourceValuesByOption = new Map<string, Map<string, { ref: string; swatch: string | null }>>()
-    async function sourceValuesFor(option: { id: string; sourceProvider: string | null; sourceRef: string | null }): Promise<Map<string, { ref: string; swatch: string | null }>> {
+    // A source-backed option's values, keyed by lowercased label AND by slug,
+    // fetched from the provider the first time a new value on that option needs
+    // one and cached for the parent. A hand-typed option, an absent provider, or
+    // a source since deleted all cache empty maps and never ask again.
+    type SourceEntry = { ref: string; swatch: string | null; slug: string | null; label: string }
+    type SourceMaps = { byLabel: Map<string, SourceEntry>; bySlug: Map<string, SourceEntry> }
+    const sourceValuesByOption = new Map<string, SourceMaps>()
+    async function sourceValuesFor(option: { id: string; sourceProvider: string | null; sourceRef: string | null }): Promise<SourceMaps> {
       const cached = sourceValuesByOption.get(option.id)
       if (cached) return cached
-      const map = new Map<string, { ref: string; swatch: string | null }>()
+      const maps: SourceMaps = { byLabel: new Map(), bySlug: new Map() }
       if (option.sourceProvider && option.sourceRef) {
         const provider = optionSourceProviderById.get(option.sourceProvider)
         if (provider) {
           const source = await provider.getSource(option.sourceRef).catch(() => null)
-          for (const v of source?.values ?? []) map.set(v.label.toLowerCase(), { ref: v.ref, swatch: v.swatch })
+          for (const v of source?.values ?? []) {
+            const entry: SourceEntry = { ref: v.ref, swatch: v.swatch, slug: v.slug ?? null, label: v.label }
+            // First-in wins on a duplicated label; slugs are unique at the source.
+            if (!maps.byLabel.has(v.label.toLowerCase())) maps.byLabel.set(v.label.toLowerCase(), entry)
+            if (entry.slug) maps.bySlug.set(entry.slug, entry)
+          }
         }
       }
-      sourceValuesByOption.set(option.id, map)
-      return map
+      sourceValuesByOption.set(option.id, maps)
+      return maps
     }
 
     // A label the option's source has never heard of, pushed up to that source
@@ -299,28 +318,66 @@ export async function importVariationsCsv(
       option: { id: string; sourceProvider: string | null; sourceRef: string | null },
       optName: string,
       valLabel: string,
-    ): Promise<{ ref: string; swatch: string | null } | null> {
+      valSlug: string | null,
+    ): Promise<SourceEntry | null> {
       if (!option.sourceProvider || !option.sourceRef) return null
       const provider = optionSourceProviderById.get(option.sourceProvider)
       if (!provider?.createValue) return null
-      const created = await provider.createValue(option.sourceRef, { label: valLabel, swatch: null })
+      const created = await provider.createValue(option.sourceRef, { label: valLabel, swatch: null, slug: valSlug })
       if (!created) throw new Error(`Could not add "${valLabel}" to the list "${optName}" takes its values from`)
       // Into this parent's cache, so the next row naming the same new value
       // reuses it instead of asking the source again for every row it appears on.
-      const entry = { ref: created.ref, swatch: created.swatch }
-      ;(await sourceValuesFor(option)).set(valLabel.toLowerCase(), entry)
+      const entry: SourceEntry = { ref: created.ref, swatch: created.swatch, slug: created.slug ?? null, label: created.label }
+      const maps = await sourceValuesFor(option)
+      if (!maps.byLabel.has(created.label.toLowerCase())) maps.byLabel.set(created.label.toLowerCase(), entry)
+      if (entry.slug) maps.bySlug.set(entry.slug, entry)
       return entry
     }
 
-    async function ensureValue(optName: string, valLabel: string): Promise<string> {
-      const key = `${optName.toLowerCase()}|${valLabel.toLowerCase()}`
-      const existing = valueIdByKey.get(key)
-      if (existing) return existing
-      let option = optionByName.get(optName.toLowerCase())
+    // Values renamed by this group's rows, whether by a slugged cell in
+    // ensureValue or by the stable-id pass below. Declared up here because both
+    // paths count into it; variant child names re-compose once at the end.
+    let renamedValues = 0
+
+    // Resolve one value cell to a value id, creating (and renaming) as needed.
+    // A slugged cell - "(black-mfc)Black" - resolves by slug: the slug is the
+    // identity, and a label that differs from the stored one is a rename, applied
+    // in place. A bare cell resolves by label exactly as it always did, so a
+    // legacy sheet keeps working.
+    async function ensureValue(optName: string, rawCell: string): Promise<string> {
+      const { slug: cellSlug, label: valLabel } = parseValueCell(rawCell)
+      const optKey = optName.toLowerCase()
+
+      if (cellSlug) {
+        const existing = valueIdBySlug.get(`${optKey}|${cellSlug}`)
+        if (existing) {
+          const info = valueInfo.get(existing)
+          if (info && info.label !== valLabel) {
+            // Same value, new spelling: a rename, not a new value. Duplicate
+            // labels are allowed, so no clash check - the slug keeps the two
+            // tellable apart.
+            await updateOptionValue(existing, { label: valLabel })
+            if (valueIdByKey.get(`${optKey}|${info.label.toLowerCase()}`) === existing) {
+              valueIdByKey.delete(`${optKey}|${info.label.toLowerCase()}`)
+            }
+            if (!valueIdByKey.has(`${optKey}|${valLabel.toLowerCase()}`)) {
+              valueIdByKey.set(`${optKey}|${valLabel.toLowerCase()}`, existing)
+            }
+            valueInfo.set(existing, { ...info, label: valLabel })
+            renamedValues += 1
+          }
+          return existing
+        }
+      } else {
+        const existing = valueIdByKey.get(`${optKey}|${valLabel.toLowerCase()}`)
+        if (existing) return existing
+      }
+
+      let option = optionByName.get(optKey)
       if (!option) {
         const created = await createOption(parent!.id, optName, 'DROPDOWN', optionByName.size)
         option = { id: created.id, sourceProvider: null, sourceRef: null }
-        optionByName.set(optName.toLowerCase(), option)
+        optionByName.set(optKey, option)
       }
       // New to this product but on the option's source list -> inherit the
       // source's swatch and ref, so it matches by id on a later refresh rather
@@ -328,10 +385,19 @@ export async function importVariationsCsv(
       // source too -> it gets added there first and the copy inherits from that.
       // The sheet's own spelling is kept either way: the source is the authority
       // on what it stores, this option's label is what the sheet asked for.
+      // Slugged cells match the source by slug; bare ones by label, as before.
+      const maps = await sourceValuesFor(option)
       const fromSource =
-        (await sourceValuesFor(option)).get(valLabel.toLowerCase()) ?? (await pushToSource(option, optName, valLabel))
-      const value = await createOptionValue(option.id, valLabel, fromSource?.swatch ?? null, valueIdByKey.size, fromSource?.ref ?? null)
-      valueIdByKey.set(key, value.id)
+        (cellSlug ? maps.bySlug.get(cellSlug) : maps.byLabel.get(valLabel.toLowerCase())) ??
+        (await pushToSource(option, optName, valLabel, cellSlug))
+      const slug = await ensureUniqueOptionValueSlug(
+        option.id,
+        cellSlug || fromSource?.slug || slugify(valLabel) || 'value',
+      )
+      const value = await createOptionValue(option.id, valLabel, slug, fromSource?.swatch ?? null, valueIdBySlug.size, fromSource?.ref ?? null)
+      valueIdBySlug.set(`${optKey}|${slug}`, value.id)
+      if (!valueIdByKey.has(`${optKey}|${valLabel.toLowerCase()}`)) valueIdByKey.set(`${optKey}|${valLabel.toLowerCase()}`, value.id)
+      valueInfo.set(value.id, { optionId: option.id, optionName: optKey, label: valLabel, slug, swatch: fromSource?.swatch ?? null, sourceRef: fromSource?.ref ?? null })
       return value.id
     }
 
@@ -372,7 +438,10 @@ export async function importVariationsCsv(
     // proves nothing), and the new label is not already taken on the option.
     // Anything ambiguous falls through to the per-row reassignment below, which
     // never guesses.
-    let renamedValues = 0
+    //
+    // Slugged cells never enter this pass: "(black-mfc)Jet Black" names its value
+    // by slug, so ensureValue renames it directly with no guesswork needed. This
+    // pass is the legacy path for sheets that only carry labels.
     if (idCol >= 0 && optionPairs.length > 0) {
       const proposals = new Map<string, { labels: Set<string>; proposers: Set<string> }>() // valueId -> labels + proposing variant ids
       for (const gr of groupRows) {
@@ -382,7 +451,9 @@ export async function importVariationsCsv(
         const currentIds = upsertCtx.valueMap[variant.id] ?? []
         for (const pair of optionPairs) {
           const optName = (gr.cols[pair.nameCol] ?? '').trim().toLowerCase()
-          const valLabel = (gr.cols[pair.valueCol] ?? '').trim()
+          const parsedCell = parseValueCell(gr.cols[pair.valueCol] ?? '')
+          if (parsedCell.slug) continue // slug identity - ensureValue handles any rename
+          const valLabel = parsedCell.label
           if (!optName || !valLabel) continue
           if (valueIdByKey.has(`${optName}|${valLabel.toLowerCase()}`)) continue // resolves already - nothing to rename
           const cur = currentIds.find((id) => valueInfo.get(id)?.optionName === optName)
@@ -403,7 +474,12 @@ export async function importVariationsCsv(
           !(upsertCtx.valueMap[v.id] ?? []).includes(valueId) || proposers.has(v.id))
         if (!covered) continue
         const newLabel = [...labels][0]!
-        if (await optionValueLabelTaken(info.optionId, newLabel, valueId)) continue
+        // A label already on the option is no bar any more (duplicates are
+        // legal), but renaming ONTO one would leave two bare-label spellings of
+        // the same word resolving to different values on the very next Pull -
+        // for a legacy sheet with no slugs to tell them apart, that is a trap.
+        // Leave the value be; the per-row reassignment handles the rows.
+        if (valueIdByKey.has(`${info.optionName}|${newLabel.toLowerCase()}`)) continue
 
         // The label has moved; the link to the source has to move with it. Left
         // alone, this value still answers to the source value it used to be, and
@@ -411,7 +487,7 @@ export async function importVariationsCsv(
         // of desks ended up showing Silver's grey under a "Black" swatch.
         const option = optionByName.get(info.optionName)
         const sourceList = option
-          ? [...(await sourceValuesFor(option)).entries()].map(([label, v]) => ({ label, ref: v.ref, swatch: v.swatch }))
+          ? [...(await sourceValuesFor(option)).byLabel.values()].map((v) => ({ label: v.label, ref: v.ref, swatch: v.swatch }))
           : []
         const repoint = repointOnRename({
           currentSourceRef: info.sourceRef,
@@ -431,7 +507,9 @@ export async function importVariationsCsv(
         }
 
         await updateOptionValue(valueId, fields)
-        valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        if (valueIdByKey.get(`${info.optionName}|${info.label.toLowerCase()}`) === valueId) {
+          valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        }
         valueIdByKey.set(`${info.optionName}|${newLabel.toLowerCase()}`, valueId)
         valueInfo.set(valueId, {
           ...info,
@@ -492,10 +570,12 @@ export async function importVariationsCsv(
         const labels: string[] = []
         for (const pair of optionPairs) {
           const optName = (gr.cols[pair.nameCol] ?? '').trim()
-          const valLabel = (gr.cols[pair.valueCol] ?? '').trim()
-          if (!optName || !valLabel) continue
-          optionValueIds.push(await ensureValue(optName, valLabel))
-          labels.push(valLabel)
+          const rawCell = (gr.cols[pair.valueCol] ?? '').trim()
+          if (!optName || !rawCell) continue
+          optionValueIds.push(await ensureValue(optName, rawCell))
+          // The bare label, slug prefix stripped: this is what a newly created
+          // variant child gets named from ("Desk - Black / White").
+          labels.push(parseValueCell(rawCell).label)
         }
         if (optionValueIds.length === 0) { result.errors.push({ row: gr.rowNum, reason: 'No options on this row' }); continue }
 
@@ -615,7 +695,10 @@ export async function importVariationsCsv(
         const info = valueInfo.get(valueId)
         if (!info) continue
         await deleteOptionValue(valueId)
-        valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        if (valueIdByKey.get(`${info.optionName}|${info.label.toLowerCase()}`) === valueId) {
+          valueIdByKey.delete(`${info.optionName}|${info.label.toLowerCase()}`)
+        }
+        valueIdBySlug.delete(`${info.optionName}|${info.slug}`)
         valueInfo.delete(valueId)
       }
     }

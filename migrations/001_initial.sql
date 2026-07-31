@@ -43,17 +43,24 @@ CREATE INDEX IF NOT EXISTS "svr_options_product_id_idx" ON "svr_options" ("produ
 
 -- A value of an option, e.g. "XL" or "Red". swatch holds a hex colour for SWATCH
 -- controls and an image url for IMAGE ones; null otherwise.
+--
+-- slug is the value's identity within its option: labels may repeat ("Black" in
+-- two materials, told apart by swatch), slugs may not. The spreadsheet round-trip
+-- writes each value cell as "(slug)Label". Arrived in 008; kept in step here so a
+-- fresh install builds the final shape in one go.
 CREATE TABLE IF NOT EXISTS "svr_option_values" (
     "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "option_id" TEXT NOT NULL,
     "label" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
     "swatch" TEXT,
     "position" INTEGER NOT NULL DEFAULT 0,
     -- The source value this one was copied from, opaque to this module. Null for
     -- a hand-added value, which a refresh then leaves alone. See 004.
     "source_ref" TEXT,
     CONSTRAINT "svr_option_values_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "svr_option_values_option_id_fkey" FOREIGN KEY ("option_id") REFERENCES "svr_options"("id") ON DELETE CASCADE
+    CONSTRAINT "svr_option_values_option_id_fkey" FOREIGN KEY ("option_id") REFERENCES "svr_options"("id") ON DELETE CASCADE,
+    CONSTRAINT "svr_option_values_option_id_slug_key" UNIQUE ("option_id", "slug")
 );
 CREATE INDEX IF NOT EXISTS "svr_option_values_option_id_idx" ON "svr_option_values" ("option_id");
 CREATE INDEX IF NOT EXISTS "svr_option_values_source_ref_idx" ON "svr_option_values" ("option_id", "source_ref");

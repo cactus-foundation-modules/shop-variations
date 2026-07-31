@@ -1,10 +1,11 @@
 import {
   createOptionValue,
+  ensureUniqueOptionValueSlug,
   getOptionWithValues,
-  optionValueLabelTaken,
   updateOptionValue,
 } from '@/modules/shop-variations/lib/db/options'
 import type { OptionSource, OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
+import { slugify } from '@/modules/shop/lib/slug'
 
 // Re-reads a sourced option against its provider and brings it back into line.
 //
@@ -71,27 +72,40 @@ export async function refreshOptionFromSource(
   let updated = 0
   let nextPosition = option.values.reduce((max, v) => Math.max(max, v.position + 1), 0)
 
+  // Dedupe and identity run on slugs now, not labels: two source values may both
+  // read "Black" (different swatches, different slugs), and both belong here.
+  const slugsHeld = new Set(option.values.map((v) => v.slug))
   for (const incoming of source.values) {
     const existing = byRef.get(incoming.ref)
     if (existing) {
       const labelChanged = existing.label !== incoming.label
       const swatchChanged = (existing.swatch ?? null) !== (incoming.swatch ?? null)
-      if (!labelChanged && !swatchChanged) continue
-      // A rename that would collide with another value on this option is skipped
-      // rather than applied: duplicate labels make the generated variant names
-      // ambiguous, which the rename endpoint refuses for the same reason.
-      if (labelChanged && (await optionValueLabelTaken(option.id, incoming.label, existing.id))) continue
+      // The copy's slug follows the source's, so the sheet spelling stays the
+      // same everywhere - but only when the source's slug is free on this option
+      // (another value may have claimed it by hand).
+      const sourceSlug = incoming.slug ?? null
+      const slugChanged = sourceSlug !== null && sourceSlug !== existing.slug && !slugsHeld.has(sourceSlug)
+      if (!labelChanged && !swatchChanged && !slugChanged) continue
       await updateOptionValue(existing.id, {
         label: incoming.label,
         swatch: incoming.swatch ?? null,
+        ...(slugChanged ? { slug: sourceSlug } : {}),
       })
+      if (slugChanged) {
+        slugsHeld.delete(existing.slug)
+        slugsHeld.add(sourceSlug)
+      }
       updated += 1
       continue
     }
-    // New to us. Skip it if the owner happens to have typed the same label by
-    // hand already, otherwise the option ends up with two identical values.
-    if (await optionValueLabelTaken(option.id, incoming.label, '')) continue
-    await createOptionValue(option.id, incoming.label, incoming.swatch ?? null, nextPosition, incoming.ref)
+    // New to us. Skip it if a value already answers to its slug - the owner
+    // typed the same thing by hand before the source knew it, and adding a
+    // second copy would put two identical values on the option.
+    const wantedSlug = incoming.slug || slugify(incoming.label) || 'value'
+    if (slugsHeld.has(wantedSlug)) continue
+    const slug = await ensureUniqueOptionValueSlug(option.id, wantedSlug)
+    await createOptionValue(option.id, incoming.label, slug, incoming.swatch ?? null, nextPosition, incoming.ref)
+    slugsHeld.add(slug)
     nextPosition += 1
     added += 1
   }

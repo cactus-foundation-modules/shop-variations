@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { updateOptionValue, deleteOptionValue, getOptionValueOwner, optionValueLabelTaken } from '@/modules/shop-variations/lib/db/options'
+import { updateOptionValue, deleteOptionValue, getOptionValueOwner } from '@/modules/shop-variations/lib/db/options'
 import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { syncVariantChildNames } from '@/modules/shop-variations/lib/variants-service'
 import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
@@ -22,13 +22,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const owner = await getOptionValueOwner(id)
   if (!owner) return NextResponse.json({ error: 'Value not found' }, { status: 404 })
 
+  // Duplicate labels are allowed on purpose: two values may both read "Black"
+  // (different swatches), told apart by their slugs. The slug itself is not
+  // editable here - it stays put through a rename so sheets and sources keep
+  // resolving the same value.
   const label = parsed.data.label?.trim()
-  if (label !== undefined) {
-    if (!label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
-    if (await optionValueLabelTaken(owner.optionId, label, id)) {
-      return NextResponse.json({ error: `This option already has a value called "${label}".` }, { status: 409 })
-    }
-  }
+  if (label !== undefined && !label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
   await updateOptionValue(id, { ...parsed.data, ...(label !== undefined ? { label } : {}) })
 
