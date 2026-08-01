@@ -35,6 +35,13 @@ export type VariantSelectionDetail = {
   // thing being bought).
   productId: string | null
   allOptionsChosen: boolean
+  // Every option value picked SO FAR (svr_option_values ids), in the options'
+  // own display order. `productId` above only appears once the last option is
+  // settled, so a consumer that has to say something sensible about a half-built
+  // combination - "this delivery service is available in Black Fabric, Blue or
+  // Charcoal", meaning given what you have already chosen - has nothing else to
+  // go on. Empty while nothing is picked; a full set once everything is.
+  chosenValueIds: string[]
 }
 
 declare global {

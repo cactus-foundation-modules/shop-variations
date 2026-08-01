@@ -303,14 +303,20 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // lib/selection-broadcast.ts. Published from the hook rather than the store so
   // it reflects the same resolved variant every part on the page is showing;
   // repeat publishes from the other islands are dropped there.
+  // The picks so far, in option order, as one string - a stable dependency for
+  // the publish below, which would otherwise re-run on every render (the
+  // selection is a fresh object each time) and lean on the broadcast's own
+  // de-duplication to stay quiet.
+  const chosenValueIdsKey = (payload?.options ?? []).map((o) => optionValues[o.id] ?? '').join('|')
   useEffect(() => {
     publishVariantSelection({
       slug: slug ?? '',
       parentProductId: payload?.productId ?? null,
       productId: variant?.childProductId ?? null,
       allOptionsChosen,
+      chosenValueIds: chosenValueIdsKey.split('|').filter(Boolean),
     })
-  }, [slug, payload?.productId, variant?.childProductId, allOptionsChosen])
+  }, [slug, payload?.productId, variant?.childProductId, allOptionsChosen, chosenValueIdsKey])
 
   function add(quantity: number): boolean {
     if (!payload || !canAdd) return false
