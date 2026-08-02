@@ -11,7 +11,15 @@ export function productSlugFromPath(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean)
   const i = parts.indexOf('products')
   const next = i >= 0 ? parts[i + 1] : undefined
-  return next ? decodeURIComponent(next) : null
+  if (!next) return null
+  // A malformed escape in the path ("/shop/products/%") makes decodeURIComponent
+  // throw, and thrown from here it took the whole variations block down on a
+  // public product page. The raw segment simply matches no product instead.
+  try {
+    return decodeURIComponent(next)
+  } catch {
+    return next
+  }
 }
 
 // An explicit slug (resolved server-side and passed down by an RSC block half)
