@@ -10,7 +10,7 @@ import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
-import { getVariants, getVariantValueMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
+import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
@@ -342,10 +342,11 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const adjust = makeDisplayAdjuster(taxDisplay, parent.taxClassId)
   const shown = (amount: number) => (adjust ? adjust(amount) : amount)
 
-  const [options, variants, valueMap, addons, baseMedia] = await Promise.all([
+  const [options, variants, valueMap, aliasMap, addons, baseMedia] = await Promise.all([
     getOptionsWithValues(parentId),
     getVariants(parentId),
     getVariantValueMap(parentId),
+    getVariantAliasMap(parentId),
     getAddons(parentId),
     getProductMedia(parentId),
   ])
@@ -387,6 +388,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       id: v.id,
       childProductId: v.childProductId,
       optionValueIds: valueMap[v.id] ?? [],
+      aliasValueIds: aliasMap[v.id] ?? [],
       enabled: v.enabled,
       price: shown(effectivePrice(priced, enabledPriceTypes)),
       compareAtPrice: isOnSale(priced, enabledPriceTypes) ? shown(Number(priced.price)) : null,

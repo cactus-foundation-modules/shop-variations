@@ -18,6 +18,29 @@ export function variantValueForOption(variant: VariantSelectorVariant, optionId:
   return variant.optionValueIds.find((id) => valueToOption.get(id) === optionId)
 }
 
+// Whether a variant answers to a given value of a given option - the value it
+// actually carries, or one it stands in for.
+//
+// An alias says two values of one option describe the same product, so the choice
+// between them changes nothing about what arrives: a chair whose back is black AND
+// matches its black seat is one chair and one SKU, however the shopper words it.
+// Without this the second wording had no variant to point at and greyed out.
+//
+// Every availability, pricing and explanation function below asks the question
+// through here rather than comparing ids itself, so all of them agree about what a
+// variant can answer to. resolveVariant is the deliberate exception: it settles the
+// exact match first and only then allows aliases, so an alias can fill a hole but
+// never shadow a combination some other variation genuinely carries.
+export function variantAnswersTo(
+  variant: VariantSelectorVariant,
+  optionId: string,
+  valueId: string,
+  valueToOption: Map<string, string>,
+): boolean {
+  if (variantValueForOption(variant, optionId, valueToOption) === valueId) return true
+  return (variant.aliasValueIds ?? []).some((id) => id === valueId && valueToOption.get(id) === optionId)
+}
+
 // A variant is only "available" to a shopper if it's enabled and in stock.
 function isBuyable(v: VariantSelectorVariant): boolean {
   return v.enabled && v.inStock
@@ -25,11 +48,30 @@ function isBuyable(v: VariantSelectorVariant): boolean {
 
 // The variant a full selection resolves to (every option chosen and an exact
 // value-set match). Returns null for a partial or non-existent combination.
+//
+// Exact first, always. Only when nothing carries the chosen combination outright
+// is a variation allowed to answer for it by alias - so a product where both
+// wordings have a real variation of their own behaves exactly as it did, and the
+// alias is confined to the hole it was added to fill.
 export function resolveVariant(payload: VariantSelectorPayload, selection: OptionSelection): VariantSelectorVariant | null {
   if (payload.options.length === 0) return null
   if (payload.options.some((o) => !selection[o.id])) return null
   const chosen = payload.options.map((o) => selection[o.id]).sort().join('|')
-  return payload.variants.find((v) => [...v.optionValueIds].sort().join('|') === chosen) ?? null
+  const exact = payload.variants.find((v) => [...v.optionValueIds].sort().join('|') === chosen)
+  if (exact) return exact
+  // Nothing aliased on this product: the exact miss above is the whole answer, and
+  // the second pass would only cost every product in the shop a wasted scan.
+  if (!payload.variants.some((v) => (v.aliasValueIds ?? []).length > 0)) return null
+  const v2o = valueToOptionMap(payload)
+  // Answering for EVERY option, which also rules out a variation that simply has
+  // no value for one of them: a half-described variation must not be dragged in
+  // just because the values it does carry happen to agree.
+  return payload.variants.find((v) =>
+    payload.options.every((o) => {
+      const sel = selection[o.id]
+      return !!sel && variantAnswersTo(v, o.id, sel, v2o)
+    }),
+  ) ?? null
 }
 
 // Whether an option value is still reachable, filtered DIRECTIONALLY: at least
@@ -44,12 +86,12 @@ export function isValueAvailable(payload: VariantSelectorPayload, selection: Opt
   const targetIndex = payload.options.findIndex((o) => o.id === optionId)
   return payload.variants.some((variant) => {
     if (!isBuyable(variant)) return false
-    if (variantValueForOption(variant, optionId, v2o) !== valueId) return false
+    if (!variantAnswersTo(variant, optionId, valueId, v2o)) return false
     for (let i = 0; i < targetIndex; i++) {
       const o = payload.options[i]
       if (!o) continue
       const sel = selection[o.id]
-      if (sel && variantValueForOption(variant, o.id, v2o) !== sel) return false
+      if (sel && !variantAnswersTo(variant, o.id, sel, v2o)) return false
     }
     return true
   })
@@ -132,13 +174,13 @@ export function valuePriceRange(
   let max = -Infinity
   for (const variant of payload.variants) {
     if (!isBuyable(variant)) continue
-    if (variantValueForOption(variant, optionId, v2o) !== valueId) continue
+    if (!variantAnswersTo(variant, optionId, valueId, v2o)) continue
     let agrees = true
     for (let i = 0; i < targetIndex; i++) {
       const o = payload.options[i]
       if (!o) continue
       const sel = selection[o.id]
-      if (sel && variantValueForOption(variant, o.id, v2o) !== sel) { agrees = false; break }
+      if (sel && !variantAnswersTo(variant, o.id, sel, v2o)) { agrees = false; break }
     }
     if (!agrees) continue
     if (variant.price < min) min = variant.price
@@ -180,8 +222,8 @@ export function unavailableWith(payload: VariantSelectorPayload, selection: Opti
     if (!sel) continue
     const coexists = payload.variants.some((variant) =>
       isBuyable(variant) &&
-      variantValueForOption(variant, optionId, v2o) === valueId &&
-      variantValueForOption(variant, o.id, v2o) === sel,
+      variantAnswersTo(variant, optionId, valueId, v2o) &&
+      variantAnswersTo(variant, o.id, sel, v2o),
     )
     if (!coexists) {
       const lbl = o.values.find((x) => x.id === sel)?.label
@@ -228,8 +270,8 @@ export function availableWith(
     if (!sel) continue
     const coexists = payload.variants.some((variant) =>
       isBuyable(variant) &&
-      variantValueForOption(variant, optionId, v2o) === valueId &&
-      variantValueForOption(variant, o.id, v2o) === sel,
+      variantAnswersTo(variant, optionId, valueId, v2o) &&
+      variantAnswersTo(variant, o.id, sel, v2o),
     )
     if (!coexists) culprits.push(i)
   }
@@ -244,14 +286,14 @@ export function availableWith(
     option.values.forEach((value, valueIndex) => {
       const works = payload.variants.some((variant) => {
         if (!isBuyable(variant)) return false
-        if (variantValueForOption(variant, optionId, v2o) !== valueId) return false
-        if (variantValueForOption(variant, option.id, v2o) !== value.id) return false
+        if (!variantAnswersTo(variant, optionId, valueId, v2o)) return false
+        if (!variantAnswersTo(variant, option.id, value.id, v2o)) return false
         for (let i = 0; i < targetIndex; i++) {
           if (culprits.includes(i)) continue
           const other = payload.options[i]
           if (!other) continue
           const sel = selection[other.id]
-          if (sel && variantValueForOption(variant, other.id, v2o) !== sel) return false
+          if (sel && !variantAnswersTo(variant, other.id, sel, v2o)) return false
         }
         return true
       })

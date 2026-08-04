@@ -128,6 +128,18 @@ export type VariantSelectorVariant = {
   id: string
   childProductId: string
   optionValueIds: string[]
+  // Extra option values this variation also answers to, on top of the ones it
+  // carries - a second value of an option that describes the same product, where
+  // the choice makes no difference to what turns up (a chair whose back is black
+  // AND matches its black seat). Only ever consulted where nothing carries the
+  // chosen combination outright, so an alias fills a hole and never shadows a real
+  // variation. Empty for all but a handful of variations. See migration 010.
+  //
+  // Optional because this payload crosses to the browser as JSON and is held in
+  // caches that predate the field: one serialised before this shipped carries no
+  // such key, and the selection maths has to read that as "no aliases" rather than
+  // throwing on the product page. Everything server-side always sets it.
+  aliasValueIds?: string[]
   enabled: boolean
   // What this combination is actually charged, sale price included when the shop
   // has sale prices switched on. Worked out by shop's effectivePrice, never here,

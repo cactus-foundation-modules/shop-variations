@@ -144,6 +144,25 @@ export async function getVariantValueMap(productId: string): Promise<Record<stri
   return map
 }
 
+// The EXTRA option values each variant answers to, keyed by variant id - values it
+// stands in for without carrying them (see migration 010). Deliberately a separate
+// read from getVariantValueMap rather than folded into it: everything that treats a
+// variant's value-set as its identity (the CSV round-trip, the sheet pull-diff, the
+// deletion planner, upsertVariantForCombination) must go on seeing only the real
+// set, or an alias would read as a different combination and be "corrected" away.
+// Only the storefront selector payload takes these.
+export async function getVariantAliasMap(productId: string): Promise<Record<string, string[]>> {
+  const rows = await prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`
+    SELECT a."variant_id", a."option_value_id"
+    FROM "svr_variant_option_aliases" a
+    JOIN "svr_variants" v ON v."id" = a."variant_id"
+    WHERE v."product_id" = ${productId}
+  `
+  const map: Record<string, string[]> = {}
+  for (const r of rows) (map[r.variant_id] ??= []).push(r.option_value_id)
+  return map
+}
+
 export async function createVariant(productId: string, childProductId: string, optionValueIds: string[], position: number): Promise<{ id: string }> {
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<[{ id: string }]>`
