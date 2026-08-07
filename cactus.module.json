@@ -1,13 +1,13 @@
 {
   "name": "shop-variations",
-  "version": "0.1.112",
+  "version": "0.1.113",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.571",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.193"
+      "minVersion": "0.1.195"
     }
   ],
   "permissions": [],
@@ -88,6 +88,12 @@
       "id": "variations-sales-rollup",
       "import": "./lib/sales-rollup-provider",
       "component": "shopVariationsSalesRollup"
+    },
+    {
+      "point": "shop.product-availability",
+      "id": "variations-availability",
+      "import": "./lib/availability-provider",
+      "component": "shopVariationsAvailability"
     },
     {
       "point": "shop.card-media",
