@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
@@ -390,6 +390,11 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // phrase, since a value named "With Headrest" says its own and must not be
     // handed a second one. Empty string when no single pick is the culprit.
     availabilityNote: (optionId: string, valueId: string) => (payload ? availableWithPhrase(availableWith(payload, optionValues, optionId, valueId)) : ''),
+    // Whether an unreachable value is unreachable because the shelf is empty
+    // rather than because of something picked above it - so the control can say
+    // "out of stock", which a shopper can act on, instead of the generic line.
+    // Ignores the current selection by design: see isValueOutOfStock.
+    isOutOfStock: (optionId: string, valueId: string) => (payload ? isValueOutOfStock(payload, optionId, valueId) : false),
     // Whether the option at this display index is shown yet, or still held back
     // waiting on the option before it (see isOptionVisible in selection-logic).
     isOptionVisible: (index: number) => (payload ? isOptionVisible(payload, optionValues, index) : true),

@@ -42,8 +42,19 @@ export function variantAnswersTo(
 }
 
 // A variant is only "available" to a shopper if it's enabled and in stock.
-function isBuyable(v: VariantSelectorVariant): boolean {
-  return v.enabled && v.inStock
+//
+// Staff are held to the first half only: they may still pick a combination the
+// shelf has run dry on, because the point of the storefront for them is to check
+// and demonstrate the product rather than buy it - and a picker that refuses to
+// show an owner their own sold-out colour is no use for either. `showStockCounts`
+// is that staff flag, already on the payload for the stock figures and already
+// resolved per request on the server (shop's canSeeStockLevels), so it cannot be
+// forged from the browser or served to a shopper out of a shared cache.
+//
+// `enabled` binds staff exactly as it binds everyone: a switched-off variation is
+// the owner's own decision that the combination does not exist, not the warehouse's.
+function isBuyable(payload: VariantSelectorPayload, v: VariantSelectorVariant): boolean {
+  return v.enabled && (v.inStock || payload.showStockCounts === true)
 }
 
 // The variant a full selection resolves to (every option chosen and an exact
@@ -85,7 +96,7 @@ export function isValueAvailable(payload: VariantSelectorPayload, selection: Opt
   const v2o = valueToOptionMap(payload)
   const targetIndex = payload.options.findIndex((o) => o.id === optionId)
   return payload.variants.some((variant) => {
-    if (!isBuyable(variant)) return false
+    if (!isBuyable(payload, variant)) return false
     if (!variantAnswersTo(variant, optionId, valueId, v2o)) return false
     for (let i = 0; i < targetIndex; i++) {
       const o = payload.options[i]
@@ -173,7 +184,7 @@ export function valuePriceRange(
   let min = Infinity
   let max = -Infinity
   for (const variant of payload.variants) {
-    if (!isBuyable(variant)) continue
+    if (!isBuyable(payload, variant)) continue
     if (!variantAnswersTo(variant, optionId, valueId, v2o)) continue
     let agrees = true
     for (let i = 0; i < targetIndex; i++) {
@@ -221,7 +232,7 @@ export function unavailableWith(payload: VariantSelectorPayload, selection: Opti
     const sel = selection[o.id]
     if (!sel) continue
     const coexists = payload.variants.some((variant) =>
-      isBuyable(variant) &&
+      isBuyable(payload, variant) &&
       variantAnswersTo(variant, optionId, valueId, v2o) &&
       variantAnswersTo(variant, o.id, sel, v2o),
     )
@@ -231,6 +242,23 @@ export function unavailableWith(payload: VariantSelectorPayload, selection: Opti
     }
   }
   return labels.join(', ')
+}
+
+// Whether every variation carrying this value is out of stock. Deliberately
+// blind to the shopper's selection: the question is about the value itself, so
+// a colour the supplier has run dry on says so however the rest of the picker
+// stands. Worth telling apart from the generic wording, because "out of stock"
+// is an answer a shopper can act on ("come back later") and "unavailable" is a
+// shrug.
+//
+// False when nothing carries the value at all - there is no stock to be out of -
+// and false when a carrier is merely switched off while holding stock, which is
+// the shop owner's doing rather than the warehouse's.
+export function isValueOutOfStock(payload: VariantSelectorPayload, optionId: string, valueId: string): boolean {
+  const v2o = valueToOptionMap(payload)
+  const carriers = payload.variants.filter((variant) => variantAnswersTo(variant, optionId, valueId, v2o))
+  if (carriers.length === 0) return false
+  return carriers.every((variant) => !variant.inStock)
 }
 
 // The mirror of unavailableWith: not which pick rules a value out, but which
@@ -269,7 +297,7 @@ export function availableWith(
     const sel = selection[o.id]
     if (!sel) continue
     const coexists = payload.variants.some((variant) =>
-      isBuyable(variant) &&
+      isBuyable(payload, variant) &&
       variantAnswersTo(variant, optionId, valueId, v2o) &&
       variantAnswersTo(variant, o.id, sel, v2o),
     )
@@ -285,7 +313,7 @@ export function availableWith(
     const indices: number[] = []
     option.values.forEach((value, valueIndex) => {
       const works = payload.variants.some((variant) => {
-        if (!isBuyable(variant)) return false
+        if (!isBuyable(payload, variant)) return false
         if (!variantAnswersTo(variant, optionId, valueId, v2o)) return false
         if (!variantAnswersTo(variant, option.id, value.id, v2o)) return false
         for (let i = 0; i < targetIndex; i++) {

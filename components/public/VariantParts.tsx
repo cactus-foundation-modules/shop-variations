@@ -602,11 +602,18 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // case there is nothing honest to point the shopper at and the choice simply
   // reads as unavailable.
   const availabilityNote = (v: SvrOptionWithValues['values'][number]) => sel.availabilityNote(option.id, v.id)
+  // The last-resort wording when neither a note nor a single clashing pick
+  // explains a value away. "Out of Stock" wherever that is the actual reason -
+  // a shopper can act on it (come back, ask when it lands) where "unavailable"
+  // only shrugs. The generic word is kept for the rest: a combination ruled out
+  // by several picks at once is not a stock problem and must not claim to be.
+  const unavailableWord = (v: SvrOptionWithValues['values'][number]) =>
+    sel.isOutOfStock(option.id, v.id) ? 'Out of Stock' : 'unavailable'
   const unavailableTitle = (v: SvrOptionWithValues['values'][number]) => {
     const note = availabilityNote(v)
     if (note) return `${v.label} - ${note}`
     const clash = sel.unavailableWith(option.id, v.id)
-    return clash ? `Not available with ${clash}` : `${v.label} - unavailable`
+    return clash ? `Not available with ${clash}` : `${v.label} - ${unavailableWord(v)}`
   }
   // Which values the row draws. Under 'show' every one of them, so a choice the
   // picks above have ruled out still says its piece; under 'hide' only what the
@@ -681,7 +688,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             // pill controls put on a second line rides the label here instead.
             const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
             const note = available ? '' : availabilityNote(v)
-            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : note ? ` - ${note}` : ' - unavailable'}</option>
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : ` - ${note || unavailableWord(v)}`}</option>
           })}
         </select>
       </label>
@@ -736,7 +743,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // (peekSub, below) rather than being dropped.
           const note = available ? '' : availabilityNote(v)
           const subLabel = swatchOnly ? null
-            : !available ? (note || 'unavailable')
+            : !available ? (note || unavailableWord(v))
             : active ? 'Selected'
             : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
@@ -745,7 +752,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // availability note travels, not "Selected" or the price hint - the tick
           // badge says the first and the chip is a hover affordance, no place to
           // put money a shopper has to hover to find.
-          const peekSub = available ? null : (note || 'unavailable')
+          const peekSub = available ? null : (note || unavailableWord(v))
           // And for an out-of-reach swatch the chip has to hang on a WRAPPER round
           // the button rather than sit inside it: a disabled control takes no
           // pointer events, so a chip listening from within never hears the hover -
