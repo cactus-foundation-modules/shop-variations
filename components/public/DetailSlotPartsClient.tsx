@@ -27,7 +27,7 @@ import type {
   ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
-import { AddonControl, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
+import { AddonControl, AdminStockNote, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: VariationBootstrap | null }
 
@@ -451,6 +451,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
         </span>
       </div>
       {reason && <p className={classNames.outOfStock}>{reason}</p>}
+      <AdminStockNote sel={sel} />
     </div>
   )
 }

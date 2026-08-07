@@ -9,6 +9,7 @@ import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
+import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
@@ -329,6 +330,13 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // supplier kept as a private buying reference would leak through this public
   // payload even with the storefront row switched off.
   const exposeSupplier = config.supplierFieldEnabled && config.supplierShowOnFrontend && config.supplierFieldScope === 'PRODUCTS_AND_VARIATIONS'
+  // Same treatment for the stock figure, and for the same reason: a shopper is
+  // told whether a combination is buyable (`inStock`, worked out here) and never
+  // how many of it there are. Staff get the count, so the owner can read the
+  // shelf off the product page itself - see shop's lib/admin-stock.ts. This
+  // payload is built per request and never cached across viewers, so a shopper
+  // cannot be served an admin's copy.
+  const exposeStock = await canSeeStockLevels()
 
   // Whether the shop prints its prices net or gross is shop's own setting, and
   // it applies to a variation exactly as it does to an ordinary product - so
@@ -393,7 +401,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       price: shown(effectivePrice(priced, enabledPriceTypes)),
       compareAtPrice: isOnSale(priced, enabledPriceTypes) ? shown(Number(priced.price)) : null,
       inStock,
-      stockCount: tracks ? stockCount : null,
+      stockCount: exposeStock && tracks ? stockCount : null,
+      tracksStock: tracks,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
       sku: child?.sku ?? null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
@@ -409,6 +418,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     variants: selectorVariants,
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,
     priceSuffix: taxDisplay.display.suffix,
+    showStockCounts: exposeStock,
+    baseStock: exposeStock ? { tracked: parent.trackInventory, count: parent.stockCount } : null,
   }
 }
 

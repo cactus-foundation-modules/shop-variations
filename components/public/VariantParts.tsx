@@ -184,6 +184,46 @@ export function SelectionSummary({ sel }: { sel: ReturnType<typeof useVariationS
   )
 }
 
+// The figure behind "In stock", for staff only, sat with the buy row it belongs
+// to. A shopper is told whether a combination can be bought and never how many
+// there are - and the numbers are not merely hidden here, they are withheld from
+// the payload entirely unless the person reading it is signed in with shop access
+// (see shop's lib/admin-stock.ts), so there is nothing to read out of the network
+// tab either. Which is also why this needs no permission check of its own: a
+// shopper's payload simply has no figures in it.
+//
+// Labelled "staff only" on its face, because it sits in the middle of a public
+// page and an owner showing a customer their screen must not have to wonder
+// whether the customer can see it too.
+export function AdminStockNote({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+  if (!sel.payload?.showStockCounts) return null
+  // With options in play the figure belongs to the combination in hand, and
+  // there is no single number until the shopper has settled on one. With none -
+  // a product we claimed for its personalisation fields alone - the parent row
+  // IS the thing being bought, so its own figure stands.
+  const stock = sel.hasOptions
+    ? (sel.variant ? { tracked: sel.variant.tracksStock ?? sel.variant.stockCount != null, count: sel.variant.stockCount } : null)
+    : sel.payload.baseStock ?? null
+  if (!stock) return null
+  return (
+    <p
+      style={{
+        margin: '10px 0 0', display: 'inline-flex', alignItems: 'baseline', gap: '0.5rem',
+        padding: '5px 10px', borderRadius: 8,
+        border: '1px dashed var(--color-border)', background: 'var(--color-surface)',
+        color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: 1.35,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {/* "Not tracked" rather than a blank, so nothing here is ever read as a
+          figure that failed to load: this combination simply has stock tracking
+          switched off and is always buyable. */}
+      <strong style={{ fontWeight: 700 }}>{stock.tracked ? `Stock: ${stock.count ?? 0}` : 'Stock: not tracked'}</strong>
+      <span>staff only</span>
+    </p>
+  )
+}
+
 // The pill that sits over the gallery stage once the shopper has settled on a
 // combination and the stage is showing THAT combination - its own photograph or
 // its own 3D model - rather than the product's general pictures. It answers the
@@ -1009,6 +1049,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
         </span>
       </div>
       {reason && <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{reason}</p>}
+      <AdminStockNote sel={sel} />
     </div>
   )
 }

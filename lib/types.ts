@@ -149,7 +149,16 @@ export type VariantSelectorVariant = {
   // price. Null when it is not, so the storefront has nothing to strike.
   compareAtPrice: number | null
   inStock: boolean
+  // How many of this combination are on the shelf - staff only. Null for every
+  // shopper, and null for staff too where the combination tracks no stock of its
+  // own, which is why `tracksStock` is carried separately: the two nulls mean
+  // different things and only one of them is worth writing on the page.
   stockCount: number | null
+  // Whether this combination counts its stock at all. Not gated: it says nothing
+  // about quantity, and the shopper-facing `inStock` already implies it.
+  // Optional because this payload crosses to the browser as JSON - one
+  // serialised before this shipped carries no such key. Always set server-side.
+  tracksStock?: boolean
   // Every image this variant owns, in gallery order (primary first). A variant
   // may carry a whole set of pictures, not one: the first is what the main stage
   // snaps to when the combination is chosen, the rest join the thumbnail strip.
@@ -177,6 +186,18 @@ export type VariantSelectorPayload = {
   // it is handed and does no tax arithmetic of its own. Optional so an island
   // rendering a payload from an older cached bundle still compiles.
   priceSuffix?: string
+  // Whether the person this payload was built for may be shown stock figures -
+  // shop's canSeeStockLevels. False for every shopper, in which case each
+  // variant's `stockCount` above is withheld (null) rather than merely unused,
+  // so the numbers are not sat in a public page's payload waiting to be read out
+  // of the network tab. Optional for the same reason as `priceSuffix`.
+  showStockCounts?: boolean
+  // The PARENT row's own stock, for staff, on a product we claimed without
+  // having any options to choose - personalisation add-ons alone. There is no
+  // combination to count there, so the parent is the thing being bought and its
+  // figure is the one worth writing down. Null for shoppers, and absent on a
+  // payload serialised before this shipped.
+  baseStock?: { tracked: boolean; count: number | null } | null
 }
 
 // The same payload, plus the currency symbol, resolved on the server and handed
