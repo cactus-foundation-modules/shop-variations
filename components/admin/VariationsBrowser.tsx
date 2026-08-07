@@ -10,10 +10,10 @@ import type { VariationListColumn, VariationListResult, VariationListRow } from 
 // The cross-product Variations browser: the Variations tab on Shop > Products.
 // Lists every variation across the catalogue with its image, option-value label,
 // price/SKU/stock and any contributed columns (3D file, attributes), and lets the
-// owner narrow to one product, to variations missing an image or a contributed
-// value, or to ones whose image or 3D file is a broken link ("Lost …"). It
-// is a read-only overview: each row links back to its product's Variations tab,
-// which is where a variation is actually edited.
+// owner narrow to one product, to variations missing an image, a SKU or a
+// contributed value, or to ones whose image or 3D file is a broken link
+// ("Lost …"). It is a read-only overview: each row links back to its product's
+// Variations tab, which is where a variation is actually edited.
 
 const PER_PAGE = 50
 
@@ -155,10 +155,15 @@ export function VariationsBrowser() {
   const hasFilters = Boolean(productId || missing || searchDebounced)
   const isLost = missing.startsWith('lost:')
 
-  // "Missing" options: image is always offered; a contributed column (the 3D file,
-  // each attribute) is offered once it is known to exist.
+  // "Missing" options: image and SKU are always offered, both being part of every
+  // variation's own record; a contributed column (the 3D file, each attribute) is
+  // offered once it is known to exist.
   const missingOptions = useMemo(
-    () => [{ id: 'image', label: 'Image' }, ...columns.map((c) => ({ id: c.id, label: c.label }))],
+    () => [
+      { id: 'image', label: 'Image' },
+      { id: 'sku', label: 'SKU' },
+      ...columns.map((c) => ({ id: c.id, label: c.label })),
+    ],
     [columns],
   )
 

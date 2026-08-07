@@ -17,8 +17,8 @@ import {
 // other modules contribute through the `variant-field-provider` point - which is
 // how the 3D file and attribute values reach the grid without this module knowing
 // what either is. All the browser's filters (a specific product, missing image,
-// missing any contributed column, and the "lost" pair - an image or file column
-// whose url no longer resolves) resolve here.
+// missing SKU, missing any contributed column, and the "lost" pair - an image or
+// file column whose url no longer resolves) resolve here.
 //
 // Contributed columns are merged by heading before they leave: a provider keys
 // its columns per product, so one attribute used across fifty products arrives as
@@ -71,10 +71,11 @@ export type VariationListParams = {
   productId?: string
   search?: string
   /**
-   * '' = no filter. 'image' = no image at all; a bare contributed column id = that
-   * column is empty. Prefix either with `lost:` ('lost:image', 'lost:<column id>')
-   * to instead find the ones that DO have a file recorded whose url no longer
-   * resolves - a reference left behind by a rename or a deletion.
+   * '' = no filter. 'image' = no image at all; 'sku' = no SKU on the variation's
+   * own product row; a bare contributed column id = that column is empty. Prefix
+   * with `lost:` ('lost:image', 'lost:<column id>') to instead find the ones that
+   * DO have a file recorded whose url no longer resolves - a reference left behind
+   * by a rename or a deletion.
    */
   missing?: string
   page?: number
@@ -83,6 +84,14 @@ export type VariationListParams = {
 
 /** The `lost:` prefix on the `missing` param, split off from the target. */
 export const LOST_PREFIX = 'lost:'
+
+/**
+ * The `missing` targets this module answers itself, in SQL, off the variation's
+ * own child product row. Anything else is a contributed column id, filtered in JS
+ * against the values its provider hands back. A merged column id always carries a
+ * `#`, so neither name here can ever be one.
+ */
+const BUILT_IN_MISSING = new Set(['image', 'sku'])
 
 const DEFAULT_PER_PAGE = 50
 const MAX_PER_PAGE = 200
@@ -162,8 +171,9 @@ export async function getVariationsList(
   const search = params.search?.trim() || ''
 
   // Base filters that SQL can answer: a specific product, a name/SKU search, and
-  // "missing image". "Missing <contributed column>" cannot - the value lives in
-  // another module - so it is applied in JS below, against the fetched set.
+  // the built-in "missing" pair (image, SKU). "Missing <contributed column>"
+  // cannot - the value lives in another module - so it is applied in JS below,
+  // against the fetched set.
   const where: Prisma.Sql[] = [Prisma.sql`p."catalogue_hidden" = false`]
   if (params.productId) where.push(Prisma.sql`v."product_id" = ${params.productId}`)
   if (search) {
@@ -172,6 +182,11 @@ export async function getVariationsList(
   }
   if (missing === 'image') {
     where.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "shp_product_media" m WHERE m."product_id" = v."child_product_id" AND m."type" = 'IMAGE')`)
+  }
+  // A SKU of whitespace is nobody's SKU, and a variation whose child product row
+  // has gone missing entirely has not got one either - both count as unset.
+  if (missing === 'sku') {
+    where.push(Prisma.sql`(c."sku" IS NULL OR btrim(c."sku") = '')`)
   }
 
   const baseRows = await prisma.$queryRaw<BaseRow[]>`
@@ -220,14 +235,15 @@ export async function getVariationsList(
   // the current page alone is enough and far cheaper on a big catalogue.
   const columns = providers.length > 0 ? await collectColumns(providers, groupChildIdsByProduct(baseRows)) : []
   const lostOnField = lost !== '' && lost !== 'image'
-  const filteringOnField = (missing !== '' && missing !== 'image') || lostOnField
+  const missingOnField = missing !== '' && !BUILT_IN_MISSING.has(missing)
+  const filteringOnField = missingOnField || lostOnField
 
   let fieldByChild = new Map<string, Record<string, string>>()
   let filtered = baseRows
   if (providers.length > 0 && filteringOnField) {
     fieldByChild = await collectValues(providers, groupChildIdsByProduct(baseRows))
   }
-  if (missing !== '' && missing !== 'image') {
+  if (missingOnField) {
     filtered = baseRows.filter((r) => {
       const v = mergeValues(fieldByChild.get(r.child_product_id), columns)[missing]
       return !v || v.trim() === ''
