@@ -4,7 +4,7 @@
 // pure and cheap to pin down, so they are pinned down here rather than found on a
 // live grid.
 import { describe, it, expect } from 'vitest'
-import { summariseOptionForCard } from '@/modules/shop-variations/lib/card-options'
+import { buildCardOptionsFacts, resolvePreviewSource, summariseOptionForCard } from '@/modules/shop-variations/lib/card-options'
 import type { SvrOptionWithValues, SvrControlType } from '@/modules/shop-variations/lib/types'
 
 function option(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
@@ -79,5 +79,125 @@ describe('summariseOptionForCard', () => {
       values: [{ id: 'v1', optionId: 'opt1', label: 'Oak', slug: 'oak', swatch: null, position: 0, sourceRef: null }],
     }))!
     expect(summary.values).toEqual([{ label: 'Oak', swatch: null }])
+  })
+})
+
+// The preview lookup is the part a shopper feels: point at a width and the tile
+// shows that desk. Everything that decides which photo that is happens in these two
+// functions, on data a category page never shows anyone, so it is pinned down here
+// rather than found by hovering forty cards.
+function width(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
+  return option({
+    id: 'opt-width',
+    name: 'Width',
+    controlType: 'DROPDOWN' as SvrControlType,
+    position: 0,
+    values: [
+      { id: 'w120', optionId: 'opt-width', label: '120cm', slug: '120cm', swatch: null, position: 0, sourceRef: null },
+      { id: 'w140', optionId: 'opt-width', label: '140cm', slug: '140cm', swatch: null, position: 1, sourceRef: null },
+    ],
+    ...over,
+  })
+}
+
+function finish(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
+  return option({
+    id: 'opt-finish',
+    name: 'Finish',
+    position: 1,
+    values: [
+      { id: 'walnut', optionId: 'opt-finish', label: 'Walnut', slug: 'walnut', swatch: '#6b4a2b', position: 0, sourceRef: null },
+      { id: 'white', optionId: 'opt-finish', label: 'White', slug: 'white', swatch: '#fff', position: 1, sourceRef: null },
+    ],
+    ...over,
+  })
+}
+
+const DESK_VARIANTS = [
+  { childProductId: 'c-120-walnut', valueIds: ['w120', 'walnut'] },
+  { childProductId: 'c-120-white', valueIds: ['w120', 'white'] },
+  { childProductId: 'c-140-walnut', valueIds: ['w140', 'walnut'] },
+]
+
+describe('buildCardOptionsFacts', () => {
+  it('gives every card-shown value a seat and every variation the seats it carries', () => {
+    const facts = buildCardOptionsFacts([width(), finish()], DESK_VARIANTS)!
+    expect(facts.options.map((o) => o.label)).toEqual(['Width', 'Finish'])
+    expect(facts.options[0]!.values.map((v) => v.vi)).toEqual([0, 1])
+    expect(facts.options[1]!.values.map((v) => v.vi)).toEqual([2, 3])
+    expect(facts.preview!.variants).toEqual([
+      { s: 'c-120-walnut', v: [0, 2] },
+      { s: 'c-120-white', v: [0, 3] },
+      { s: 'c-140-walnut', v: [1, 2] },
+    ])
+  })
+
+  it('says nothing at all for a product with no option ticked for its card', () => {
+    expect(buildCardOptionsFacts([width({ cardDisplay: false })], DESK_VARIANTS)).toBeNull()
+  })
+
+  it('still summarises when there is nothing to preview, so the tile keeps its swatches', () => {
+    const facts = buildCardOptionsFacts([width(), finish()], [])!
+    expect(facts.options).toHaveLength(2)
+    expect(facts.preview).toBeUndefined()
+  })
+
+  it('ignores values from options the card does not print, and drops a variation left with none', () => {
+    const facts = buildCardOptionsFacts([width(), finish({ cardDisplay: false })], [
+      { childProductId: 'c-120-walnut', valueIds: ['w120', 'walnut'] },
+      { childProductId: 'c-nothing', valueIds: ['walnut'] },
+    ])!
+    expect(facts.preview!.variants).toEqual([{ s: 'c-120-walnut', v: [0] }])
+  })
+
+  it('collapses variations that differ only in something the card never shows, first one wins', () => {
+    // Two chairs, same width and finish, different castors - one photo between them
+    // as far as a tile is concerned.
+    const facts = buildCardOptionsFacts([width()], [
+      { childProductId: 'c-120-soft', valueIds: ['w120', 'castor-soft'] },
+      { childProductId: 'c-120-hard', valueIds: ['w120', 'castor-hard'] },
+    ])!
+    expect(facts.preview!.variants).toEqual([{ s: 'c-120-soft', v: [0] }])
+  })
+
+  it('seats a value trimmed off the card, so a choice elsewhere can still land on it', () => {
+    const facts = buildCardOptionsFacts([width(), finish({ cardLimit: 1 })], DESK_VARIANTS)!
+    expect(facts.options[1]!.values.map((v) => v.label)).toEqual(['Walnut'])
+    expect(facts.options[1]!.more).toBe(1)
+    // White got seat 3 despite never being printed, so the 120cm/White variation is
+    // still a distinct entry rather than colliding with the walnut one.
+    expect(facts.preview!.variants).toContainEqual({ s: 'c-120-white', v: [0, 3] })
+  })
+})
+
+describe('resolvePreviewSource', () => {
+  const facts = buildCardOptionsFacts([width(), finish()], DESK_VARIANTS)!
+  const preview = facts.preview
+
+  it('shows nothing until the shopper points at something', () => {
+    expect(resolvePreviewSource(preview, [null, null])).toBeNull()
+  })
+
+  it('shows the first variation of a width chosen on its own', () => {
+    expect(resolvePreviewSource(preview, [0, null])).toBe('c-120-walnut')
+  })
+
+  it('narrows to the combination once a finish is added', () => {
+    expect(resolvePreviewSource(preview, [0, 3])).toBe('c-120-white')
+  })
+
+  it('answers a finish chosen on its own, with no width in hand', () => {
+    expect(resolvePreviewSource(preview, [null, 3])).toBe('c-120-white')
+  })
+
+  it('gives up the later choice rather than blanking when the combination does not exist', () => {
+    // There is no 140cm in white; the width the shopper actually chose is what
+    // survives, exactly as the product page keeps an upstream pick.
+    expect(resolvePreviewSource(preview, [1, 3])).toBe('c-140-walnut')
+  })
+
+  it('has nothing to say on a product with no preview data', () => {
+    expect(resolvePreviewSource(undefined, [0, 1])).toBeNull()
+    expect(resolvePreviewSource({ variants: [] }, [0, 1])).toBeNull()
   })
 })

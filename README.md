@@ -13,7 +13,12 @@ Adds product options to the Cactus shop:
   also be marked **Image up front** and, where the 3D module is installed,
   **3D up front** - independent switches that put its first photograph and/or
   its model on the product's gallery before the shopper has chosen anything,
-  and take them away again on their first pick.
+  and take them away again on their first pick. On category pages, options
+  ticked **Display in categories** summarise themselves on the product card via
+  the `Card: Variation options` part; turn that part's **Preview the photo**
+  setting on and hovering or tapping a value walks the tile's picture to that
+  combination - and, since shop's carousel hands its active image to the card
+  overlays, the 3D icon opens on the same variation.
 - **Personalisation add-ons** (engraving text, gift messages, priced dropdowns,
   dates, file/artwork uploads) captured on the product page, priced
   server-side, and carried through to the order, emails and the member account
