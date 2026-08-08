@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     "card_display" BOOLEAN NOT NULL DEFAULT false,
     "card_label" TEXT,
     "card_limit" INTEGER,
+    -- The other way to cap the card's values: fill exactly this many lines of the
+    -- tile (1-6), however many values that is at the width the card is drawn at.
+    -- Wins over card_limit when both are set; null = the card_limit rule. See 012.
+    "card_fit_lines" INTEGER,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,

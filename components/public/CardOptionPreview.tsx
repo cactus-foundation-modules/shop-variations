@@ -35,6 +35,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { resolvePreviewSource, type CardOptionSummary, type CardOptionsPreview } from '@/modules/shop-variations/lib/card-options'
 import { OptionRow, cardOptionsRootStyle, type InteractiveValue } from '@/modules/shop-variations/components/public/card-option-rows'
+import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
 
 const CARD_SELECTOR = '.shop-card'
 const SOURCES_ATTR = 'data-shop-media-sources'
@@ -184,8 +185,13 @@ export function CardOptionPreview({
         dragRef?.(element)
       }}
     >
+      {/* Same split as the plain path: a "fit N lines" option measures itself,
+          everything else renders straight through. Hidden values cannot be
+          hovered, exactly like values trimmed by a fixed limit. */}
       {options.map((option, i) => (
-        <OptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} />
+        option.fit != null
+          ? <FitOptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} />
+          : <OptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} />
       ))}
     </div>
   )

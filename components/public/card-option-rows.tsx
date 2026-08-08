@@ -7,12 +7,21 @@
 // No 'use client' here on purpose: this file is imported by both a server
 // component and a client one, and takes whichever side its importer is on.
 //
+// A row is ordinary inline flow, not flex, and that is load-bearing: the label and
+// the values must share one wrapping context, so the first values sit BESIDE the
+// label and only the spill starts a new line. A wrapping flex row places whole
+// items - it dropped the values block, at its full one-line width, under the label
+// the moment it could not fit beside it, leaving line one holding nothing but
+// "Colour". Each value is an atomic inline-block chip (so a label never splits
+// mid-word across lines, and a swatch's block-level dot sits legally in inline
+// flow), spaced by margins where the flex gap used to be.
+//
 // Inline styles rather than a stylesheet, matching the rest of this module - a card
 // part cannot rely on shop having emitted CSS it knows nothing about, and a <style>
 // tag per part would be repeated once per card in the grid. Sized in em, never rem:
 // the card sets its own font-size, and a surface may shrink the whole text block by
 // turning that one figure down (shop's two-up mobile grid halves it).
-import type { CSSProperties } from 'react'
+import type { CSSProperties, Ref } from 'react'
 import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-options'
 
 // What the preview island knows about one value, and how it wants to be told the
@@ -38,13 +47,35 @@ export type InteractiveValue = {
 
 export type ValueInteraction = (optionIndex: number, valueIndex: number) => InteractiveValue | null
 
+// How a "fit N lines" row is told what its own measurement decided. `shown` is
+// null while the browser is still counting (and on the server, and with no
+// JavaScript at all) - every value is rendered then, clamped to the allowed lines
+// so nothing tall flashes, with the marker present-but-invisible so its width can
+// be read. Once settled, values past `shown` are display:none and the marker
+// prints `moreCount`. The measuring itself lives in FitOptionRow.tsx; this file
+// only draws what it is told, so both of the block's paths keep printing
+// identical markup.
+export type FitState = {
+  rowRef: Ref<HTMLSpanElement>
+  shown: number | null
+  moreCount: number
+}
+
+// Line spacing doubles as the fit clamp's yardstick: swatch rows breathe a little
+// wider so wrapped lines of dots do not touch, text keeps prose rhythm.
+const LINE_HEIGHT_TEXT = 1.5
+const LINE_HEIGHT_SWATCH = 1.75
+
 export const cardOptionsRootStyle: CSSProperties = { display: 'grid', gap: '0.25em', margin: '0.5em 0 0', padding: '0 1em' }
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: '0.5em', flexWrap: 'wrap', fontSize: '0.75em', lineHeight: 1.4, color: 'var(--color-text-muted)' }
-const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)' }
-const swatchRowStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '0.333em', flexWrap: 'wrap' }
+const rowStyle: CSSProperties = { display: 'block', fontSize: '0.75em', color: 'var(--color-text-muted)' }
+const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)', marginRight: '0.5em' }
+// The chips. Swatches hang around the text's middle; text values stay on the
+// label's baseline. The margins are the old flex gaps.
+const swatchItemStyle: CSSProperties = { display: 'inline-block', verticalAlign: 'middle', marginRight: '0.333em' }
+const textItemStyle: CSSProperties = { display: 'inline-block', marginRight: '0.3em' }
 const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
 const thumbStyle: CSSProperties = { width: '1.5em', height: '1.5em', borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
-const moreStyle: CSSProperties = { fontVariantNumeric: 'tabular-nums' }
+const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 'tabular-nums' }
 
 // A value the shopper can point at. The reset is a button's whole appearance: it
 // has to sit in a line of text and a row of swatches without announcing itself as
@@ -109,26 +140,55 @@ export function OptionRow({
   option,
   optionIndex,
   interactive,
+  fit,
 }: {
   option: CardOptionSummary
   optionIndex: number
   interactive?: ValueInteraction
+  fit?: FitState
 }) {
   const showsSwatches = option.kind === 'swatch' || option.kind === 'image'
+  const lineHeight = showsSwatches ? LINE_HEIGHT_SWATCH : LINE_HEIGHT_TEXT
+  const measuring = fit != null && fit.shown == null
+  // While a fit row measures (and for anyone without JavaScript, for whom
+  // measuring is forever), the clamp is what stands in for the answer: exactly
+  // the allowed lines show, the spill is clipped rather than stacked, and the
+  // marker holds its space invisibly so its width is real when read.
+  const clamp: CSSProperties = measuring
+    ? { maxHeight: `${(option.fit ?? 1) * lineHeight}em`, overflow: 'hidden' }
+    : {}
+  // In fit mode the last VISIBLE value sheds its comma (the trim happens after
+  // the commas were rendered); everywhere else the last value simply is the last.
+  const lastComma = fit?.shown != null ? fit.shown - 1 : option.values.length - 1
+  const showMarker = fit != null ? measuring || fit.moreCount > 0 : option.more > 0
   return (
-    <span style={rowStyle}>
+    <span style={{ ...rowStyle, lineHeight, ...clamp }} ref={fit?.rowRef}>
       <span style={labelStyle}>{option.label}</span>
-      <span style={showsSwatches ? swatchRowStyle : undefined}>
+      <span>
         {option.values.map((v, i) => (
-          <span key={`${option.id}-${i}`}>
-            {/* A list reads as a list: the commas are between the words, never inside
-                the thing being pointed at, so hovering "140cm" does not underline a
-                comma along with it. */}
-            {!showsSwatches && i > 0 ? ', ' : null}
+          <span
+            key={`${option.id}-${i}`}
+            style={{
+              ...(showsSwatches ? swatchItemStyle : textItemStyle),
+              ...(fit?.shown != null && i >= fit.shown ? { display: 'none' } : null),
+            }}
+            {...(fit != null ? { 'data-fit-item': '' } : {})}
+          >
             <Value option={option} valueIndex={i} showsSwatches={showsSwatches} interaction={interactive?.(optionIndex, i) ?? null} />
+            {/* A list reads as a list, and the comma rides INSIDE the chip so a
+                line never opens with one - but outside the button, so hovering
+                "140cm" does not underline a comma along with it. */}
+            {!showsSwatches && i < lastComma ? ',' : null}
           </span>
         ))}
-        {option.more > 0 && <span style={moreStyle}>{showsSwatches ? `+${option.more}` : ` +${option.more}`}</span>}
+        {showMarker && (
+          <span
+            style={{ ...moreStyle, ...(measuring ? { visibility: 'hidden' } : null) }}
+            {...(fit != null ? { 'data-fit-more': '' } : {})}
+          >
+            +{fit != null ? fit.moreCount : option.more}
+          </span>
+        )}
       </span>
     </span>
   )

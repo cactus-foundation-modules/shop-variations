@@ -14,6 +14,9 @@ const PatchBody = z.object({
   // empty box is sent. Omitted leaves whatever is stored alone.
   cardLabel: z.string().max(80).nullable().optional(),
   cardLimit: z.number().int().min(1).max(50).nullable().optional(),
+  // Fill exactly N lines of the tile instead of a fixed count. The editor sends
+  // the two as a pair (setting one clears the other), but each stands alone here.
+  cardFitLines: z.number().int().min(1).max(6).nullable().optional(),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

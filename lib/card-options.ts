@@ -35,6 +35,11 @@ export type CardOptionSummary = {
   values: CardOptionValue[]
   // How many values did not fit, for the "+4" marker. Zero when they all did.
   more: number
+  // Set when the owner chose "as many as fit on N lines" instead of a count. The
+  // server cannot know a card's width, so in this mode `values` carries the lot
+  // (up to FIT_VALUE_CAP, with the rest in `more`) and the row measures itself in
+  // the browser, trimming to whatever fills N lines with room for the marker.
+  fit?: number
 }
 
 // One variation, reduced to the only two things a card preview needs of it: the
@@ -72,6 +77,20 @@ function kindOf(controlType: string): CardOptionKind {
   return 'text'
 }
 
+// How many values a fit-mode summary will ship at most. Six lines of the widest
+// plausible card is around a hundred small swatches; anything past this cap could
+// never be drawn, so it travels only as a number in `more`. Exported for the test
+// that holds the cap and the trim to the same figure.
+export const FIT_VALUE_CAP = 120
+
+// Fit lines are stored 1-6 and treated defensively here: anything outside that
+// range (a hand-edited row, an older bad write) is clamped rather than obeyed,
+// because a card asked to fill zero lines or forty is a card nobody designed.
+function fitLinesOf(option: SvrOptionWithValues): number | null {
+  if (option.cardFitLines == null) return null
+  return Math.min(6, Math.max(1, Math.floor(option.cardFitLines)))
+}
+
 // One option's card summary, or null when it has nothing to say there: the owner
 // has not asked for it, or nobody has given it any values yet - and an empty
 // "Colour:" on a tile reads as a fault rather than as information.
@@ -82,11 +101,16 @@ function kindOf(controlType: string): CardOptionKind {
 export function summariseOptionForCard(option: SvrOptionWithValues, seatOf?: (valueId: string) => number | undefined): CardOptionSummary | null {
   if (!option.cardDisplay) return null
   if (option.values.length === 0) return null
-  // A null limit means "all of them", which is also what a limit at or above the
-  // count means - both leave `more` at zero and print no marker. A stored limit
-  // of zero or less would hide every value while still printing the label, so it
-  // is treated as no limit rather than obeyed.
-  const limit = option.cardLimit != null && option.cardLimit > 0 ? option.cardLimit : option.values.length
+  const fit = fitLinesOf(option)
+  // Fit mode ships everything the browser could conceivably draw and lets the row
+  // trim itself to N lines client-side. Otherwise: a null limit means "all of
+  // them", which is also what a limit at or above the count means - both leave
+  // `more` at zero and print no marker. A stored limit of zero or less would hide
+  // every value while still printing the label, so it is treated as no limit
+  // rather than obeyed.
+  const limit = fit != null
+    ? FIT_VALUE_CAP
+    : option.cardLimit != null && option.cardLimit > 0 ? option.cardLimit : option.values.length
   const shown = option.values.slice(0, limit)
   return {
     id: option.id,
@@ -94,6 +118,7 @@ export function summariseOptionForCard(option: SvrOptionWithValues, seatOf?: (va
     kind: kindOf(option.controlType),
     values: shown.map((v) => ({ label: v.label, swatch: v.swatch, vi: seatOf?.(v.id) })),
     more: option.values.length - shown.length,
+    ...(fit != null ? { fit } : {}),
   }
 }
 

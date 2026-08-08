@@ -25,6 +25,7 @@
 import type { CardPartContext } from '@/modules/shop/components/puck/parts/part-context'
 import { CARD_OPTIONS_FACT_ID, type CardOptionSummary, type CardOptionsFacts } from '@/modules/shop-variations/lib/card-options'
 import { OptionRow, cardOptionsRootStyle } from '@/modules/shop-variations/components/public/card-option-rows'
+import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
 import { CardOptionPreview } from '@/modules/shop-variations/components/public/CardOptionPreview'
 
 // Puck attaches the drag handle to a part's own root element. Shop's card parts
@@ -79,8 +80,13 @@ export function ShopCardVariationOptions(props: Props) {
 
   return (
     <div style={cardOptionsRootStyle} ref={dragRefOf(props)}>
+      {/* An option set to "as many as fit" measures itself in the browser, so that
+          one row is a small client island; its neighbours (and every card without
+          the setting) stay exactly the server-rendered markup they always were. */}
       {options.map((option, i) => (
-        <OptionRow key={option.id} option={option} optionIndex={i} />
+        option.fit != null
+          ? <FitOptionRow key={option.id} option={option} optionIndex={i} />
+          : <OptionRow key={option.id} option={option} optionIndex={i} />
       ))}
     </div>
   )

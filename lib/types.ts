@@ -40,6 +40,11 @@ export type SvrOption = {
   // How many values a card shows before the "+4" marker. Null shows every value
   // and never marks an overflow.
   cardLimit: number | null
+  // The other way to cap them: fill exactly this many lines of the tile (1-6),
+  // however many values that is at whatever width the card is drawn. The browser
+  // does the counting, since only it knows the width. Wins over cardLimit when
+  // both are set; null falls back to the cardLimit rule.
+  cardFitLines: number | null
 }
 
 export type SvrOptionValue = {

@@ -24,7 +24,7 @@ type Option = {
   // Whether this option also summarises itself on the product card in a grid,
   // what it is called there (null = the option's own name) and how many values
   // are shown before the "+4" marker (null = all of them).
-  cardDisplay: boolean; cardLabel: string | null; cardLimit: number | null
+  cardDisplay: boolean; cardLabel: string | null; cardLimit: number | null; cardFitLines: number | null
   values: OptionValue[]
 }
 type VariantRow = {
@@ -316,7 +316,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // store a blank.
   const setCardDisplay = (id: string, cardDisplay: boolean) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardDisplay }, 'Could not change that setting.')
   const setCardLabel = (id: string, cardLabel: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardLabel: cardLabel.trim() || null }, 'Could not save that label.')
-  const setCardLimit = (id: string, cardLimit: number | null) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { cardLimit }, 'Could not save that number.')
+  // The count and the fit-lines choice travel as a pair: they are two spellings
+  // of one question ("how many values does a card show?"), so picking either
+  // clears the other rather than leaving a stale answer behind.
+  const setCardShow = (id: string, fields: { cardLimit: number | null; cardFitLines: number | null }) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, fields, 'Could not save that setting.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
@@ -815,12 +818,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   </label>
                 )}
                 <CardDisplayControls
-                  key={`${opt.cardLabel ?? ''}|${opt.cardLimit ?? ''}`}
+                  key={`${opt.cardLabel ?? ''}|${opt.cardLimit ?? ''}|${opt.cardFitLines ?? ''}`}
                   option={opt}
                   disabled={busy}
                   onToggle={(on) => setCardDisplay(opt.id, on)}
                   onLabel={(label) => setCardLabel(opt.id, label)}
-                  onLimit={(limit) => setCardLimit(opt.id, limit)}
+                  onShow={(fields) => setCardShow(opt.id, fields)}
                 />
                 {/* Duplicate labels are legal now (two "Black"s, told apart by
                     slug and swatch) - but a dropdown or pill control shows text
@@ -1230,43 +1233,67 @@ function SupplierCell({ label, variantLabel, value, options, onChange }: {
   )
 }
 
-// The "Display in categories" switch for one option, plus the two settings that
-// only matter once it is on: what the option is called on a card (the product
-// page's name is often too long for a tile) and how many of its values fit before
-// the "+4" marker. Both are stored as null when left empty, which reads as "use
-// the option's own name" and "show them all".
+// The "Display in categories" switch for one option, plus the settings that only
+// matter once it is on: what the option is called on a card (the product page's
+// name is often too long for a tile) and how many of its values show before the
+// "+4" marker. That last one is a choice of spelling: all of them, as many as
+// fill one to six lines of the tile (the browser counts, since only it knows how
+// wide a card is), or a fixed number the owner types. Everything is stored as
+// null when left at the default, which reads as "use the option's own name" and
+// "show them all".
 //
 // Text and number commit on blur or Enter rather than per keystroke - each commit
 // is a PATCH followed by a refetch of the whole editor payload, and one of those
 // per character typed would be a poor trade for a label nobody edits twice.
-function CardDisplayControls({ option, disabled, onToggle, onLabel, onLimit }: {
-  option: Pick<Option, 'id' | 'name' | 'controlType' | 'cardDisplay' | 'cardLabel' | 'cardLimit'>
+function CardDisplayControls({ option, disabled, onToggle, onLabel, onShow }: {
+  option: Pick<Option, 'id' | 'name' | 'controlType' | 'cardDisplay' | 'cardLabel' | 'cardLimit' | 'cardFitLines'>
   disabled: boolean
   onToggle: (on: boolean) => void
   onLabel: (label: string) => void
-  onLimit: (limit: number | null) => void
+  onShow: (fields: { cardLimit: number | null; cardFitLines: number | null }) => void
 }) {
   // Drafts are seeded from what is stored and never synced back by an effect: the
-  // caller keys this component on the saved pair, so a commit that changes them
+  // caller keys this component on the saved trio, so a commit that changes them
   // remounts it with fresh initial state. Focus is not at risk - the only way to
   // change them is to commit, and committing means the box has already been left.
   const [label, setLabel] = useState(option.cardLabel ?? '')
   const [limit, setLimit] = useState(option.cardLimit == null ? '' : String(option.cardLimit))
+  // Which spelling of "how many" is on show. Picking "A number I type" opens the
+  // box without saving anything - the number itself commits - so the mode lives
+  // here rather than being read straight off the stored fields.
+  const savedMode = option.cardFitLines != null ? `fit${option.cardFitLines}` : option.cardLimit != null ? 'count' : 'all'
+  const [mode, setMode] = useState(savedMode)
 
   const showsSwatches = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
   const countLabel = showsSwatches ? 'Swatches shown' : 'Options shown'
+  const things = showsSwatches ? 'swatches' : 'options'
   const rowText: CSSProperties = { display: 'inline-flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }
   const box: CSSProperties = { padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.8125rem' }
 
+  const LINE_WORDS = ['one', 'two', 'three', 'four', 'five', 'six']
+
+  function pickMode(next: string) {
+    setMode(next)
+    if (next === 'all') { if (savedMode !== 'all') onShow({ cardLimit: null, cardFitLines: null }); return }
+    if (next.startsWith('fit')) {
+      const lines = Number.parseInt(next.slice(3), 10)
+      if (option.cardFitLines !== lines) onShow({ cardLimit: null, cardFitLines: lines })
+      return
+    }
+    // "A number I type": nothing to save until the number is committed, so the
+    // box simply opens (seeded with whatever count was stored before, if any).
+  }
+
   function commitLimit() {
     const trimmed = limit.trim()
-    if (!trimmed) { if (option.cardLimit != null) onLimit(null); return }
+    // Emptied box = back to showing the lot, same as it always meant.
+    if (!trimmed) { if (option.cardLimit != null || option.cardFitLines != null) onShow({ cardLimit: null, cardFitLines: null }); else setMode('all'); return }
     const n = Number.parseInt(trimmed, 10)
     // Anything that is not a sensible count goes back to what is stored rather
     // than being sent - the server would refuse it, and a red error under an
     // option because someone typed "e" would be a poor way to say so.
     if (!Number.isFinite(n) || n < 1 || n > 50) { setLimit(option.cardLimit == null ? '' : String(option.cardLimit)); return }
-    if (n !== option.cardLimit) onLimit(n)
+    if (n !== option.cardLimit || option.cardFitLines != null) onShow({ cardLimit: n, cardFitLines: null })
   }
 
   return (
@@ -1290,15 +1317,30 @@ function CardDisplayControls({ option, disabled, onToggle, onLabel, onLimit }: {
           </label>
           <label style={rowText}>
             {countLabel}
+            <select
+              value={mode} disabled={disabled} style={box}
+              aria-label={`How many ${option.name} values a category page shows`}
+              onChange={(e) => pickMode(e.target.value)}
+            >
+              <option value="all">All of them</option>
+              {LINE_WORDS.map((word, i) => (
+                <option key={word} value={`fit${i + 1}`}>
+                  As many as fit on {word} line{i > 0 ? 's' : ''}
+                </option>
+              ))}
+              <option value="count">A number I type</option>
+            </select>
+          </label>
+          {mode === 'count' && (
             <input
               type="number" value={limit} disabled={disabled} placeholder="All" min={1} max={50}
               style={{ ...box, width: 80 }}
-              aria-label={`How many ${option.name} values a category page shows`}
+              aria-label={`How many ${things} to show`}
               onChange={(e) => setLimit(e.target.value)}
               onBlur={commitLimit}
               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
             />
-          </label>
+          )}
         </div>
       )}
     </div>

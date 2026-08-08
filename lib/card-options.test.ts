@@ -4,7 +4,7 @@
 // pure and cheap to pin down, so they are pinned down here rather than found on a
 // live grid.
 import { describe, it, expect } from 'vitest'
-import { buildCardOptionsFacts, resolvePreviewSource, summariseOptionForCard } from '@/modules/shop-variations/lib/card-options'
+import { FIT_VALUE_CAP, buildCardOptionsFacts, resolvePreviewSource, summariseOptionForCard } from '@/modules/shop-variations/lib/card-options'
 import type { SvrOptionWithValues, SvrControlType } from '@/modules/shop-variations/lib/types'
 
 function option(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
@@ -21,6 +21,7 @@ function option(over: Partial<SvrOptionWithValues> = {}): SvrOptionWithValues {
     cardDisplay: true,
     cardLabel: null,
     cardLimit: null,
+    cardFitLines: null,
     values: [
       { id: 'v1', optionId: 'opt1', label: 'Red', slug: 'red', swatch: '#f00', position: 0, sourceRef: null },
       { id: 'v2', optionId: 'opt1', label: 'Green', slug: 'green', swatch: '#0f0', position: 1, sourceRef: null },
@@ -79,6 +80,38 @@ describe('summariseOptionForCard', () => {
       values: [{ id: 'v1', optionId: 'opt1', label: 'Oak', slug: 'oak', swatch: null, position: 0, sourceRef: null }],
     }))!
     expect(summary.values).toEqual([{ label: 'Oak', swatch: null }])
+  })
+
+  it('ships every value with the fit flag when the owner chose "as many as fit"', () => {
+    const summary = summariseOptionForCard(option({ cardFitLines: 2 }))!
+    expect(summary.fit).toBe(2)
+    expect(summary.values).toHaveLength(3)
+    expect(summary.more).toBe(0)
+  })
+
+  it('lets the fit choice win when a stale count is also stored', () => {
+    const summary = summariseOptionForCard(option({ cardFitLines: 1, cardLimit: 2 }))!
+    expect(summary.fit).toBe(1)
+    expect(summary.values).toHaveLength(3)
+  })
+
+  it('leaves the fit flag off entirely on the old rules, so old payloads look unchanged', () => {
+    expect('fit' in summariseOptionForCard(option())!).toBe(false)
+    expect('fit' in summariseOptionForCard(option({ cardLimit: 2 }))!).toBe(false)
+  })
+
+  it('caps a fit-mode payload at what any card could conceivably draw', () => {
+    const values = Array.from({ length: FIT_VALUE_CAP + 25 }, (_, i) => (
+      { id: `v${i}`, optionId: 'opt1', label: `Shade ${i}`, slug: `shade-${i}`, swatch: '#111', position: i, sourceRef: null }
+    ))
+    const summary = summariseOptionForCard(option({ cardFitLines: 6, values }))!
+    expect(summary.values).toHaveLength(FIT_VALUE_CAP)
+    expect(summary.more).toBe(25)
+  })
+
+  it('clamps a fit figure hand-edited outside 1-6 rather than obeying it', () => {
+    expect(summariseOptionForCard(option({ cardFitLines: 99 }))!.fit).toBe(6)
+    expect(summariseOptionForCard(option({ cardFitLines: 0 }))!.fit).toBe(1)
   })
 })
 
