@@ -9,7 +9,11 @@ Adds product options to the Cactus shop:
   catalogue. Each option picks how it looks on the page: a dropdown, a row of
   pills, colour swatches, or **image swatches** - a thumbnail per value, chosen
   or uploaded from the shared media library, for the choices a colour can't
-  describe (a wood grain, a fabric weave, a printed pattern).
+  describe (a wood grain, a fabric weave, a printed pattern). A combination can
+  also be marked **Image up front** and, where the 3D module is installed,
+  **3D up front** - independent switches that put its first photograph and/or
+  its model on the product's gallery before the shopper has chosen anything,
+  and take them away again on their first pick.
 - **Personalisation add-ons** (engraving text, gift messages, priced dropdowns,
   dates, file/artwork uploads) captured on the product page, priced
   server-side, and carried through to the order, emails and the member account

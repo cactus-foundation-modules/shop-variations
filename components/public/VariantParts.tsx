@@ -1094,12 +1094,23 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   if (!slug || !sel.loaded || !sel.payload) return null
 
   const base = sel.payload.baseImages
-  const main = override ?? sel.image ?? base[0]?.url ?? null
   // Every image the chosen variant owns leads the strip, in its own order, with
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
-  const thumbs = [...variantImages.map((url) => ({ url, alt: 'Selected variant' })), ...base]
-    .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
+  //
+  // The promoted variations' pictures bring up the rear, and only while nothing
+  // has been chosen (see sel.featuredImages). Behind the product's own rather
+  // than in front: they are extra colours on offer, not what the product is.
+  const thumbs = [
+    ...variantImages.map((url) => ({ url, alt: 'Selected variant' })),
+    ...base,
+    ...sel.featuredImages.map((url) => ({ url, alt: 'Another finish' })),
+  ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
+  // An override the strip no longer offers is dropped rather than left on the
+  // stage: a promoted variation's picture stops being on offer the moment the
+  // shopper picks an option, and it may be the very one they had clicked.
+  const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
+  const main = held ?? sel.image ?? base[0]?.url ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
   const activeProductId = sel.variant?.childProductId ?? null
   // Whether what is on the stage is the shopper's own configuration rather than
@@ -1152,6 +1163,9 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               key={`${extra.id}:${sel.resetEpoch}`}
               payload={extra.payload}
               activeProductId={activeProductId}
+              // The promoted variations, so a contributor shows their media too
+              // while nothing is chosen. Empty from the first pick onwards.
+              featuredProductIds={sel.featuredModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"
@@ -1178,6 +1192,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
             <extra.Thumbs
               payload={extra.payload}
               activeProductId={activeProductId}
+              featuredProductIds={sel.featuredModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"

@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS "svr_variants" (
     "product_id" TEXT NOT NULL,
     "child_product_id" TEXT NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
+    -- Whether this variation's own first image, and separately its 3D model,
+    -- show on the parent's gallery while nothing is chosen, dropping out again
+    -- as soon as the shopper picks an option. Two independent flags: a variation
+    -- worth promoting for its photo is not always the one worth leading with in
+    -- 3D. See 011.
+    "show_image_in_gallery" BOOLEAN NOT NULL DEFAULT false,
+    "show_model_in_gallery" BOOLEAN NOT NULL DEFAULT false,
     "position" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_variants_pkey" PRIMARY KEY ("id"),

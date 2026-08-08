@@ -137,9 +137,23 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // Every image the chosen variant owns leads the strip, in its own order, with
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
-  const thumbs = [...variantImages.map((url) => ({ url, alt: productName })), ...images]
-    .filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
-  const main = override ?? variantImage ?? images[0]?.url ?? null
+  //
+  // The promoted variations' pictures (see sel.featuredImages) bring up the rear,
+  // and only while nothing has been chosen. Behind the product's own rather than
+  // in front of them: they are extra colours on offer, not what the product is,
+  // and the stage still opens on the photograph the owner made primary.
+  const thumbs = [
+    ...variantImages.map((url) => ({ url, alt: productName })),
+    ...images,
+    ...sel.featuredImages.map((url) => ({ url, alt: productName })),
+  ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
+  // A thumbnail the shopper clicked that the strip no longer offers is dropped
+  // rather than left on the stage. A promoted variation's picture stops being on
+  // offer the moment they pick an option - and it may well be the one they had
+  // clicked, which is exactly how the wrong finish ends up sat there under a
+  // strip that no longer lists it.
+  const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
+  const main = held ?? variantImage ?? images[0]?.url ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
 
   // Magnifying is shop's behaviour for shop's image. A contributed stage owns its
@@ -247,6 +261,11 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               key={`${extra.id}:${sel.resetEpoch}`}
               payload={extra.payload}
               activeProductId={activeProductId}
+              // The promoted variations, so a contributor shows their media too
+              // while nothing is chosen - a 3D model of the oak finish sitting in
+              // the strip beside its photograph. Empty from the shopper's first
+              // pick onwards, so nothing has to be undone here.
+              featuredProductIds={sel.featuredModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => {
                 setPicked(key === null ? null : { id: extra.id, key })
@@ -283,6 +302,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
             <extra.Thumbs
               payload={extra.payload}
               activeProductId={activeProductId}
+              featuredProductIds={sel.featuredModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => {
                 setPicked(key === null ? null : { id: extra.id, key })

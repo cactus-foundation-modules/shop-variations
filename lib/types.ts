@@ -67,6 +67,13 @@ export type SvrVariant = {
   productId: string
   childProductId: string
   enabled: boolean
+  // Whether this variation's own photo, and separately its own 3D model, are
+  // promoted onto the parent product's gallery while the shopper has chosen
+  // nothing. Independent flags - a variation worth showing off for its photo is
+  // not always the one worth leading with in 3D. Off for all but the handful an
+  // owner picks out - see migration 011.
+  showImageInGallery: boolean
+  showModelInGallery: boolean
   position: number
 }
 
@@ -163,6 +170,18 @@ export type VariantSelectorVariant = {
   // may carry a whole set of pictures, not one: the first is what the main stage
   // snaps to when the combination is chosen, the rest join the thumbnail strip.
   imageUrls: string[]
+  // Whether the owner has promoted this variation's first picture, and
+  // separately its 3D model, onto the parent's gallery: they join the
+  // product's own while nothing has been chosen, and drop out again on the
+  // shopper's first pick. Independent of one another. Off for the overwhelming
+  // majority.
+  //
+  // Optional because this payload crosses to the browser as JSON and is held in
+  // caches that predate the fields - one serialised before this shipped carries
+  // no such keys, which must read as "not promoted" rather than throwing on the
+  // product page. Everything server-side always sets both.
+  showImageInGallery?: boolean
+  showModelInGallery?: boolean
   sku: string | null
   // Null means this variation has none of its own, in which case the parent's
   // supplier (already the fallback shown before any choice is made) stands.

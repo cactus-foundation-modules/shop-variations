@@ -404,6 +404,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       stockCount: exposeStock && tracks ? stockCount : null,
       tracksStock: tracks,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
+      showImageInGallery: v.showImageInGallery,
+      showModelInGallery: v.showModelInGallery,
       sku: child?.sku ?? null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
     }
@@ -516,6 +518,11 @@ export type VariantEditorRow = {
   optionValueIds: string[]
   label: string
   enabled: boolean
+  // Whether this variation's photo, and separately its 3D model, are promoted
+  // onto the parent's gallery before the shopper has chosen anything - the
+  // grid's two "Show up front" tick boxes.
+  showImageInGallery: boolean
+  showModelInGallery: boolean
   price: number
   // The optional price types, exactly as the product editor's Pricing tab holds
   // them. Null means "not set on this variant", which is a different thing from
@@ -587,6 +594,8 @@ function buildEditorPayload(
       optionValueIds: valueMap[v.id] ?? [],
       label,
       enabled: v.enabled,
+      showImageInGallery: v.showImageInGallery,
+      showModelInGallery: v.showModelInGallery,
       price: child ? Number(child.price) : Number(parent.price),
       salePrice: optionalPrice(child?.sale_price),
       retailPrice: optionalPrice(child?.retail_price),
@@ -760,7 +769,9 @@ export async function upsertVariantForCombination(
     // Keep a caller-supplied context current so a later row naming the same
     // combination matches this new variant instead of creating a duplicate.
     if (ctx) {
-      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, position: existing.length })
+      // Matches what createVariant just wrote: a new variation is never
+      // promoted onto the parent's gallery until someone ticks one of the boxes.
+      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, position: existing.length })
       ctx.valueMap[cv.id] = optionValueIds
     }
   }

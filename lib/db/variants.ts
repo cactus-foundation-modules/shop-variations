@@ -8,6 +8,8 @@ function mapVariant(r: Record<string, unknown>): SvrVariant {
     productId: r.product_id as string,
     childProductId: r.child_product_id as string,
     enabled: r.enabled as boolean,
+    showImageInGallery: r.show_image_in_gallery as boolean,
+    showModelInGallery: r.show_model_in_gallery as boolean,
     position: r.position as number,
   }
 }
@@ -213,6 +215,18 @@ export async function setVariantValues(variantId: string, optionValueIds: string
 
 export async function setVariantEnabled(id: string, enabled: boolean): Promise<void> {
   await prisma.$executeRaw`UPDATE "svr_variants" SET "enabled" = ${enabled} WHERE "id" = ${id}`
+}
+
+// Promote (or demote) this variation's photo, and separately its 3D model, on
+// the parent's gallery - see migration 011. Two independent setters rather than
+// one taking both fields, matching setVariantEnabled's shape: each is written
+// from its own checkbox and neither implies the other.
+export async function setVariantShowImageInGallery(id: string, showImageInGallery: boolean): Promise<void> {
+  await prisma.$executeRaw`UPDATE "svr_variants" SET "show_image_in_gallery" = ${showImageInGallery} WHERE "id" = ${id}`
+}
+
+export async function setVariantShowModelInGallery(id: string, showModelInGallery: boolean): Promise<void> {
+  await prisma.$executeRaw`UPDATE "svr_variants" SET "show_model_in_gallery" = ${showModelInGallery} WHERE "id" = ${id}`
 }
 
 export async function deleteVariant(id: string): Promise<void> {

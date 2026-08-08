@@ -29,7 +29,7 @@ type Option = {
 }
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
-  enabled: boolean; price: number; sku: string | null; barcode: string | null; supplier: string | null
+  enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
 }
@@ -42,7 +42,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -1029,6 +1029,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
+                    {/* Two independent switches: a variation worth showing off for
+                        its photo is not always the one worth leading with in 3D.
+                        The headings are short because the row of columns is
+                        already wider than a laptop; the titles carry the rule. */}
+                    <th style={{ padding: '0.5rem' }} title="Show this variation's first photo on the product page before any option is chosen. It drops out again as soon as the shopper picks something.">
+                      Image up front
+                    </th>
+                    <th style={{ padding: '0.5rem' }} title="Show this variation's 3D model on the product page before any option is chosen (needs the 3D views module, and a model attached to this row). It drops out again as soon as the shopper picks something.">
+                      3D up front
+                    </th>
                     <th style={{ padding: '0.5rem' }} aria-label="Delete" />
                   </tr>
                 </thead>
@@ -1128,6 +1138,22 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             aria-label={`${v.label} on sale`}
                             checked={enabled}
                             onChange={(e) => editVariant(v.variantId, { enabled: e.target.checked })}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Show ${v.label}'s photo on the product page before any option is chosen`}
+                            checked={valueOf(v, 'showImageInGallery')}
+                            onChange={(e) => editVariant(v.variantId, { showImageInGallery: e.target.checked })}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Show ${v.label}'s 3D model on the product page before any option is chosen`}
+                            checked={valueOf(v, 'showModelInGallery')}
+                            onChange={(e) => editVariant(v.variantId, { showModelInGallery: e.target.checked })}
                           />
                         </td>
                         <td style={{ padding: '0.5rem', textAlign: 'right' }}>

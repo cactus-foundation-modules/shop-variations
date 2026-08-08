@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateProduct, setProductMedia, deleteProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
-import { getVariantById, setVariantEnabled } from '@/modules/shop-variations/lib/db/variants'
+import { getVariantById, setVariantEnabled, setVariantShowImageInGallery, setVariantShowModelInGallery } from '@/modules/shop-variations/lib/db/variants'
 
 const Body = z.object({
   price: z.number().nonnegative().optional(),
@@ -21,6 +21,11 @@ const Body = z.object({
   stockCount: z.number().int().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
+  // Whether this variation's first picture, and separately its 3D model, are
+  // promoted onto the parent's gallery before the shopper has chosen anything.
+  // Independent switches.
+  showImageInGallery: z.boolean().optional(),
+  showModelInGallery: z.boolean().optional(),
   // Every media URL for this variant, in the order they should appear, or an
   // empty array to clear them. The first is the variant's primary image.
   imageUrls: z.array(z.string().url()).optional(),
@@ -28,7 +33,8 @@ const Body = z.object({
 
 // Per-variant edit. Scalar fields live on the hidden child product and go
 // through shop's updateProduct/setProductMedia so inventory stays consistent;
-// `enabled` lives on the variant mapping.
+// `enabled`, `showImageInGallery` and `showModelInGallery` live on the variant
+// mapping.
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireShopUser('shop.products')
   if (gate.error) return gate.error
@@ -70,6 +76,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)
+  if (data.showImageInGallery !== undefined) await setVariantShowImageInGallery(id, data.showImageInGallery)
+  if (data.showModelInGallery !== undefined) await setVariantShowModelInGallery(id, data.showModelInGallery)
 
   return NextResponse.json({ ok: true })
 }

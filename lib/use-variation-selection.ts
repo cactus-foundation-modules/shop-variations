@@ -268,6 +268,39 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // gallery stands as it is.
   const variantImages = variant?.imageUrls ?? []
   const image = variantImages[0] ?? payload?.baseImages[0]?.url ?? null
+  // The variations the owner has promoted onto the parent's gallery, while they
+  // are still worth showing: in matrix order, switched-on ones only. Images and
+  // models are promoted independently of one another - a variation worth
+  // showing off for its photo is not always the one worth leading with in 3D -
+  // so this is two separate filters over the same list, not one.
+  //
+  // Both are gated on the shopper having picked nothing at all rather than on a
+  // whole combination having resolved, and that is the point of the feature.
+  // Before any pick, a promoted variation is showing the shopper what the range
+  // looks like. The instant they choose ANYTHING they have said what they want,
+  // and a rival finish sat in the strip is then answering a question nobody
+  // asked - "why am I looking at the oak one, I picked walnut". A part-made
+  // choice counts: waiting for the last option would leave the promoted lot up
+  // through the whole of a five-option configure.
+  //
+  // It is also the only gate that holds still. A resolved variation blinks in and
+  // out as the shopper works down the options, and hanging the strip's contents
+  // off that would have thumbnails appearing and vanishing under the cursor.
+  // Reset options empties the picks, so the promoted media comes back - which is
+  // what a reset should look like.
+  //
+  // One picture each - their first - not their whole set. A promoted variation is
+  // a taster of what the range offers, and four angles of the oak desk would
+  // bury the product's own photographs on its own page.
+  const featuredImages = payload && !anyOptionChosen
+    ? payload.variants.filter((v) => v.enabled && v.showImageInGallery).map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
+    : []
+  // By child product id, for whatever else hangs media off a product (the 3D
+  // module's models, today) - a variation with no photograph of its own can
+  // still be promoted for its model alone.
+  const featuredModelChildIds = payload && !anyOptionChosen
+    ? payload.variants.filter((v) => v.enabled && v.showModelInGallery).map((v) => v.childProductId)
+    : []
   const allOptionsChosen = payload ? payload.options.every((o) => !!optionValues[o.id]) : true
   // The options still waiting on the shopper, by name and in display order, so the
   // buy button can say which ones rather than "choose your options" - and so a
@@ -348,6 +381,13 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     basePrice,
     image,
     variantImages,
+    // The promoted variations' first pictures, and the variations promoted for
+    // their MODEL by child product id - independent lists, both empty once the
+    // shopper has picked anything at all. A gallery adds the pictures to its
+    // strip and hands the ids to whatever else contributes media (see shop's
+    // ShopGalleryExtraThumbsProps).
+    featuredImages,
+    featuredModelChildIds,
     inStock,
     hasOptions,
     allOptionsChosen,
