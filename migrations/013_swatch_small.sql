@@ -1,0 +1,13 @@
+-- Adds a small rendition of an image swatch, sat beside the original url.
+--
+-- An IMAGE option value's `swatch` is a full-size photograph of a material. It
+-- has to be: on a product with 3D views that very url is painted onto the model
+-- at true scale, where a small file blurs. But the storefront draws the same url
+-- at 28px in the picker and 18px on category cards, so a category page pulled
+-- megabytes of fabric photography to show rows of dots.
+--
+-- `swatch_small` is the url of a shrunk copy. Values copied from an attribute
+-- get it synced across by product-attributes-for-shop (which also makes the
+-- file); the storefront prefers it and falls back to `swatch` when null. The 3D
+-- module keeps reading `swatch` and never sees this column.
+ALTER TABLE "svr_option_values" ADD COLUMN IF NOT EXISTS "swatch_small" TEXT;

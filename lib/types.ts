@@ -59,6 +59,11 @@ export type SvrOptionValue = {
   // url for IMAGE. Null for DROPDOWN/PILL, and for a SWATCH/IMAGE value nobody
   // has given one to yet - both of those render as the bare label.
   swatch: string | null
+  // The url of a small rendition of an IMAGE swatch, for thumbnails and card
+  // chips - the full-size original stays in `swatch` for the 3D module to paint
+  // at true scale. Null (or absent, on rows read before migration 013) means no
+  // small copy exists and renderers fall back to `swatch`.
+  swatchSmall?: string | null
   position: number
   // The source value this one was copied from, opaque here. Null on a value added
   // by hand, which a refresh then leaves alone.

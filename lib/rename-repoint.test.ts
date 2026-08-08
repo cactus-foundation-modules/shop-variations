@@ -20,7 +20,7 @@ describe('repointOnRename', () => {
         sourceValues: LEG_FINISH,
         siblingRefs: [],
       }),
-    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232' })
+    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232', swatchSmall: null })
   })
 
   it('matches the label regardless of case and surrounding space', () => {
@@ -32,7 +32,7 @@ describe('repointOnRename', () => {
         sourceValues: LEG_FINISH,
         siblingRefs: [],
       }),
-    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232' })
+    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232', swatchSmall: null })
   })
 
   it('keeps a swatch the owner set by hand, and still moves the ref', () => {
@@ -58,7 +58,7 @@ describe('repointOnRename', () => {
         sourceValues: LEG_FINISH,
         siblingRefs: [],
       }),
-    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232' })
+    ).toEqual({ kind: 'adopt', ref: 'black', swatch: '#323232', swatchSmall: null })
   })
 
   it('cuts the link when another value on the option is already that source value', () => {

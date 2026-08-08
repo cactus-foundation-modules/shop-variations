@@ -729,11 +729,16 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // one. A colour/image value left blank keeps its text label rather than
           // rendering an empty button nobody could tell apart.
           const swatchOnly = swatchDisplay === 'swatchOnly' && (isSwatch || isImage) && !!v.swatch
+          // The picture drawn on the page: the small rendition where one exists.
+          // It is sized for the biggest thing here (the 200px hover preview), so
+          // the full-size original - which the 3D viewer paints onto models at
+          // true scale - is never downloaded just to fill a 28px thumbnail.
+          const picture = v.swatchSmall ?? v.swatch
           // The enlarged look, when previews are on and the value has something
           // to enlarge. Both looks pop the same chip; they differ only in whether
           // the name rides along in it (the pill already shows the name).
           const previewNode = swatchPreview === 'show' && v.swatch && (isSwatch || isImage)
-            ? <ValuePreview src={isImage ? v.swatch : undefined} colour={isSwatch ? v.swatch : undefined} />
+            ? <ValuePreview src={isImage ? picture ?? undefined : undefined} colour={isSwatch ? v.swatch : undefined} />
             : undefined
           // The second line under the value's name: where an out-of-reach choice
           // IS to be had, what it is when chosen, and what it would cost before
@@ -769,7 +774,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           const swatchNode = swatchOnly
             ? (isSwatch
                 ? <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch!, border: '1px solid var(--color-border)' }} />
-                : <SwatchImg src={v.swatch!} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />)
+                : <SwatchImg src={picture!} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />)
             : null
           const button = (
             <button
@@ -835,9 +840,9 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                       <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: v.swatch, border: '1px solid var(--color-border)' }} />
                     </ValuePeek>
                   )}
-                  {isImage && v.swatch && (
+                  {isImage && picture && (
                     <ValuePeek preview={previewNode}>
-                      <SwatchImg src={v.swatch} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
+                      <SwatchImg src={picture} style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--color-border)' }} />
                     </ValuePeek>
                   )}
                   {/* Name over sub-line. A grid rather than two spans so the pair

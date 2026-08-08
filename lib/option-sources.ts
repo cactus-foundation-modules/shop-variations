@@ -33,6 +33,14 @@ export type OptionSourceValue = {
   slug?: string | null
   /** Hex colour or image url, matching the meaning svr_option_values.swatch has. */
   swatch: string | null
+  /**
+   * The url of a small rendition of an image swatch, matching
+   * svr_option_values.swatch_small. Optional in both directions: a provider from
+   * before small copies existed leaves it off entirely (and a refresh then leaves
+   * the stored one alone), while a current provider always says either a url or
+   * null - null meaning "there is no small copy", which clears a stale one.
+   */
+  swatchSmall?: string | null
 }
 
 export type OptionSource = {

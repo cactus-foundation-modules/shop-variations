@@ -13,11 +13,11 @@
 // This decides the repoint. Kept pure and separate from the importer so the
 // rules can be read (and tested) without a database.
 
-export type SourceValue = { ref: string; label: string; swatch: string | null }
+export type SourceValue = { ref: string; label: string; swatch: string | null; swatchSmall?: string | null }
 
 export type Repoint =
   /** Adopt a different source value. `swatch` undefined = leave the stored one alone. */
-  | { kind: 'adopt'; ref: string; swatch?: string | null }
+  | { kind: 'adopt'; ref: string; swatch?: string | null; swatchSmall?: string | null }
   /** The value no longer answers to anything in the source: stop tracking it. */
   | { kind: 'clear' }
   /** Nothing to do. */
@@ -72,10 +72,12 @@ export function repointOnRename(input: RepointInput): Repoint {
 
   // Take the new source value's swatch only where the stored one was the old
   // source value's to begin with (or absent). A swatch the owner picked by hand
-  // survives a rename, the same way a hand-typed value does.
+  // survives a rename, the same way a hand-typed value does. The small rendition
+  // travels with the swatch it was made from - adopting one without the other
+  // would leave a thumbnail of the wrong picture.
   const previous = sourceValues.find((v) => v.ref === currentSourceRef)
   const inherited = currentSwatch === null || (previous ? currentSwatch === previous.swatch : false)
   return inherited
-    ? { kind: 'adopt', ref: match.ref, swatch: match.swatch }
+    ? { kind: 'adopt', ref: match.ref, swatch: match.swatch, swatchSmall: match.swatchSmall ?? null }
     : { kind: 'adopt', ref: match.ref }
 }

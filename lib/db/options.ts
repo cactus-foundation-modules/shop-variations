@@ -27,6 +27,7 @@ function mapValue(r: Record<string, unknown>): SvrOptionValue {
     label: r.label as string,
     slug: r.slug as string,
     swatch: (r.swatch as string | null) ?? null,
+    swatchSmall: (r.swatch_small as string | null) ?? null,
     position: r.position as number,
     sourceRef: (r.source_ref as string | null) ?? null,
   }
@@ -195,10 +196,11 @@ export async function createOptionValue(
   swatch: string | null,
   position: number,
   sourceRef?: string | null,
+  swatchSmall?: string | null,
 ): Promise<{ id: string }> {
   const rows = await prisma.$queryRaw<[{ id: string }]>`
-    INSERT INTO "svr_option_values" ("option_id", "label", "slug", "swatch", "position", "source_ref")
-    VALUES (${optionId}, ${label}, ${slug}, ${swatch}, ${position}, ${sourceRef ?? null})
+    INSERT INTO "svr_option_values" ("option_id", "label", "slug", "swatch", "swatch_small", "position", "source_ref")
+    VALUES (${optionId}, ${label}, ${slug}, ${swatch}, ${swatchSmall ?? null}, ${position}, ${sourceRef ?? null})
     RETURNING "id"
   `
   return rows[0]
@@ -206,12 +208,15 @@ export async function createOptionValue(
 
 export async function updateOptionValue(
   id: string,
-  fields: { label?: string; slug?: string; swatch?: string | null; position?: number; sourceRef?: string | null },
+  fields: { label?: string; slug?: string; swatch?: string | null; swatchSmall?: string | null; position?: number; sourceRef?: string | null },
 ): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.label !== undefined) sets.push(Prisma.sql`"label" = ${fields.label}`)
   if (fields.slug !== undefined) sets.push(Prisma.sql`"slug" = ${fields.slug}`)
   if (fields.swatch !== undefined) sets.push(Prisma.sql`"swatch" = ${fields.swatch}`)
+  // Null clears a small copy whose original has been replaced by hand - a stale
+  // small rendition of the OLD picture is worse than falling back to the new one.
+  if (fields.swatchSmall !== undefined) sets.push(Prisma.sql`"swatch_small" = ${fields.swatchSmall}`)
   if (fields.position !== undefined) sets.push(Prisma.sql`"position" = ${fields.position}`)
   // Which source value this copy answers to. Moved when a rename makes it a
   // different one of the source's values - see rename-repoint.ts.

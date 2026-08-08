@@ -19,4 +19,9 @@ export async function shopVariationsMediaReferenceRewriter(change: MediaReferenc
   await prisma.$executeRaw`
     UPDATE "svr_option_values" SET "swatch" = ${newUrl} WHERE "swatch" = ${oldUrl}
   `
+  // The small rendition is its own library item with its own url; a move or
+  // optimise of THAT file has to land here the same way.
+  await prisma.$executeRaw`
+    UPDATE "svr_option_values" SET "swatch_small" = ${newUrl} WHERE "swatch_small" = ${oldUrl}
+  `
 }

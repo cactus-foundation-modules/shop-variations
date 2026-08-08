@@ -15,7 +15,7 @@ import {
 } from '@/modules/shop-variations/components/admin/OptionSourcePicker'
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 
-type OptionValue = { id: string; label: string; slug: string; swatch: string | null; position: number; sourceRef: string | null }
+type OptionValue = { id: string; label: string; slug: string; swatch: string | null; swatchSmall?: string | null; position: number; sourceRef: string | null }
 type Option = {
   id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean
   // Set when the option was built from another module's source. Null on a
@@ -867,7 +867,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
                       {opt.controlType === 'IMAGE' && (
-                        <InlineImageSwatch value={v.swatch} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
+                        <InlineImageSwatch value={v.swatch} previewUrl={v.swatchSmall ?? null} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                       )}
                       <InlineRename value={v.label} ariaLabel={`Rename value ${v.label}`} onSave={(label) => renameValue(v.id, label)} disabled={busy} inputWidth={90} textStyle={{ fontSize: '0.8125rem' }} />
                       {/* The slug surfaces only when the label alone is ambiguous
@@ -1528,8 +1528,11 @@ function InlineSwatch({ value, label, onSave, disabled }: {
 //
 // A value with no picture shows a dotted square, matching the dotted dot an
 // uncoloured swatch shows, and the storefront falls back to the bare label.
-function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolderId, resolveBrowseFolderId }: {
+function InlineImageSwatch({ value, previewUrl, label, onSave, disabled, resolveUploadFolderId, resolveBrowseFolderId }: {
   value: string | null
+  // A lighter url to DRAW in the 22px box (the value's small rendition) while
+  // `value` stays the stored url a pick is compared against. Null draws `value`.
+  previewUrl?: string | null
   label: string
   onSave: (next: string) => Promise<boolean>
   disabled: boolean
@@ -1601,7 +1604,7 @@ function InlineImageSwatch({ value, label, onSave, disabled, resolveUploadFolder
           <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-muted)' }}>…</span>
         ) : value ? (
           // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
-          <img src={value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={previewUrl ?? value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
           <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>＋</span>
         )}
