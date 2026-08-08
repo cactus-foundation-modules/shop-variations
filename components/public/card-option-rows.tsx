@@ -20,9 +20,16 @@ import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-optio
 // preview turned off, and for a value no variation answers to - which then renders
 // as the plain label it always was, promising nothing it cannot do.
 export type InteractiveValue = {
-  // Fixed by a tap, so it stays drawn as chosen after the pointer moves on.
+  // Fixed by a tap. Announced to assistive technology as a pressed button, but
+  // deliberately NOT what the mark is drawn from - see `active`.
   pinned: boolean
-  // What the picture is showing for this row at the moment.
+  // What the picture is showing for this row at the moment, and the only thing
+  // the mark follows. A pinned value is `active` too until the shopper points at
+  // a different one in the same row, and then it is not: exactly one value per
+  // row is ever marked, because the card is only ever showing one photo. Marking
+  // the pin as well left two values in a row both looking chosen while the
+  // picture could only agree with one of them. The pin comes back the moment the
+  // pointer leaves the card, which is where `picks` reverts to it.
   active: boolean
   onMouseEnter: () => void
   onFocus: () => void
@@ -82,7 +89,7 @@ function Value({
   const value = option.values[valueIndex]!
   const body = showsSwatches ? <SwatchValue value={value} kind={option.kind} /> : <span>{value.label}</span>
   if (!interaction) return body
-  const chosen = interaction.active || interaction.pinned
+  const chosen = interaction.active
   return (
     <button
       type="button"
