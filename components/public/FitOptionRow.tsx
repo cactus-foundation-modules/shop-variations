@@ -7,20 +7,23 @@
 // actually fits once the row is on a real card.
 //
 // The method leans on a property of inline flow: items lay out greedily left to
-// right, so the position of the first k chips does not depend on what comes after
-// them. One render with EVERYTHING in place (values visible, the "+n" marker
-// occupying its space invisibly, the row clamped to the allowed lines so nothing
-// tall flashes) is therefore enough to answer every "what if only k showed?"
-// question at once:
+// right, so the position of the first k values does not depend on what comes
+// after them. One render with EVERYTHING in place (values visible, the "+n"
+// marker occupying its space invisibly, the row clamped to the allowed lines so
+// nothing tall flashes) is therefore enough to answer every "what if only k
+// showed?" question at once:
 //
-//   - each chip's line is read off its top edge (a jump of more than half a line
-//     height starts a new line - chips on one line may sit a pixel or two apart
-//     where swatches and text mix);
-//   - k starts at the number of chips inside the allowed lines and walks down
-//     until the marker also fits: trivially, when the last shown chip ends before
-//     the final allowed line; by width, when it ends on it. The marker is
-//     measured at its widest possible figure, so a shrinking count can only ever
-//     free space, never steal it.
+//   - a TEXT value is genuine inline content and may wrap mid-phrase, so each
+//     value is read through getClientRects(): where its first fragment starts
+//     and, more usefully, where its last fragment ends. Line numbers come from
+//     clustering those fragment tops (tops within half a line height are the
+//     same line - fragments on one line can sit a pixel or two apart where
+//     swatches and text mix);
+//   - k starts at the number of values whose LAST fragment still ends inside the
+//     allowed lines and walks down until the marker also fits: trivially, when
+//     the kth value ends before the final allowed line; by width, when it ends
+//     on it. The marker is measured at its widest possible figure, so a
+//     shrinking count can only ever free space, never steal it.
 //
 // The trim then happens in useLayoutEffect, before the browser paints, so
 // shoppers never see the untrimmed state. Values past the cut go display:none
@@ -86,36 +89,53 @@ export function FitOptionRow({
     const items = Array.from(row.querySelectorAll<HTMLElement>('[data-fit-item]'))
     if (items.length === 0) { setShown(0); return }
     const lines = Math.max(1, option.fit ?? 1)
-    const lineHeightPx = Number.parseFloat(getComputedStyle(row).lineHeight) || 16
+    const rowStyleComputed = getComputedStyle(row)
+    const lineHeightPx = Number.parseFloat(rowStyleComputed.lineHeight) || 16
 
-    // Which line each chip landed on. Tops within half a line height of the
-    // previous chip are the same line; a bigger drop starts the next one.
-    const rects = items.map((item) => item.getBoundingClientRect())
-    const lineOf: number[] = []
-    let line = 0
-    for (let i = 0; i < rects.length; i++) {
-      if (i > 0 && rects[i]!.top - rects[i - 1]!.top > lineHeightPx / 2) line++
-      lineOf.push(line)
+    // Where each value starts and, more importantly, ends. A wrapped text value
+    // has one client rect per line it touches; a swatch chip has exactly one.
+    const chips = items.map((item) => {
+      const fragments = item.getClientRects()
+      const first = fragments.length > 0 ? fragments[0]! : item.getBoundingClientRect()
+      const last = fragments.length > 0 ? fragments[fragments.length - 1]! : first
+      return { startTop: first.top - rowRect.top, endTop: last.top - rowRect.top, endRight: last.right - rowRect.left }
+    })
+
+    // The row's lines, as clusters of fragment tops: tops within half a line
+    // height belong to the same line, a bigger drop starts the next one.
+    const tops = chips.flatMap((c) => [c.startTop, c.endTop]).sort((a, b) => a - b)
+    const lineTops: number[] = []
+    for (const top of tops) {
+      if (lineTops.length === 0 || top - lineTops[lineTops.length - 1]! > lineHeightPx / 2) lineTops.push(top)
+    }
+    const lineOf = (top: number): number => {
+      let index = 0
+      for (let i = 0; i < lineTops.length; i++) if (top >= lineTops[i]! - 1) index = i
+      return index
     }
 
     const marker = row.querySelector<HTMLElement>('[data-fit-more]')
     const markerWidth = marker ? marker.getBoundingClientRect().width : 0
-    const gap = Number.parseFloat(getComputedStyle(items[0]!).marginRight) || 0
+    // The room the marker needs beside the last value: the swatch chips' margin,
+    // or - text chips carry none - about a space's worth.
+    const itemStyleComputed = getComputedStyle(items[0]!)
+    const gap = Number.parseFloat(itemStyleComputed.marginRight)
+      || (Number.parseFloat(rowStyleComputed.fontSize) || 12) * 0.35
 
     // Would showing exactly k values leave the marker somewhere legal? The
-    // marker follows the last shown chip in flow, so: fine anywhere before the
+    // marker follows the last shown value in flow, so: fine anywhere before the
     // final allowed line, needs the leftover width on it, impossible past it.
     const fits = (k: number): boolean => {
       if (k === 0) return true
-      const lastLine = lineOf[k - 1]!
-      if (lastLine >= lines) return false
+      const endLine = lineOf(chips[k - 1]!.endTop)
+      if (endLine >= lines) return false
       if (total - k === 0) return true
-      if (lastLine < lines - 1) return true
-      return rects[k - 1]!.right - rowRect.left + gap + markerWidth <= row.clientWidth
+      if (endLine < lines - 1) return true
+      return chips[k - 1]!.endRight + gap + markerWidth <= row.clientWidth
     }
 
     let k = 0
-    while (k < items.length && lineOf[k]! < lines) k++
+    while (k < items.length && lineOf(chips[k]!.endTop) < lines) k++
     while (k > 0 && !fits(k)) k--
     setShown(k)
   }, [shown, option, total])

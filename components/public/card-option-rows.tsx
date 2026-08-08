@@ -12,9 +12,15 @@
 // label and only the spill starts a new line. A wrapping flex row places whole
 // items - it dropped the values block, at its full one-line width, under the label
 // the moment it could not fit beside it, leaving line one holding nothing but
-// "Colour". Each value is an atomic inline-block chip (so a label never splits
-// mid-word across lines, and a swatch's block-level dot sits legally in inline
-// flow), spaced by margins where the flex gap used to be.
+// "Colour". Swatch values are atomic inline-block chips (a dot must not split, and
+// its block-level element needs a legal seat in inline flow), spaced by margins
+// where the flex gap used to be. TEXT values are genuinely inline - "1 Drawer
+// Fixed Pedestal" is a phrase, and treating it as an unbreakable chip made it fall
+// whole onto the next line whenever it was a whisker too wide to finish beside the
+// label, which is the bug this layout exists to fix wearing a different hat. The
+// comma still rides inside the value's own span so a line never opens with one,
+// and the interactive form is a span with role="button" rather than a <button>,
+// because a button is an atomic box by specification and can never wrap.
 //
 // Inline styles rather than a stylesheet, matching the rest of this module - a card
 // part cannot rely on shop having emitted CSS it knows nothing about, and a <style>
@@ -42,7 +48,10 @@ export type InteractiveValue = {
   active: boolean
   onMouseEnter: () => void
   onFocus: () => void
-  onClick: (event: React.MouseEvent) => void
+  // Structural rather than React.MouseEvent: text values activate from keyboard
+  // too (they are role="button" spans, see Value), and both event kinds carry
+  // the only two methods this ever calls.
+  onClick: (event: { preventDefault(): void; stopPropagation(): void }) => void
 }
 
 export type ValueInteraction = (optionIndex: number, valueIndex: number) => InteractiveValue | null
@@ -69,10 +78,12 @@ const LINE_HEIGHT_SWATCH = 1.75
 export const cardOptionsRootStyle: CSSProperties = { display: 'grid', gap: '0.25em', margin: '0.5em 0 0', padding: '0 1em' }
 const rowStyle: CSSProperties = { display: 'block', fontSize: '0.75em', color: 'var(--color-text-muted)' }
 const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)', marginRight: '0.5em' }
-// The chips. Swatches hang around the text's middle; text values stay on the
-// label's baseline. The margins are the old flex gaps.
+// The chips. Swatches hang around the text's middle, spaced by margins (the old
+// flex gap); text values are plain inline content whose words wrap like prose,
+// separated by an ordinary trailing space inside each one - a space is a break
+// opportunity, a margin is not.
 const swatchItemStyle: CSSProperties = { display: 'inline-block', verticalAlign: 'middle', marginRight: '0.333em' }
-const textItemStyle: CSSProperties = { display: 'inline-block', marginRight: '0.3em' }
+const textItemStyle: CSSProperties = { display: 'inline' }
 const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
 const thumbStyle: CSSProperties = { width: '1.5em', height: '1.5em', borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
 const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 'tabular-nums' }
@@ -81,11 +92,15 @@ const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 
 // has to sit in a line of text and a row of swatches without announcing itself as
 // a form control. `pointerEvents: auto` is the counterweight to the island root
 // turning them off - see CardOptionPreview for why the block is click-through
-// except for these.
+// except for these. Two shapes on purpose: a swatch trigger is a real <button>
+// (atomic, exactly like its dot), a text trigger is an inline span carrying
+// role="button", because a <button> is an unbreakable box by specification and a
+// multi-word value inside one could never wrap beside the label.
 const triggerStyle: CSSProperties = {
   appearance: 'none', background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
   lineHeight: 'inherit', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', pointerEvents: 'auto',
 }
+const textTriggerStyle: CSSProperties = { display: 'inline', cursor: 'pointer', pointerEvents: 'auto' }
 // Chosen: a ring round a swatch, the shop's own colour on a word. Drawn for the
 // value the picture is currently showing, so what the shopper is looking at and
 // what they are pointing at never disagree.
@@ -121,18 +136,38 @@ function Value({
   const body = showsSwatches ? <SwatchValue value={value} kind={option.kind} /> : <span>{value.label}</span>
   if (!interaction) return body
   const chosen = interaction.active
+  if (showsSwatches) {
+    return (
+      <button
+        type="button"
+        style={{ ...triggerStyle, ...(chosen ? activeSwatchStyle : null) }}
+        aria-pressed={interaction.pinned}
+        aria-label={`Show ${value.label}`}
+        onMouseEnter={interaction.onMouseEnter}
+        onFocus={interaction.onFocus}
+        onClick={interaction.onClick}
+      >
+        {body}
+      </button>
+    )
+  }
+  // Enter and Space are what a real button would answer to; preventDefault in the
+  // handler also stops Space scrolling the page, which for a button the browser
+  // would have done itself.
   return (
-    <button
-      type="button"
-      style={{ ...triggerStyle, ...(chosen ? (showsSwatches ? activeSwatchStyle : activeTextStyle) : null) }}
+    <span
+      role="button"
+      tabIndex={0}
+      style={{ ...textTriggerStyle, ...(chosen ? activeTextStyle : null) }}
       aria-pressed={interaction.pinned}
       aria-label={`Show ${value.label}`}
       onMouseEnter={interaction.onMouseEnter}
       onFocus={interaction.onFocus}
       onClick={interaction.onClick}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') interaction.onClick(event) }}
     >
       {body}
-    </button>
+    </span>
   )
 }
 
@@ -175,10 +210,13 @@ export function OptionRow({
             {...(fit != null ? { 'data-fit-item': '' } : {})}
           >
             <Value option={option} valueIndex={i} showsSwatches={showsSwatches} interaction={interactive?.(optionIndex, i) ?? null} />
-            {/* A list reads as a list, and the comma rides INSIDE the chip so a
-                line never opens with one - but outside the button, so hovering
-                "140cm" does not underline a comma along with it. */}
+            {/* A list reads as a list: the comma rides INSIDE the value's span so
+                a line never opens with one, but outside the trigger, so hovering
+                "140cm" does not underline a comma along with it. The trailing
+                space is each text value's separator AND its break opportunity;
+                a hidden value takes its space with it. */}
             {!showsSwatches && i < lastComma ? ',' : null}
+            {!showsSwatches ? ' ' : null}
           </span>
         ))}
         {showMarker && (
