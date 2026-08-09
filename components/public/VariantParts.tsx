@@ -111,42 +111,104 @@ export function missingOptionsSentence(names: string[]): string | null {
 // "Add to basket", and the button is a fixed-height pill. So the label measures
 // itself and takes its type size down until it fits on one line.
 //
-// One measurement settles it: text width scales with font size, so the natural
-// width read at whatever size it happens to be drawn at, rescaled to the button's
-// own size, divided into the room available, IS the ratio to apply. Measuring
-// always happens against a nowrap, clipped line, so the answer can never depend
-// on the size already applied and the fit cannot oscillate. A floor keeps the
-// label readable; past it the tail is clipped rather than shrunk to nothing, and
-// the wrapper's tooltip still carries the full sentence.
+// One line is tried first, and settles in one measurement: text width scales with
+// font size, so the natural width (read at whatever size it happens to be drawn
+// at, rescaled to the button's own size) divided into the room available IS the
+// ratio to apply. That measurement is always taken against a nowrap line, so the
+// answer can never depend on the size already applied and the fit cannot
+// oscillate.
+//
+// Where one line would mean type too small to read - a phone, five outstanding
+// options - the label takes a SECOND line instead of shrinking further. "Choose
+// Seats, Width Per Desk, Depth, Finish and Frame Colour first" is 65 characters,
+// and at 390px there is no honest single-line size for it: the first cut of this
+// shrank to the floor and still clipped a word off the end, which is worse than
+// the note it replaced. Two lines are searched by measurement rather than
+// arithmetic, because where a wrap falls is not something a ratio can predict:
+// step down from the size two lines could hold in theory until the text really
+// does fit in two, no wider than the button. `SINGLE_LINE_FLOOR` is where one
+// line stops being worth it; `min` is the hard floor for both.
+//
+// `width: 0` + `min-width: 100%` on the host is what makes any of that possible,
+// and is not a flourish: a nowrap line's min-content width is the WHOLE line, so
+// a plain `width: 100%` host hands the button an intrinsic minimum the length of
+// the sentence. The button then grows to fit the words rather than the words
+// shrinking to fit the button - it takes the buy row's whole width, wraps off the
+// end of the quantity stepper, and the measurement below finds all the room it
+// could ever want and never shrinks a thing. Percentages are ignored when a box's
+// intrinsic contribution is computed, so `width: 0` is what the button sizes
+// itself against (nothing, as it should be, since the label bends to the button)
+// while `min-width: 100%` is what the host is actually drawn at.
+const SINGLE_LINE_FLOOR = 13
+const FIT_LINE_HEIGHT = 1.15
+
+type FitState = { size: number | null; wrap: boolean }
+const FIT_UNMEASURED: FitState = { size: null, wrap: false }
+
 export function FitLabel({ text, min = 11 }: { text: string; min?: number }) {
   const hostRef = useRef<HTMLSpanElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
-  // null = the button's own size, which is also the server-rendered and
-  // no-JavaScript state, so hydration matches and a short label never measures
-  // its way to a different size than the HTML shipped with.
-  const [size, setSize] = useState<number | null>(null)
+  // Unmeasured = the button's own size on one line, which is also the
+  // server-rendered and no-JavaScript state, so hydration matches and a label
+  // that fits never measures its way to something different from the HTML it
+  // shipped as.
+  const [fitted, setFitted] = useState<FitState>(FIT_UNMEASURED)
 
-  // New wording starts the measurement over, adjusted during render so the size
-  // fitted to the OLD sentence never reaches the screen with the new one in it.
+  // New wording starts the measurement over, adjusted during render so the fit
+  // worked out for the OLD sentence never reaches the screen with the new one in
+  // it.
   const [measuredFor, setMeasuredFor] = useState(text)
   if (measuredFor !== text) {
     setMeasuredFor(text)
-    setSize(null)
+    setFitted(FIT_UNMEASURED)
   }
 
   useLayoutEffect(() => {
     const host = hostRef.current
     const label = textRef.current
     if (!host || !label) return
+
+    // Every measurement starts from the same place - base size, one line - so
+    // two runs of this on the same button can never disagree.
+    const apply = (state: FitState) => {
+      label.style.whiteSpace = state.wrap ? 'normal' : 'nowrap'
+      label.style.fontSize = state.size == null ? '' : `${state.size}px`
+    }
+
     const fit = () => {
       const room = host.clientWidth
       if (room <= 0) return
       const base = Number.parseFloat(getComputedStyle(host).fontSize) || 16
-      const drawn = Number.parseFloat(getComputedStyle(label).fontSize) || base
-      const natural = (label.scrollWidth * base) / drawn
-      if (natural <= room) { setSize(null); return }
-      setSize(Math.max(min, Math.floor((room / natural) * base * 10) / 10))
+      apply(FIT_UNMEASURED)
+      const natural = label.scrollWidth
+      if (natural <= room) { setFitted(FIT_UNMEASURED); return }
+
+      const single = Math.floor((room / natural) * base * 10) / 10
+      let next: FitState
+      if (single >= Math.min(base, SINGLE_LINE_FLOOR)) {
+        next = { size: single, wrap: false }
+      } else {
+        // Two lines hold twice the width, less whatever the wrap wastes at the
+        // end of the first - so the arithmetic gives the ceiling to start from
+        // and the measuring settles where it actually lands.
+        let size = Math.min(base, Math.floor(single * 1.8 * 10) / 10)
+        for (;;) {
+          apply({ size, wrap: true })
+          const fits = label.scrollWidth <= room + 1
+            && label.scrollHeight <= size * FIT_LINE_HEIGHT * 2 + 1
+          if (fits || size <= min) break
+          size = Math.max(min, Math.floor((size - 0.5) * 10) / 10)
+        }
+        next = { size, wrap: true }
+      }
+      // Straight onto the element as well as into state: the observer below can
+      // fire between paints, and leaving the base-size measurement on screen
+      // until React comes round again would show the label at full size for a
+      // frame.
+      apply(next)
+      setFitted(next)
     }
+
     fit()
     if (typeof ResizeObserver === 'undefined') return
     // The button changes width with the page (a phone turned on its side, the
@@ -160,12 +222,13 @@ export function FitLabel({ text, min = 11 }: { text: string; min?: number }) {
   }, [text, min])
 
   return (
-    <span ref={hostRef} style={{ display: 'block', width: '100%', overflow: 'hidden' }}>
+    <span ref={hostRef} style={{ display: 'block', width: 0, minWidth: '100%', overflow: 'hidden' }}>
       <span
         ref={textRef}
         style={{
-          display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          ...(size == null ? {} : { fontSize: `${size}px` }),
+          display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: FIT_LINE_HEIGHT,
+          whiteSpace: fitted.wrap ? 'normal' : 'nowrap',
+          ...(fitted.size == null ? {} : { fontSize: `${fitted.size}px` }),
         }}
       >
         {text}
