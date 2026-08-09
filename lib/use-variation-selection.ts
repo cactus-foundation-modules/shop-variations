@@ -17,6 +17,7 @@ import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/
 import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
+import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 type Entry = {
@@ -179,7 +180,10 @@ export function setAddonValue(slug: string, addonId: string, value: AddonValue):
 
 // Stable line id so re-adding an identical personalised selection merges, while
 // different inputs (or unique upload tokens) stay separate lines.
-function stableKey(childId: string, values: Record<string, AddonValue>): string {
+// Accepts the whole main-line meta bag (personalisation values and any
+// companion-stamped state alike): every entry is JSON-serialisable by the cart's
+// own rules, so the same recipe - sorted keys, stringified pairs - keys them all.
+function stableKey(childId: string, values: Record<string, unknown>): string {
   const keys = Object.keys(values).sort()
   return `${childId}:${JSON.stringify(keys.map((k) => [k, values[k]]))}`
 }
@@ -359,10 +363,31 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
       const v = addonValues[a.id]
       if (v != null && v !== '' && v !== false) filled[a.id] = v
     }
-    if (Object.keys(filled).length > 0) {
-      addToCart(targetProductId, quantity, { lineId: stableKey(targetProductId, filled), meta: { addons: filled } })
+
+    // Purchase companions: a registered page component (an accessories box, say)
+    // may ride along on this add - stamping meta onto the main line and adding
+    // lines of its own alongside. See lib/purchase-companions.ts for the
+    // contract; with nothing registered this is two empty collections and the
+    // add proceeds exactly as it always has.
+    const companions = collectPurchaseCompanions({
+      slug: slug ?? '',
+      parentProductId: payload.productId,
+      productId: targetProductId,
+      quantity,
+    })
+    const mainMeta: Record<string, unknown> = { ...companions.mainMeta }
+    if (Object.keys(filled).length > 0) mainMeta.addons = filled
+
+    if (Object.keys(mainMeta).length > 0) {
+      // The stable key folds the companion meta in, so the same variation added
+      // with a different accessory set (or none) stays its own line, while an
+      // identical re-add merges into the existing one rather than stacking.
+      addToCart(targetProductId, quantity, { lineId: stableKey(targetProductId, mainMeta), meta: mainMeta })
     } else {
       addToCart(targetProductId, quantity)
+    }
+    for (const line of companions.lines) {
+      addToCart(line.productId, line.quantity, { lineId: line.lineId, meta: line.meta })
     }
     return true
   }
