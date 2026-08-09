@@ -27,7 +27,7 @@ import type {
   ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
-import { AddonControl, AdminStockNote, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
+import { AddonControl, AdminStockNote, FitLabel, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: VariationBootstrap | null }
 
@@ -466,11 +466,14 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
             type="button" className={classNames.add} disabled={!sel.canAdd}
             onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
           >
-            {added ? 'Added ✓' : label}
+            {/* The reason the button is locked IS its label while it is locked, so
+                the shopper is answered by the control they are pressing rather
+                than by a line underneath it. `.spd-add` is a fixed-height pill, so
+                the wording sizes itself down to whatever fits on one line. */}
+            <FitLabel text={added ? 'Added ✓' : (reason ?? label)} />
           </button>
         </span>
       </div>
-      {reason && <p className={classNames.outOfStock}>{reason}</p>}
       <AdminStockNote sel={sel} />
     </div>
   )

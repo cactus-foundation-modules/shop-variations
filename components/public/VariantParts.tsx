@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useLayoutEffect, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
@@ -102,6 +102,76 @@ export function missingOptionsSentence(names: string[]): string | null {
     ? names[0]
     : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
   return `Choose ${list} first`
+}
+
+// The buy button's own words, sized to the room it has. The button says why it
+// is locked ("Choose Width and Modesty Panel first") rather than leaving that to
+// a line underneath, so the control a shopper is reaching for is the one that
+// answers them - but a reason naming three options is three times the length of
+// "Add to basket", and the button is a fixed-height pill. So the label measures
+// itself and takes its type size down until it fits on one line.
+//
+// One measurement settles it: text width scales with font size, so the natural
+// width read at whatever size it happens to be drawn at, rescaled to the button's
+// own size, divided into the room available, IS the ratio to apply. Measuring
+// always happens against a nowrap, clipped line, so the answer can never depend
+// on the size already applied and the fit cannot oscillate. A floor keeps the
+// label readable; past it the tail is clipped rather than shrunk to nothing, and
+// the wrapper's tooltip still carries the full sentence.
+export function FitLabel({ text, min = 11 }: { text: string; min?: number }) {
+  const hostRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  // null = the button's own size, which is also the server-rendered and
+  // no-JavaScript state, so hydration matches and a short label never measures
+  // its way to a different size than the HTML shipped with.
+  const [size, setSize] = useState<number | null>(null)
+
+  // New wording starts the measurement over, adjusted during render so the size
+  // fitted to the OLD sentence never reaches the screen with the new one in it.
+  const [measuredFor, setMeasuredFor] = useState(text)
+  if (measuredFor !== text) {
+    setMeasuredFor(text)
+    setSize(null)
+  }
+
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    const label = textRef.current
+    if (!host || !label) return
+    const fit = () => {
+      const room = host.clientWidth
+      if (room <= 0) return
+      const base = Number.parseFloat(getComputedStyle(host).fontSize) || 16
+      const drawn = Number.parseFloat(getComputedStyle(label).fontSize) || base
+      const natural = (label.scrollWidth * base) / drawn
+      if (natural <= room) { setSize(null); return }
+      setSize(Math.max(min, Math.floor((room / natural) * base * 10) / 10))
+    }
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    // The button changes width with the page (a phone turned on its side, the
+    // buy row wrapping), and a web font arriving late changes every measurement
+    // taken before it.
+    const observer = new ResizeObserver(fit)
+    observer.observe(host)
+    let stale = false
+    document.fonts?.ready.then(() => { if (!stale) fit() }).catch(() => {})
+    return () => { stale = true; observer.disconnect() }
+  }, [text, min])
+
+  return (
+    <span ref={hostRef} style={{ display: 'block', width: '100%', overflow: 'hidden' }}>
+      <span
+        ref={textRef}
+        style={{
+          display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          ...(size == null ? {} : { fontSize: `${size}px` }),
+        }}
+      >
+        {text}
+      </span>
+    </span>
+  )
 }
 
 // The numbered marker beside an option's name: an outlined circle while the option
@@ -1044,23 +1114,27 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
         {/* The tooltip goes on a wrapper, not on the button: a disabled control
             takes no pointer events, so its own `title` never appears - which is
             exactly the state we need to explain. The wrapper takes the flex growth
-            the button used to, and the button fills it. */}
-        <span title={reason ?? undefined} style={{ flex: 1, display: 'flex' }}>
+            the button used to, and the button fills it. `minWidth: 0` lets it
+            shrink on a narrow screen now the label inside no longer sets a floor
+            of its own - FitLabel sizes the wording to whatever room is left. */}
+        <span title={reason ?? undefined} style={{ flex: 1, display: 'flex', minWidth: 0 }}>
           <button
             type="button" disabled={!sel.canAdd}
             onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
             style={{
-              flex: 1, background: sel.canAdd ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
+              flex: 1, minWidth: 0, background: sel.canAdd ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
               color: sel.canAdd ? 'var(--color-on-primary)' : 'var(--color-text-muted)',
               border: 'none', borderRadius: 8, padding: '0.75rem 1.25rem', fontWeight: 600,
               cursor: sel.canAdd ? 'pointer' : 'not-allowed',
             }}
           >
-            {added ? 'Added ✓' : (label || 'Add to cart')}
+            {/* The reason the button is locked IS the button's label while it is
+                locked - a shopper reading the thing they are trying to press is
+                told what it wants, with no second line to find. */}
+            <FitLabel text={added ? 'Added ✓' : (reason ?? (label || 'Add to cart'))} />
           </button>
         </span>
       </div>
-      {reason && <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{reason}</p>}
       <AdminStockNote sel={sel} />
     </div>
   )
