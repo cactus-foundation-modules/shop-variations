@@ -34,17 +34,17 @@ export function VariationsImportScreen() {
       <div style={{ display: 'grid', gap: '1.5rem', maxWidth: 640 }}>
         <section style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
           <h2 style={{ fontSize: '1.0625rem', marginTop: 0 }}>Export</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>Download every variant as a CSV - one row per variant, with its options and per-variant price, stock, SKU, barcode and weight.</p>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>Download every variant as a CSV - one row per variant, with its options and per-variant price, stock, SKU, barcode and weight.</p>
           <Link className="btn btn-secondary" href="/api/m/shop-variations/admin/export">Download variations CSV</Link>
         </section>
 
         <section style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
           <h2 style={{ fontSize: '1.0625rem', marginTop: 0 }}>Import</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
             Upload a CSV in the same shape. Parent products are matched by their slug (create them in the shop first); options and variant child products are created or updated to match.
           </p>
           <input type="file" accept=".csv,text/csv" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f) }} />
-          {busy && <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>Importing…</p>}
+          {busy && <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>Importing…</p>}
           {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
           {result && (
             <div style={{ marginTop: '0.75rem' }}>

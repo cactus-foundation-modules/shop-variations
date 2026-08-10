@@ -159,7 +159,7 @@ export function OptionSourcePicker({ providers, existingOptions, onCancel, onCon
                   // keys them; a labelled section is unique by its label.
                   <div key={groupLabel ?? sources[0]?.ref ?? '_'} style={{ display: 'grid', gap: '0.375rem' }}>
                     {groupLabel && (
-                      <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{groupLabel}</span>
+                      <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>{groupLabel}</span>
                     )}
                     {sources.map((source) => {
                       // Already on this product? Say so and carry on offering it -
@@ -180,12 +180,12 @@ export function OptionSourcePicker({ providers, existingOptions, onCancel, onCon
                           <span style={{ display: 'grid', gap: '0.125rem' }}>
                             <span style={{ fontWeight: 500 }}>{source.name}</span>
                             {used.length > 0 && (
-                              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                                 Already added as {used.map((n) => `"${n}"`).join(', ')}
                               </span>
                             )}
                           </span>
-                          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', flexShrink: 0 }}>
                             {source.values.length} {source.values.length === 1 ? 'value' : 'values'}
                           </span>
                         </button>
@@ -208,7 +208,7 @@ export function OptionSourcePicker({ providers, existingOptions, onCancel, onCon
                     borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text)',
                   }}
                 />
-                <span style={{ fontSize: '0.8125rem', color: nameClashes ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                <span style={{ fontSize: '0.8125rem', color: nameClashes ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
                   {nameClashes
                     ? `This product already has an option called "${name.trim()}". Give this one a name of its own.`
                     : alreadyUsedAs(chosen.providerId, chosen.source.ref).length > 0

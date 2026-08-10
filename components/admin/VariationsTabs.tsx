@@ -21,7 +21,7 @@ export function VariationsTabs({ active }: { active: 'reports' | 'import' }) {
           href={`/${adminPath}/m/shop-variations/${t.href}`}
           style={{
             padding: '0.5rem 0.875rem', textDecoration: 'none', fontSize: '0.875rem', fontWeight: active === t.key ? 600 : 400,
-            color: active === t.key ? 'var(--color-text)' : 'var(--color-text-muted)',
+            color: active === t.key ? 'var(--color-text)' : 'var(--color-text-secondary)',
             borderBottom: `2px solid ${active === t.key ? 'var(--color-primary)' : 'transparent'}`,
           }}
         >

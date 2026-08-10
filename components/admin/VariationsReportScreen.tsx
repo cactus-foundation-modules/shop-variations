@@ -36,17 +36,17 @@ export function VariationsReportScreen() {
       <VariationsTabs active="reports" />
 
       {!loaded ? null : report.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No variant sales yet. Once orders come in for products with variations, they&apos;ll roll up here.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>No variant sales yet. Once orders come in for products with variations, they&apos;ll roll up here.</p>
       ) : (
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           {report.map((p) => (
             <section key={p.parentId} style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '1rem', flexWrap: 'wrap' }}>
                 <h2 style={{ fontSize: '1.0625rem', margin: 0 }}>{p.parentName}</h2>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>{p.totalUnits} sold · {money(p.totalRevenue)}</span>
+                <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>{p.totalUnits} sold · {money(p.totalRevenue)}</span>
               </div>
               {(p.best || p.worst) && (
-                <p style={{ margin: '0.5rem 0 0.75rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                <p style={{ margin: '0.5rem 0 0.75rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                   {p.best && <>Best: <strong>{p.best.name}</strong> ({p.best.units}). </>}
                   {p.worst && <>Slowest: <strong>{p.worst.name}</strong> ({p.worst.units}).</>}
                 </p>

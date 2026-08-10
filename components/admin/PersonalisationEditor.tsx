@@ -24,7 +24,7 @@ export function PersonalisationEditor({ productId, addons, currency, onChange }:
   return (
     <section style={{ display: 'grid', gap: '0.75rem' }}>
       <h2 style={{ fontSize: '1.125rem', margin: 0 }}>Personalisation</h2>
-      <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+      <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>
         Extra fields a shopper fills in - engraving text, gift messages, dropdowns, dates or artwork uploads. Prices are added on top of the variant price.
       </p>
 
@@ -34,7 +34,7 @@ export function PersonalisationEditor({ productId, addons, currency, onChange }:
             <li key={a.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '0.625rem 0.875rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
               <span>
                 <strong>{a.label}</strong>{' '}
-                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                   {TYPE_LABELS[a.type]}{a.required ? ' · required' : ''}{describePrice(a.config, currency)}
                 </span>
               </span>

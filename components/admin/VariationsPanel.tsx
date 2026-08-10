@@ -789,7 +789,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   const source = describeSource(opt)
                   if (!source) return null
                   return (
-                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                       {source.sourceName ? (
                         <>
                           From {source.providerLabel.toLowerCase()}:{' '}
@@ -807,7 +807,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     stays hidden until every option above it has been chosen, not
                     just the one directly before. */}
                 {oi > 0 && (
-                  <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+                  <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                     <input
                       type="checkbox"
                       checked={opt.requiresPreviousOption}
@@ -835,7 +835,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   const hasDuplicates = [...counts.values()].some((n) => n > 1)
                   if (!hasDuplicates || (opt.controlType !== 'DROPDOWN' && opt.controlType !== 'PILL')) return null
                   return (
-                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: 'var(--color-warning, var(--color-text-muted))' }}>
+                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: 'var(--color-warning, var(--color-text-secondary))' }}>
                       Two or more values here share a name. This control shows text only, so shoppers cannot tell
                       them apart - switch to a swatch or picture control, or rename one of them.
                     </p>
@@ -875,7 +875,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                           "(slug)Label", and here it is what tells two Blacks
                           apart. */}
                       {opt.values.some((s) => s.id !== v.id && s.label.trim().toLowerCase() === v.label.trim().toLowerCase()) && (
-                        <span title={`Spreadsheet spelling: (${v.slug})${v.label}`} style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>({v.slug})</span>
+                        <span title={`Spreadsheet spelling: (${v.slug})${v.label}`} style={{ fontSize: '0.6875rem', color: 'var(--color-text-secondary)' }}>({v.slug})</span>
                       )}
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
@@ -903,7 +903,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
               reason is spelled out rather than left as an empty box. */}
           {sourceProviders.length > 0 ? (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
+              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
                 Options come from the lists you have already set up:
               </span>
               <button type="button" className="btn btn-primary btn-sm" onClick={() => setPickerOpen(true)} disabled={busy}>
@@ -911,7 +911,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
               </button>
             </div>
           ) : (
-            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: 0 }}>
               Options are built from ready-made lists, and nothing is offering any yet. Set up your product attributes
               first, then come back and pick from them here.
             </p>
@@ -919,7 +919,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
         </div>
 
         {refreshNote && (
-          <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }} role="status">{refreshNote}</p>
+          <p style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }} role="status">{refreshNote}</p>
         )}
 
         {pickerOpen && (
@@ -971,7 +971,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
             )}
           </div>
         )}
-        {message && <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: '0 0 0.75rem' }}>{message}</p>}
+        {message && <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: '0 0 0.75rem' }}>{message}</p>}
 
         {data.variants.length === 0 ? (
           <p className="spe-empty">
@@ -1173,7 +1173,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   })}
                   {visibleVariants.length === 0 && (
                     <tr>
-                      <td colSpan={99} style={{ padding: '1.25rem 0.5rem', color: 'var(--color-text-muted)' }}>
+                      <td colSpan={99} style={{ padding: '1.25rem 0.5rem', color: 'var(--color-text-secondary)' }}>
                         Nothing matches those choices. This product has no variant with that combination.
                       </td>
                     </tr>
@@ -1267,7 +1267,7 @@ function CardDisplayControls({ option, disabled, onToggle, onLabel, onShow }: {
   const showsSwatches = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
   const countLabel = showsSwatches ? 'Swatches shown' : 'Options shown'
   const things = showsSwatches ? 'swatches' : 'options'
-  const rowText: CSSProperties = { display: 'inline-flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', color: 'var(--color-text-muted)' }
+  const rowText: CSSProperties = { display: 'inline-flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }
   const box: CSSProperties = { padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)', font: 'inherit', fontSize: '0.8125rem' }
 
   const LINE_WORDS = ['one', 'two', 'three', 'four', 'five', 'six']
@@ -1367,7 +1367,7 @@ function DragGrip({ label, disabled, onDragStart, onDragEnd }: {
       onDragEnd={onDragEnd}
       style={{
         cursor: disabled ? 'default' : 'grab',
-        color: 'var(--color-text-muted)',
+        color: 'var(--color-text-secondary)',
         fontSize: '0.875rem',
         lineHeight: 1,
         userSelect: 'none',
@@ -1512,7 +1512,7 @@ function InlineSwatch({ value, label, onSave, disabled }: {
       aria-label={value ? `Change the colour for ${label}` : `Set a colour for ${label}`}
       disabled={disabled}
       onClick={() => { setDraft(value ?? DEFAULT_SWATCH); setEditing(true) }}
-      style={{ width: 14, height: 14, padding: 0, flexShrink: 0, borderRadius: 'var(--radius-full)', cursor: 'pointer', background: value ?? 'transparent', border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)' }}
+      style={{ width: 14, height: 14, padding: 0, flexShrink: 0, borderRadius: 'var(--radius-full)', cursor: 'pointer', background: value ?? 'transparent', border: value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-secondary)' }}
     />
   )
 }
@@ -1597,16 +1597,16 @@ function InlineImageSwatch({ value, previewUrl, label, onSave, disabled, resolve
           cursor: busy ? 'progress' : 'pointer',
           border: dragOver
             ? '2px solid var(--color-primary)'
-            : value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-muted)',
+            : value ? '1px solid var(--color-border)' : '1px dashed var(--color-text-secondary)',
         }}
       >
         {saving ? (
-          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-muted)' }}>…</span>
+          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: 'var(--color-text-secondary)' }}>…</span>
         ) : value ? (
           // eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader
           <img src={previewUrl ?? value} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
-          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>＋</span>
+          <span aria-hidden style={{ fontSize: '0.625rem', lineHeight: 1, color: dragOver ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}>＋</span>
         )}
       </button>
       {error && (
@@ -1783,14 +1783,14 @@ function AddSingleVariant({ options, disabled, onAdd }: {
   return (
     <div style={{ border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem', display: 'grid', gap: '0.5rem', marginTop: '0.75rem' }}>
       <strong style={{ fontSize: '0.875rem' }}>Add a single variant</strong>
-      <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0 }}>
+      <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', margin: 0 }}>
         Pick one value for each option to add just that combination. It slots into the same place a full generate would put it.
       </p>
       {error && <p className="spe-error" role="alert"><span aria-hidden>⚠</span>{error}</p>}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {usable.map((o) => (
           <label key={o.id} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8125rem' }}>
-            <span style={{ color: 'var(--color-text-muted)' }}>{o.name}</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>{o.name}</span>
             <select
               value={valueFor(o)}
               disabled={busy}
@@ -1849,7 +1849,7 @@ function VariantFilterBar({ options, filter, reachable, shown, total, onChange, 
         const values = option.values.filter((v) => v.id === chosen || !live || live.has(v.id))
         return (
           <label key={option.id} style={{ display: 'grid', gap: '0.25rem', fontSize: '0.8125rem' }}>
-            <span style={{ color: 'var(--color-text-muted)' }}>{option.name}</span>
+            <span style={{ color: 'var(--color-text-secondary)' }}>{option.name}</span>
             <select
               value={chosen}
               onChange={(e) => onChange(option.id, e.target.value)}
@@ -1864,7 +1864,7 @@ function VariantFilterBar({ options, filter, reachable, shown, total, onChange, 
       {active && (
         <>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClear}>Show all</button>
-          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', paddingBottom: '0.4375rem' }} role="status">
+          <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)', paddingBottom: '0.4375rem' }} role="status">
             Showing {shown} of {total}
           </span>
         </>
@@ -1890,7 +1890,7 @@ function BulkControls({ currency, scoped, onSetPrice, onSetStock, disabled }: {
   const small: CSSProperties = { padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: 80, fontSize: '0.8125rem', background: 'var(--color-bg)', color: 'var(--color-text)' }
   return (
     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8125rem' }}>
-      <span style={{ color: 'var(--color-text-muted)' }}>{scoped ? 'Fill the rows shown:' : 'Fill every row:'}</span>
+      <span style={{ color: 'var(--color-text-secondary)' }}>{scoped ? 'Fill the rows shown:' : 'Fill every row:'}</span>
       <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
         {currency}<input type="number" min={0} step="0.01" placeholder="price" aria-label={`Price for ${scopeWord}`} value={price} onChange={(e) => setPrice(e.target.value)} style={small} />
         <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || price === ''} onClick={() => onSetPrice(Number(price))}>Apply</button>
@@ -1982,7 +1982,7 @@ function ImageCell({ urls, onSet, resolveUploadFolderId, resolveBrowseFolderId }
           title="Click to choose from the library, or drop images here"
         >
           {uploading ? (
-            <span style={{ ...boxBase, border: '1px dashed var(--color-primary)', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>…</span>
+            <span style={{ ...boxBase, border: '1px dashed var(--color-primary)', color: 'var(--color-text-secondary)', fontSize: '0.75rem' }}>…</span>
           ) : url ? (
             <span style={{ position: 'relative', display: 'inline-flex' }}>
               {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
@@ -2001,7 +2001,7 @@ function ImageCell({ urls, onSet, resolveUploadFolderId, resolveBrowseFolderId }
               )}
             </span>
           ) : (
-            <span style={{ ...boxBase, border: dragOver ? '2px solid var(--color-primary)' : '1px dashed var(--color-border)', color: dragOver ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: '0.75rem' }}>＋</span>
+            <span style={{ ...boxBase, border: dragOver ? '2px solid var(--color-primary)' : '1px dashed var(--color-border)', color: dragOver ? 'var(--color-primary)' : 'var(--color-text-secondary)', fontSize: '0.75rem' }}>＋</span>
           )}
         </button>
         {error && (
