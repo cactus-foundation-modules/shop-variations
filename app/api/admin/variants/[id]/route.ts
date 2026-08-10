@@ -15,6 +15,9 @@ const Body = z.object({
   tradePrice: z.number().nonnegative().nullable().optional(),
   costPrice: z.number().nonnegative().nullable().optional(),
   sku: z.string().max(120).nullable().optional(),
+  // The code to order this variation under while it is on offer. Not unique, and
+  // never a match key - the SKU stays the identity.
+  saleSku: z.string().max(120).nullable().optional(),
   barcode: z.string().max(120).nullable().optional(),
   supplier: z.string().max(200).nullable().optional(),
   trackInventory: z.boolean().optional(),
@@ -54,6 +57,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (data.tradePrice !== undefined) productFields.tradePrice = data.tradePrice
   if (data.costPrice !== undefined) productFields.costPrice = data.costPrice
   if (data.sku !== undefined) productFields.sku = data.sku
+  if (data.saleSku !== undefined) productFields.saleSku = data.saleSku
   if (data.barcode !== undefined) productFields.barcode = data.barcode
   if (data.supplier !== undefined) productFields.supplier = data.supplier
   if (data.trackInventory !== undefined) productFields.trackInventory = data.trackInventory

@@ -37,6 +37,9 @@ export type ChildProductFields = {
   tradePrice: number | null
   costPrice: number | null
   sku: string | null
+  // The code the supplier wants while this variation is on offer. Sits beside
+  // the SKU rather than replacing it - see shop's 018_sale_sku.sql.
+  saleSku: string | null
   barcode: string | null
   supplier: string | null
   stockCount: number | null
@@ -46,8 +49,8 @@ export type ChildProductFields = {
 export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
   const map = new Map<string, ChildProductFields>()
   if (childProductIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
-    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "barcode", "supplier", "stock_count", "weight"
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; sale_sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
+    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "sale_sku", "barcode", "supplier", "stock_count", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
   `
   for (const r of rows) {
@@ -58,6 +61,7 @@ export async function getChildProductFields(childProductIds: string[]): Promise<
       tradePrice: r.trade_price == null ? null : Number(r.trade_price),
       costPrice: r.cost_price == null ? null : Number(r.cost_price),
       sku: r.sku ?? null,
+      saleSku: r.sale_sku ?? null,
       barcode: r.barcode ?? null,
       supplier: r.supplier ?? null,
       stockCount: r.stock_count == null ? null : Number(r.stock_count),

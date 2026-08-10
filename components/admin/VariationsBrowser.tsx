@@ -282,7 +282,12 @@ function Row({ row, columns, adminPath, currencySymbol }: {
         {!row.enabled && <span className="badge badge-default" style={{ marginLeft: '0.5rem' }}>Disabled</span>}
       </td>
       <td>{row.label || <span className="svb-muted">—</span>}</td>
-      <td className="svb-muted">{row.sku || '—'}</td>
+      <td className="svb-muted">
+        {row.sku || '—'}
+        {/* The offer code, and only while there is an offer on: a sale SKU left
+            behind on a row that has come off sale is a record, not an order. */}
+        {row.saleSku && onSale && <div className="svb-salesku">on offer: {row.saleSku}</div>}
+      </td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {formatMoney(onSale ? row.salePrice : row.price, currencySymbol)}
         {onSale && <span className="svb-was">{formatMoney(row.price, currencySymbol)}</span>}
@@ -319,6 +324,7 @@ const css = `
 .svb-name:hover { text-decoration: underline; }
 .svb-disabled { opacity: 0.6; }
 .svb-was { margin-left: 0.4rem; color: var(--color-text-secondary); text-decoration: line-through; }
+.svb-salesku { margin-top: 0.125rem; font-size: 0.75rem; color: var(--color-text-secondary); }
 .svb-pager { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; }
 .svb-pager-btns { display: flex; align-items: center; gap: 0.5rem; }
 .svb-combo { position: relative; }

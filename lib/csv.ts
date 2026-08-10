@@ -100,7 +100,9 @@ export async function exportVariationsCsv(): Promise<string> {
   // in the sheet reads as "rename this variant's value", not "delete this variant
   // and create a stranger". A sheet from before the column existed still imports
   // by value-set exactly as it always did.
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
+  // Sale SKU sits next to the SKU it stands in for while an offer runs, not with
+  // the prices: it is a code, and the eye looking for a code looks there.
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -121,7 +123,7 @@ export async function exportVariationsCsv(): Promise<string> {
       })
       lines.push(toCsvRow([
         p.product.slug, p.product.name, ...pairs,
-        v.sku ?? '', String(v.price),
+        v.sku ?? '', v.saleSku ?? '', String(v.price),
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
         v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         v.childProductId,
@@ -200,6 +202,10 @@ export async function importVariationsCsv(
   const slugCol = idx('Parent Slug')
   if (slugCol < 0) { result.errors.push({ row: 1, reason: 'Missing "Parent Slug" column' }); return result }
   const skuCol = idx('Variant SKU'), priceCol = idx('Price'), stockCol = idx('Stock'), barcodeCol = idx('Barcode'), supplierCol = idx('Supplier'), weightCol = idx('Weight'), imageCol = idx('Image'), idCol = idx('Variant ID')
+  // The offer code. Absent from every sheet written before it existed, which
+  // leaves the field alone rather than blanking it - the same rule every other
+  // late-arriving column follows.
+  const saleSkuCol = idx('Sale SKU')
   const salePriceCol = idx('Sale Price'), rrpCol = idx('RRP'), tradePriceCol = idx('Trade Price'), costPriceCol = idx('Cost Price')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
@@ -610,6 +616,7 @@ export async function importVariationsCsv(
           tradePrice: tradePriceCol >= 0 ? optPrice(gr.cols[tradePriceCol]) : undefined,
           costPrice: costPriceCol >= 0 ? optPrice(gr.cols[costPriceCol]) : undefined,
           sku: skuCol >= 0 ? (gr.cols[skuCol]?.trim() || null) : undefined,
+          saleSku: saleSkuCol >= 0 ? (gr.cols[saleSkuCol]?.trim() || null) : undefined,
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
           supplier: supplierCol >= 0 ? (gr.cols[supplierCol]?.trim() || null) : undefined,
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,

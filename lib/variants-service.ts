@@ -532,6 +532,10 @@ export type VariantEditorRow = {
   tradePrice: number | null
   costPrice: number | null
   sku: string | null
+  // The code this variation is ordered under while it is on offer, where the
+  // supplier issues a separate one. Offered in the grid only where the shop has
+  // the sale price type switched on, since that is when it applies.
+  saleSku: string | null
   barcode: string | null
   // Who supplied this particular variation. Offered in the grid only when the
   // shop has switched the supplier field on for variations as well as products.
@@ -558,6 +562,7 @@ function optionalPrice(value: unknown): number | null {
 }
 
 type ChildEditRow = ChildRow & {
+  sale_sku: string | null
   barcode: string | null
   supplier: string | null
   weight: unknown
@@ -602,6 +607,7 @@ function buildEditorPayload(
       tradePrice: optionalPrice(child?.trade_price),
       costPrice: optionalPrice(child?.cost_price),
       sku: child?.sku ?? null,
+      saleSku: child?.sale_sku ?? null,
       barcode: child?.barcode ?? null,
       supplier: child?.supplier ?? null,
       trackInventory: child?.track_inventory ?? false,
@@ -626,7 +632,7 @@ async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: 
   if (childIds.length === 0) return { childById, imagesByChild }
   const childRows = await prisma.$queryRaw<ChildEditRow[]>`
     SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-           "sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
+           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
   `
   for (const r of childRows) childById.set(r.id, r)
@@ -732,6 +738,7 @@ export async function upsertVariantForCombination(
     tradePrice?: number | null
     costPrice?: number | null
     sku?: string | null
+    saleSku?: string | null
     barcode?: string | null
     supplier?: string | null
     stockCount?: number | null
@@ -798,6 +805,7 @@ export async function upsertVariantForCombination(
       || (fields.tradePrice !== undefined && curPrice(currentChild.tradePrice) !== fields.tradePrice)
       || (fields.costPrice !== undefined && curPrice(currentChild.costPrice) !== fields.costPrice)
       || (fields.sku !== undefined && (currentChild.sku ?? null) !== (fields.sku ?? null))
+      || (fields.saleSku !== undefined && (currentChild.saleSku ?? null) !== (fields.saleSku ?? null))
       || (fields.barcode !== undefined && (currentChild.barcode ?? null) !== (fields.barcode ?? null))
       || (fields.supplier !== undefined && (currentChild.supplier ?? null) !== (fields.supplier ?? null))
       || (fields.stockCount !== undefined && currentChild.stockCount !== fields.stockCount)
@@ -812,6 +820,7 @@ export async function upsertVariantForCombination(
       ...(fields.tradePrice !== undefined ? { tradePrice: fields.tradePrice } : {}),
       ...(fields.costPrice !== undefined ? { costPrice: fields.costPrice } : {}),
       ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
+      ...(fields.saleSku !== undefined ? { saleSku: fields.saleSku } : {}),
       ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
       ...(fields.supplier !== undefined ? { supplier: fields.supplier } : {}),
       ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),

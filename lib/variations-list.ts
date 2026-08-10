@@ -41,6 +41,9 @@ export type VariationListRow = {
   label: string
   enabled: boolean
   sku: string | null
+  /** The code this one is ordered under while it is on offer, where the supplier
+   * issues a separate one. Shown beside the SKU when the row is actually on sale. */
+  saleSku: string | null
   price: number
   salePrice: number | null
   trackInventory: boolean
@@ -106,6 +109,7 @@ type BaseRow = {
   price: unknown
   sale_price: unknown
   sku: string | null
+  sale_sku: string | null
   track_inventory: boolean
   stock_count: number | null
   image_url: string | null
@@ -199,7 +203,7 @@ export async function getVariationsList(
     SELECT
       v."id" AS variant_id, v."product_id", v."child_product_id", v."enabled",
       p."name" AS product_name, p."slug" AS product_slug,
-      c."price", c."sale_price", c."sku", c."track_inventory", c."stock_count",
+      c."price", c."sale_price", c."sku", c."sale_sku", c."track_inventory", c."stock_count",
       (SELECT m."url" FROM "shp_product_media" m
         WHERE m."product_id" = v."child_product_id" AND m."type" = 'IMAGE'
         ORDER BY m."is_primary" DESC, m."position" ASC LIMIT 1) AS image_url
@@ -304,6 +308,7 @@ export async function getVariationsList(
       label: labelByVariant.get(r.variant_id) ?? '',
       enabled: r.enabled,
       sku: r.sku ?? null,
+      saleSku: r.sale_sku ?? null,
       price: r.price == null ? 0 : Number(r.price),
       salePrice: r.sale_price == null ? null : Number(r.sale_price),
       trackInventory: r.track_inventory,

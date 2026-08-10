@@ -29,7 +29,7 @@ type Option = {
 }
 type VariantRow = {
   variantId: string; childProductId: string; optionValueIds: string[]; label: string
-  enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; barcode: string | null; supplier: string | null
+  enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; saleSku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
 }
@@ -42,7 +42,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -135,6 +135,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     () => OPTIONAL_PRICE_FIELDS.filter((p) => enabledPriceTypes.includes(p.type)),
     [enabledPriceTypes],
   )
+  // The Sale SKU column rides with the sale price: a shop that never runs offers
+  // has no use for the code you would order one under, and the grid is already
+  // wider than a laptop.
+  const saleSkuColumn = enabledPriceTypes.includes('sale')
   const [data, setData] = useState<Payload | null>(null)
   const [edits, setEdits] = useState<Record<string, VariantEdit>>({})
   // Variant ids ticked for a bulk delete. Pruned to what still exists whenever
@@ -1028,6 +1032,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <th style={{ padding: '0.5rem' }}>Price</th>
                     {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
+                    {saleSkuColumn && (
+                      <th style={{ padding: '0.5rem' }} title="The code to order this variation under while it is on offer, where the supplier issues a separate one. The SKU itself stays put, so stock lists still match.">
+                        Sale SKU
+                      </th>
+                    )}
                     {supplierField && <th style={{ padding: '0.5rem' }}>{supplierField.label}</th>}
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
@@ -1106,6 +1115,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             onChange={(e) => editVariant(v.variantId, { sku: e.target.value || null })}
                           />
                         </td>
+                        {saleSkuColumn && (
+                          <td style={{ padding: '0.5rem' }}>
+                            <input
+                              style={{ ...input, width: 120 }} placeholder="—"
+                              aria-label={`Sale SKU for ${v.label}`}
+                              value={valueOf(v, 'saleSku') ?? ''}
+                              onChange={(e) => editVariant(v.variantId, { saleSku: e.target.value || null })}
+                            />
+                          </td>
+                        )}
                         {supplierField && (
                           <td style={{ padding: '0.5rem' }}>
                             <SupplierCell
