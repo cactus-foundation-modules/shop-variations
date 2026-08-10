@@ -44,6 +44,16 @@ export const GALLERY_PINNED_CLASS = 'svr-gallery-pinned'
 // the two islands sharing refs.
 export const OPTIONS_AREA_CLASS = 'svr-options'
 
+// The published seam for anything else in the buy column that is part of
+// configuring the purchase - the add-ons box being the case that prompted it.
+// Those boxes sit BELOW the option pickers, so measuring the pickers alone let
+// the strip go the moment the shopper scrolled into them, and the picture they
+// were configuring left the screen exactly when they needed it. Any element
+// carrying this attribute extends the pin's release point as if it were part of
+// the options area; it carries no styling and needs no import beyond this
+// constant.
+export const GALLERY_HOLD_ATTR = 'data-svr-hold-gallery'
+
 export function useStickyMobileGallery(enabled: boolean): {
   colRef: RefObject<HTMLDivElement | null>
   spacerRef: RefObject<HTMLDivElement | null>
@@ -58,6 +68,11 @@ export function useStickyMobileGallery(enabled: boolean): {
     if (!col || !spacer) return
 
     let pinned = false
+    // Assigned below, once `update` exists to be the observer's callback; the
+    // holders it watches are picked up as they appear, since the add-ons box
+    // mounts after its own payload arrives.
+    let ro: ResizeObserver | null = null
+    const observed = new Set<Element>()
     // Measured once actually pinned; until then estimated as half the column's
     // width (the stage is square and takes half the row) so the first pin fires
     // at roughly the right scroll offset. A wrong estimate self-corrects on the
@@ -91,28 +106,43 @@ export function useStickyMobileGallery(enabled: boolean): {
       spacer.style.height = '0px'
     }
 
+    // Everything that holds the gallery up: the option pickers, plus any box a
+    // companion module has marked as part of configuring (GALLERY_HOLD_ATTR).
+    const holders = (): HTMLElement[] =>
+      Array.from(document.querySelectorAll<HTMLElement>(`.${OPTIONS_AREA_CLASS}, [${GALLERY_HOLD_ATTR}]`))
+
     const update = () => {
-      const opts = document.querySelector(`.${OPTIONS_AREA_CLASS}`)
-      if (!opts) {
+      const els = holders()
+      if (els.length === 0) {
         if (pinned) unpin()
         return
       }
+      if (ro) for (const el of els) if (!observed.has(el)) { ro.observe(el); observed.add(el) }
       // The gallery's natural place in the flow: its own box while unpinned,
       // the spacer holding that place while pinned.
       const flow = (pinned ? spacer : col).getBoundingClientRect()
-      const optsRect = opts.getBoundingClientRect()
-      // Stacked = the options sit below the gallery in the same column. On a
-      // two-column desktop layout they sit beside it and this never matches.
-      const stacked = optsRect.top >= flow.bottom - 1 && optsRect.left < flow.right && optsRect.right > flow.left
-      if (!stacked) {
+      // Stacked = the holders sit below the gallery in the same column. On a
+      // two-column desktop layout they sit beside it and nothing matches. Each
+      // is judged on its own so one in a hidden tab panel (no box at all) or off
+      // to the side cannot drag the release point around; the pin lasts until
+      // the LAST stacked one has scrolled past.
+      let holdBottom = -Infinity
+      for (const el of els) {
+        const r = el.getBoundingClientRect()
+        if (r.width === 0 && r.height === 0) continue
+        if (r.top < flow.bottom - 1) continue
+        if (r.left >= flow.right || r.right <= flow.left) continue
+        if (r.bottom > holdBottom) holdBottom = r.bottom
+      }
+      if (holdBottom === -Infinity) {
         if (pinned) unpin()
         return
       }
       const h = headerH() + tabNavH()
       const stripH = compactH > 0 ? compactH : flow.width / 2 + 16
       // Pin while the gallery has scrolled up past where the compact strip sits,
-      // and the options' end hasn't yet.
-      const shouldPin = flow.bottom <= h + stripH && optsRect.bottom >= h + stripH
+      // and the last thing being configured hasn't yet.
+      const shouldPin = flow.bottom <= h + stripH && holdBottom >= h + stripH
       if (shouldPin && !pinned) {
         pinned = true
         spacer.style.height = `${flow.height}px`
@@ -133,19 +163,19 @@ export function useStickyMobileGallery(enabled: boolean): {
       }
     }
 
+    // The options area grows and shrinks as picks hide or reveal later options,
+    // and an add-ons box opens right out as a shopper ticks one, which moves the
+    // release point without any scroll happening.
+    ro = new ResizeObserver(() => update())
+    ro.observe(col)
     update()
     window.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
-    // The options area grows and shrinks as picks hide or reveal later options,
-    // which moves the release point without any scroll happening.
-    const ro = new ResizeObserver(update)
-    const opts = document.querySelector(`.${OPTIONS_AREA_CLASS}`)
-    if (opts) ro.observe(opts)
-    ro.observe(col)
     return () => {
       window.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
-      ro.disconnect()
+      ro?.disconnect()
+      observed.clear()
       unpin()
     }
   }, [enabled])
