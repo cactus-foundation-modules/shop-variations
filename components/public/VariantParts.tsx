@@ -111,12 +111,17 @@ export function missingOptionsSentence(names: string[]): string | null {
 // "Add to basket", and the button is a fixed-height pill. So the label measures
 // itself and takes its type size down until it fits on one line.
 //
-// One line is tried first, and settles in one measurement: text width scales with
-// font size, so the natural width (read at whatever size it happens to be drawn
-// at, rescaled to the button's own size) divided into the room available IS the
-// ratio to apply. That measurement is always taken against a nowrap line, so the
-// answer can never depend on the size already applied and the fit cannot
-// oscillate.
+// One line is tried first. Text width scales with font size only approximately -
+// subpixel rounding and hinting mean a size computed by straight arithmetic (the
+// natural width read at whatever size it happens to be drawn at, rescaled to the
+// button's own size) can come out a fraction too big, and the label always
+// carries `overflow: hidden; text-overflow: ellipsis` - so an estimate trusted
+// blind does not overflow visibly, it just loses its last word or two under the
+// ellipsis, which reads as a clipped sentence rather than a shrunk one. So the
+// arithmetic is a starting point, not the answer: applied, then measured for
+// real, and crept down half a pixel at a time until the actual box holds the
+// actual text. Every step re-measures against a nowrap line, so the answer can
+// never depend on the size already applied and the fit cannot oscillate.
 //
 // Where one line would mean type too small to read - a phone, five outstanding
 // options - the label takes a SECOND line instead of shrinking further. "Choose
@@ -183,15 +188,33 @@ export function FitLabel({ text, min = 11 }: { text: string; min?: number }) {
       const natural = label.scrollWidth
       if (natural <= room) { setFitted(FIT_UNMEASURED); return }
 
-      const single = Math.floor((room / natural) * base * 10) / 10
+      const singleFloor = Math.min(base, SINGLE_LINE_FLOOR)
+      // The arithmetic ratio is a fast starting point, not the answer - apply
+      // it, measure for real, and creep down half a pixel at a time until the
+      // actual box holds the actual text. Anything that clears singleFloor
+      // wins outright; falling through it means one line was never honestly
+      // readable for this sentence, not that the last attempt is good enough.
+      const estimate = Math.floor((room / natural) * base * 10) / 10
+      let size = estimate
+      let fitsOneLine = false
+      while (size >= singleFloor) {
+        apply({ size, wrap: false })
+        if (label.scrollWidth <= room) { fitsOneLine = true; break }
+        size = Math.floor((size - 0.5) * 10) / 10
+      }
+
       let next: FitState
-      if (single >= Math.min(base, SINGLE_LINE_FLOOR)) {
-        next = { size: single, wrap: false }
+      if (fitsOneLine) {
+        next = { size, wrap: false }
       } else {
         // Two lines hold twice the width, less whatever the wrap wastes at the
-        // end of the first - so the arithmetic gives the ceiling to start from
-        // and the measuring settles where it actually lands.
-        let size = Math.min(base, Math.floor(single * 1.8 * 10) / 10)
+        // end of the first - so the one-line estimate gives the ceiling to
+        // start from and the measuring settles where it actually lands. Also
+        // clamped up to `min` before the first attempt: an extreme case (four
+        // options outstanding on a phone) can seed below the floor, and if
+        // that happened to fit outright the loop would return it without ever
+        // reaching the check that enforces the floor on the way down.
+        size = Math.max(min, Math.min(base, Math.floor(estimate * 1.8 * 10) / 10))
         for (;;) {
           apply({ size, wrap: true })
           const fits = label.scrollWidth <= room + 1
