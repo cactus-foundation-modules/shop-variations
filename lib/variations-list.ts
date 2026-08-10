@@ -91,7 +91,7 @@ export const LOST_PREFIX = 'lost:'
  * against the values its provider hands back. A merged column id always carries a
  * `#`, so neither name here can ever be one.
  */
-const BUILT_IN_MISSING = new Set(['image', 'sku'])
+const BUILT_IN_MISSING = new Set(['image', 'sku', 'stock'])
 
 const DEFAULT_PER_PAGE = 50
 const MAX_PER_PAGE = 200
@@ -187,6 +187,12 @@ export async function getVariationsList(
   // has gone missing entirely has not got one either - both count as unset.
   if (missing === 'sku') {
     where.push(Prisma.sql`(c."sku" IS NULL OR btrim(c."sku") = '')`)
+  }
+  // Only counts against variations that track inventory at all - an untracked one
+  // has no stock number by design, not by omission. Zero is a real stock number
+  // (out of stock), so it must not be caught here alongside NULL.
+  if (missing === 'stock') {
+    where.push(Prisma.sql`(c."track_inventory" = true AND c."stock_count" IS NULL)`)
   }
 
   const baseRows = await prisma.$queryRaw<BaseRow[]>`

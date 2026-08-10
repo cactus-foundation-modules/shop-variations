@@ -162,6 +162,7 @@ export function VariationsBrowser() {
     () => [
       { id: 'image', label: 'Image' },
       { id: 'sku', label: 'SKU' },
+      { id: 'stock', label: 'Stock Number' },
       ...columns.map((c) => ({ id: c.id, label: c.label })),
     ],
     [columns],
