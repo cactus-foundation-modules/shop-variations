@@ -380,6 +380,41 @@ export function AdminStockNote({ sel }: { sel: ReturnType<typeof useVariationSel
   )
 }
 
+// The chosen combination's own codes, for staff, sat with the buy row alongside
+// the stock figure. Same withholding as that one: the codes are absent from a
+// shopper's payload entirely (shop's lib/admin-codes.ts), so this needs no
+// permission check of its own and there is nothing in the network tab either.
+//
+// Held back until every option is settled, deliberately. A half-built
+// configuration matches no single row, so there is no code to print - and a
+// stale one left on screen from the last complete combination is worse than
+// none, because it is the thing the owner would go and order.
+export function AdminSkuNote({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+  if (!sel.payload?.showCodes) return null
+  // With no options in play the parent row IS what is being bought, and shop's
+  // own SKU part already writes its codes further up the page - printing them
+  // again here would just say the same thing twice.
+  if (!sel.hasOptions || !sel.variant) return null
+  const sku = sel.variant.sku ?? null
+  const saleSku = sel.variant.saleSku ?? null
+  if (!sku && !saleSku) return null
+  return (
+    <p
+      style={{
+        margin: '10px 0 0', display: 'inline-flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap',
+        padding: '5px 10px', borderRadius: 8,
+        border: '1px dashed var(--color-border)', background: 'var(--color-surface)',
+        color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: 1.35,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {sku && <strong style={{ fontWeight: 700 }}>SKU: {sku}</strong>}
+      {saleSku && <strong style={{ fontWeight: 700 }}>Sale SKU: {saleSku}</strong>}
+      <span>staff only</span>
+    </p>
+  )
+}
+
 // The pill that sits over the gallery stage once the shopper has settled on a
 // combination and the stage is showing THAT combination - its own photograph or
 // its own 3D model - rather than the product's general pictures. It answers the
@@ -1222,6 +1257,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
         </span>
       </div>
       <AdminStockNote sel={sel} />
+      <AdminSkuNote sel={sel} />
     </div>
   )
 }

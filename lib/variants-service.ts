@@ -10,6 +10,7 @@ import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
+import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
@@ -308,6 +309,7 @@ type ChildRow = {
   out_of_stock_behaviour: string
   is_pre_order: boolean
   sku: string | null
+  sale_sku: string | null
   supplier: string | null
 }
 
@@ -337,6 +339,12 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // payload is built per request and never cached across viewers, so a shopper
   // cannot be served an admin's copy.
   const exposeStock = await canSeeStockLevels()
+  // And the buying codes, on the same terms: the chosen combination's own SKU
+  // and the supplier's clearance code are staff references, so they are withheld
+  // from the payload itself rather than merely left unrendered - a shopper's
+  // copy has nothing in it to read out of the network tab. See shop's
+  // lib/admin-codes.ts.
+  const exposeCodes = await canSeeProductCodes()
 
   // Whether the shop prints its prices net or gross is shop's own setting, and
   // it applies to a variation exactly as it does to an ordinary product - so
@@ -364,7 +372,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "supplier"
+      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -406,7 +414,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
       showImageInGallery: v.showImageInGallery,
       showModelInGallery: v.showModelInGallery,
-      sku: child?.sku ?? null,
+      sku: exposeCodes ? child?.sku ?? null : null,
+      saleSku: exposeCodes ? child?.sale_sku ?? null : null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
     }
   })
@@ -421,6 +430,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,
     priceSuffix: taxDisplay.display.suffix,
     showStockCounts: exposeStock,
+    showCodes: exposeCodes,
     baseStock: exposeStock ? { tracked: parent.trackInventory, count: parent.stockCount } : null,
   }
 }

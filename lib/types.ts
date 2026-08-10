@@ -192,7 +192,13 @@ export type VariantSelectorVariant = {
   // product page. Everything server-side always sets both.
   showImageInGallery?: boolean
   showModelInGallery?: boolean
+  // This combination's own product code, and the code the supplier's clearance
+  // stock is currently ordered under. Both are staff references, so both are
+  // null in a shopper's payload rather than merely unrendered - see
+  // `showCodes` below. `saleSku` is optional for the same reason as the
+  // gallery flags: a payload serialised before it shipped carries no such key.
   sku: string | null
+  saleSku?: string | null
   // Null means this variation has none of its own, in which case the parent's
   // supplier (already the fallback shown before any choice is made) stands.
   supplier: string | null
@@ -227,6 +233,12 @@ export type VariantSelectorPayload = {
   // figure is the one worth writing down. Null for shoppers, and absent on a
   // payload serialised before this shipped.
   baseStock?: { tracked: boolean; count: number | null } | null
+  // Whether the person this payload was built for may be shown the buying codes
+  // - shop's canSeeProductCodes. False for every shopper, in which case each
+  // variant's `sku` and `saleSku` above are withheld (null) rather than merely
+  // unused, so a supplier's clearance code is never sat in a public page's
+  // payload. Optional for the same reason as `priceSuffix`.
+  showCodes?: boolean
 }
 
 // The same payload, plus the currency symbol, resolved on the server and handed
