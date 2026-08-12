@@ -211,6 +211,12 @@ export type VariantSelectorPayload = {
   // The parent product's own gallery images, shown until a variant with its own
   // image is chosen (the variant-aware gallery).
   baseImages: Array<{ url: string; alt: string }>
+  // Whether those own images sit BEHIND the variations promoted with "Image up
+  // front" rather than in front of them - the owner's choice, per product, from
+  // the Images tab. Off for the overwhelming majority, and optional for the same
+  // reason as the flags on a variant above: a payload serialised into a cache
+  // before this shipped carries no such key, which must read as "off".
+  baseImagesLast?: boolean
   options: SvrOptionWithValues[]
   variants: VariantSelectorVariant[]
   addons: SvrAddon[]

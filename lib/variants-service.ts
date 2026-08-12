@@ -14,6 +14,7 @@ import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
+import { getBaseImagesLast } from '@/modules/shop-variations/lib/db/product-gallery'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -358,13 +359,14 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const adjust = makeDisplayAdjuster(taxDisplay, parent.taxClassId)
   const shown = (amount: number) => (adjust ? adjust(amount) : amount)
 
-  const [options, variants, valueMap, aliasMap, addons, baseMedia] = await Promise.all([
+  const [options, variants, valueMap, aliasMap, addons, baseMedia, baseImagesLast] = await Promise.all([
     getOptionsWithValues(parentId),
     getVariants(parentId),
     getVariantValueMap(parentId),
     getVariantAliasMap(parentId),
     getAddons(parentId),
     getProductMedia(parentId),
+    getBaseImagesLast(parentId),
   ])
 
   const childIds = variants.map((v) => v.childProductId)
@@ -425,6 +427,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     productName: parent.name,
     basePrice: shown(Number(parent.price)),
     baseImages: baseMedia.filter((m) => m.type === 'IMAGE').map((m) => ({ url: m.url, alt: m.altText ?? parent.name })),
+    baseImagesLast,
     options,
     variants: selectorVariants,
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,

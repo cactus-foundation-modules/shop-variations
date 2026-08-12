@@ -13,7 +13,11 @@ Adds product options to the Cactus shop:
   also be marked **Image up front** and, where the 3D module is installed,
   **3D up front** - independent switches that put its first photograph and/or
   its model on the product's gallery before the shopper has chosen anything,
-  and take them away again on their first pick. On category pages, options
+  and narrow to what is still on offer as they pick. The product's own
+  photographs normally lead that gallery; a tick box at the foot of the
+  product's **Images** tab turns it round, so the promoted variations lead and
+  the product's own pictures sit behind them - which is what you want where the
+  product's own shots are line drawings or a bare cut-out. On category pages, options
   ticked **Display in categories** summarise themselves on the product card via
   the `Card: Variation options` part; turn that part's **Preview the photo**
   setting on and hovering or tapping a value walks the tile's picture to that

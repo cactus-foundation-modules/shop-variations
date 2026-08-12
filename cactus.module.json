@@ -1,13 +1,13 @@
 {
   "name": "shop-variations",
-  "version": "0.1.133",
+  "version": "0.1.134",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.1026",
   "requiresModules": [
     {
       "name": "shop",
-      "minVersion": "0.1.215"
+      "minVersion": "0.1.216"
     }
   ],
   "permissions": [],
@@ -37,6 +37,14 @@
       "permission": "shop.products",
       "import": "./components/admin/ProductVariationsSection",
       "component": "ProductVariationsSection"
+    },
+    {
+      "point": "shop.product-editor-media-sections",
+      "id": "variations-gallery-order",
+      "order": 10,
+      "permission": "shop.products",
+      "import": "./components/admin/ProductGalleryOrderSection",
+      "component": "ProductGalleryOrderSection"
     },
     {
       "point": "shop.cart-line-resolver",
@@ -207,6 +215,7 @@
     "routeTiers": []
   },
   "teardown": [
+    "svr_product_gallery",
     "svr_variant_values",
     "svr_variants",
     "svr_option_values",

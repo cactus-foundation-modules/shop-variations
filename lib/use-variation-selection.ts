@@ -271,7 +271,6 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // An empty list means the variant brought none of its own, so the parent's
   // gallery stands as it is.
   const variantImages = variant?.imageUrls ?? []
-  const image = variantImages[0] ?? payload?.baseImages[0]?.url ?? null
   // The variations still on the table given the picks so far - the lot before the
   // shopper touches anything, one (at most) once they have settled every option.
   // What the gallery may show off is drawn from this rather than from the whole
@@ -308,6 +307,16 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     : galleryIsBare && anyOptionChosen ? matching
     : []
   const featuredImages = imageSource.map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
+  // Whether the product's own photographs sit behind the promoted variations'
+  // rather than in front of them - the owner's choice on the Images tab. It
+  // governs the whole strip's order and, with it, what the stage opens on.
+  const baseImagesLast = payload?.baseImagesLast ?? false
+  // What the main stage shows: the chosen variant's own first picture, else
+  // whichever set the owner put first. An empty list means the variant brought
+  // none of its own, so the parent's gallery stands as it is.
+  const image = variantImages[0]
+    ?? (baseImagesLast ? featuredImages[0] ?? payload?.baseImages[0]?.url : payload?.baseImages[0]?.url ?? featuredImages[0])
+    ?? null
   // By child product id, for whatever else hangs media off a product (the 3D
   // module's models, today) - a variation with no photograph of its own can
   // still be promoted for its model alone.
@@ -418,6 +427,9 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     basePrice,
     image,
     variantImages,
+    // Which way round the strip goes: false (the usual) puts the product's own
+    // photographs first, true puts the promoted variations first.
+    baseImagesLast,
     // The promoted variations' first pictures, and the variations promoted for
     // their MODEL by child product id - independent lists, both narrowed to the
     // variations the shopper's picks have left standing. A gallery adds the

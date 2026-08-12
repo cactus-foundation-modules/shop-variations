@@ -144,10 +144,16 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // stage still opens on the photograph the owner made primary. On a product with
   // no photographs of its own they are all there is, and the hook widens them to
   // every surviving variation rather than leave the strip empty.
+  //
+  // Unless the owner has said otherwise on the Images tab (sel.baseImagesLast),
+  // in which case the two swap: the promoted variations lead and the product's
+  // own pictures follow. That is the right way round where the product's own
+  // shots are line drawings or a bare cut-out and the variations are the
+  // photographs worth opening on.
+  const promoted = sel.featuredImages.map((url) => ({ url, alt: productName }))
   const thumbs = [
     ...variantImages.map((url) => ({ url, alt: productName })),
-    ...images,
-    ...sel.featuredImages.map((url) => ({ url, alt: productName })),
+    ...(sel.baseImagesLast ? [...promoted, ...images] : [...images, ...promoted]),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // A thumbnail the shopper clicked that the strip no longer offers is dropped
   // rather than left on the stage. A promoted variation's picture stops being on
@@ -155,7 +161,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // they had clicked, which is exactly how the wrong finish ends up sat there
   // under a strip that no longer lists it.
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
-  const main = held ?? variantImage ?? images[0]?.url ?? thumbs[0]?.url ?? null
+  const main = held ?? variantImage ?? (sel.baseImagesLast ? thumbs[0]?.url : images[0]?.url) ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
 
   // Magnifying is shop's behaviour for shop's image. A contributed stage owns its

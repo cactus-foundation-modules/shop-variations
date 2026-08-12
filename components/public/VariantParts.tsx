@@ -1304,16 +1304,20 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   // front: they are extra colours on offer, not what the product is. On a product
   // with no photographs of its own they are the whole gallery, and the hook
   // widens them to every surviving variation rather than leave the strip empty.
+  //
+  // The owner can turn that round per product on the Images tab
+  // (sel.baseImagesLast), putting the promoted variations first and the product's
+  // own pictures behind them.
+  const promoted = sel.featuredImages.map((url) => ({ url, alt: 'Another finish' }))
   const thumbs = [
     ...variantImages.map((url) => ({ url, alt: 'Selected variant' })),
-    ...base,
-    ...sel.featuredImages.map((url) => ({ url, alt: 'Another finish' })),
+    ...(sel.baseImagesLast ? [...promoted, ...base] : [...base, ...promoted]),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // An override the strip no longer offers is dropped rather than left on the
   // stage: a promoted variation's picture stops being on offer the moment a pick
   // rules that variation out, and it may be the very one they had clicked.
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
-  const main = held ?? sel.image ?? base[0]?.url ?? thumbs[0]?.url ?? null
+  const main = held ?? sel.image ?? (sel.baseImagesLast ? thumbs[0]?.url : base[0]?.url) ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
   const activeProductId = sel.variant?.childProductId ?? null
   // Whether what is on the stage is the shopper's own configuration rather than
