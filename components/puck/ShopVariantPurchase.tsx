@@ -22,6 +22,6 @@ export const shopVariantPurchasePuckComponent = {
     heading: { type: 'text' as const, label: 'Heading (optional)' },
     addToCartLabel: { type: 'text' as const, label: 'Add-to-cart label' },
   },
-  defaultProps: { showGallery: 'yes', heading: '', addToCartLabel: 'Add to cart' } as ShopVariantPurchaseProps,
+  defaultProps: { showGallery: 'yes', heading: '', addToCartLabel: 'Add to basket' } as ShopVariantPurchaseProps,
   render: ShopVariantPurchase,
 }

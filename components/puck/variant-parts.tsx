@@ -135,7 +135,7 @@ export function ShopVariantAddToCart(props: ShopVariantAddToCartProps) { return 
 export const shopVariantAddToCartPuckComponent = {
   label: 'Shop: Variant Add to Cart',
   fields: { label: { type: 'text' as const, label: 'Button label' } },
-  defaultProps: { label: 'Add to cart' } as ShopVariantAddToCartProps,
+  defaultProps: { label: 'Add to basket' } as ShopVariantAddToCartProps,
   render: ShopVariantAddToCart,
 }
 

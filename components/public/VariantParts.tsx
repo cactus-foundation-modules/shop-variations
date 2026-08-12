@@ -1212,7 +1212,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
   const sel = useVariationSelection(slug, initial)
   const [qty, setQty] = useState(1)
   const [added, setAdded] = useState(false)
-  if (preview) return <Skeleton label="Add to cart" />
+  if (preview) return <Skeleton label="Add to basket" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
   // Why the button is locked, naming the options still outstanding rather than
@@ -1252,7 +1252,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
             {/* The reason the button is locked IS the button's label while it is
                 locked - a shopper reading the thing they are trying to press is
                 told what it wants, with no second line to find. */}
-            <FitLabel text={added ? 'Added ✓' : (reason ?? (label || 'Add to cart'))} />
+            <FitLabel text={added ? 'Added ✓' : (reason ?? (label || 'Add to basket'))} />
           </button>
         </span>
       </div>
