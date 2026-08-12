@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, matchingVariants, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
@@ -271,42 +271,32 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // An empty list means the variant brought none of its own, so the parent's
   // gallery stands as it is.
   const variantImages = variant?.imageUrls ?? []
-  // The variations still on the table given the picks so far - the lot before the
-  // shopper touches anything, one (at most) once they have settled every option.
-  // What the gallery may show off is drawn from this rather than from the whole
-  // matrix, so a rival finish leaves the strip the moment the shopper's picks
-  // rule it out.
-  const matching = payload ? matchingVariants(payload, optionValues) : []
   // The variations the owner has promoted onto the parent's gallery, while they
   // are still worth showing: in matrix order, switched-on ones only. Images and
   // models are promoted independently of one another - a variation worth
   // showing off for its photo is not always the one worth leading with in 3D -
   // so this is two separate filters over the same list, not one.
   //
-  // Narrowed by the picks rather than emptied by them. Before any pick, a promoted
-  // variation is showing the shopper what the range looks like; once they choose
-  // something, the promoted ones their choice has ruled out are answering a
-  // question nobody asked - "why am I looking at the oak one, I picked walnut" -
-  // and the ones still compatible are the range they are still choosing within.
-  // Emptying the list outright was the old rule, and on a product whose pictures
-  // all live on its variations it left the gallery with nothing at all between the
-  // first pick and the last.
+  // They stay up until a whole combination RESOLVES, and not a moment sooner.
+  // Neither "the shopper has touched something" (the original rule) nor "their
+  // picks have ruled that variation out" (its replacement) is the right moment:
+  // both take the promoted media away mid-configure, and on a product whose
+  // pictures and models all live on its variations that is a gallery emptying
+  // itself, or swapping the model the shopper was studying for a different one,
+  // while they still have options left to answer. A part-made choice is not an
+  // answer, so nothing about the opening view has to change for it. The instant
+  // the last option lands, `variant` is non-null, this goes empty and the chosen
+  // combination's own photographs and model take the stage - which is the one
+  // moment the shopper HAS said what they want.
+  //
+  // Reset options clears the picks, so `variant` goes null and the promoted media
+  // comes back - which is what a reset should look like.
   //
   // One picture each - their first - not their whole set. A promoted variation is
   // a taster of what the range offers, and four angles of the oak desk would
   // bury the product's own photographs on its own page.
-  const promotedImages = matching.filter((v) => v.showImageInGallery)
-  // Where the product carries no photographs of its own and the picks have
-  // narrowed past every promoted variation, the surviving variations ARE the
-  // gallery: there is nothing else on the page to look at, and an empty stage is
-  // the worst answer available. Held back until the shopper has actually picked
-  // something, so the opening view stays the curated one the owner chose rather
-  // than every finish in the range at once.
-  const galleryIsBare = (payload?.baseImages.length ?? 0) === 0
-  const imageSource = promotedImages.length > 0 ? promotedImages
-    : galleryIsBare && anyOptionChosen ? matching
-    : []
-  const featuredImages = imageSource.map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
+  const promoted = payload && !variant ? payload.variants.filter((v) => v.enabled) : []
+  const featuredImages = promoted.filter((v) => v.showImageInGallery).map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
   // Whether the product's own photographs sit behind the promoted variations'
   // rather than in front of them - the owner's choice on the Images tab. It
   // governs the whole strip's order and, with it, what the stage opens on.
@@ -320,12 +310,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // By child product id, for whatever else hangs media off a product (the 3D
   // module's models, today) - a variation with no photograph of its own can
   // still be promoted for its model alone.
-  const featuredModelChildIds = matching.filter((v) => v.showModelInGallery).map((v) => v.childProductId)
-  // Every surviving variation, promoted or not, for a contributor to fall back on
-  // when it has nothing else to show - it knows whether the product carries media
-  // of its own; we do not. Empty until the shopper picks something, for the same
-  // reason as the images above: the opening view is the owner's to curate.
-  const candidateModelChildIds = anyOptionChosen ? matching.map((v) => v.childProductId) : []
+  const featuredModelChildIds = promoted.filter((v) => v.showModelInGallery).map((v) => v.childProductId)
   const allOptionsChosen = payload ? payload.options.every((o) => !!optionValues[o.id]) : true
   // The options still waiting on the shopper, by name and in display order, so the
   // buy button can say which ones rather than "choose your options" - and so a
@@ -431,16 +416,12 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // photographs first, true puts the promoted variations first.
     baseImagesLast,
     // The promoted variations' first pictures, and the variations promoted for
-    // their MODEL by child product id - independent lists, both narrowed to the
-    // variations the shopper's picks have left standing. A gallery adds the
-    // pictures to its strip and hands the ids to whatever else contributes media
-    // (see shop's ShopGalleryExtraThumbsProps).
+    // their MODEL by child product id - independent lists, both up until a whole
+    // combination resolves and empty from then on. A gallery adds the pictures to
+    // its strip and hands the ids to whatever else contributes media (see shop's
+    // ShopGalleryExtraThumbsProps).
     featuredImages,
     featuredModelChildIds,
-    // The surviving variations whether or not they were promoted, for a
-    // contributor with nothing of the product's own to show. Empty until the
-    // shopper picks something.
-    candidateModelChildIds,
     inStock,
     hasOptions,
     allOptionsChosen,

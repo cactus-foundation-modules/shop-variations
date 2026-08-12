@@ -85,25 +85,6 @@ export function resolveVariant(payload: VariantSelectorPayload, selection: Optio
   ) ?? null
 }
 
-// Every switched-on variation still consistent with the picks so far, in matrix
-// order. An option the shopper hasn't touched constrains nothing, so an untouched
-// selection matches the lot and a full one matches (at most) the single
-// combination resolveVariant would settle on.
-//
-// Asked through variantAnswersTo like everything else here, so an aliased value
-// narrows exactly as the value it stands in for does. Undirectional on purpose,
-// unlike isValueAvailable: this answers "what could the shopper still end up
-// with", and a pick lower down rules a variation out just as firmly as one above.
-export function matchingVariants(payload: VariantSelectorPayload, selection: OptionSelection): VariantSelectorVariant[] {
-  const v2o = valueToOptionMap(payload)
-  return payload.variants.filter((variant) =>
-    variant.enabled && payload.options.every((o) => {
-      const chosen = selection[o.id]
-      return !chosen || variantAnswersTo(variant, o.id, chosen, v2o)
-    }),
-  )
-}
-
 // Whether an option value is still reachable, filtered DIRECTIONALLY: at least
 // one buyable variant carries this value AND is consistent with every option
 // chosen ABOVE this one in display order. Options below it are deliberately

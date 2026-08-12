@@ -1299,11 +1299,10 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
   //
-  // The promoted variations' pictures bring up the rear, narrowed as the shopper
-  // picks (see sel.featuredImages). Behind the product's own rather than in
-  // front: they are extra colours on offer, not what the product is. On a product
-  // with no photographs of its own they are the whole gallery, and the hook
-  // widens them to every surviving variation rather than leave the strip empty.
+  // The promoted variations' pictures bring up the rear, and stay there until a
+  // whole combination resolves (see sel.featuredImages). Behind the product's own
+  // rather than in front: they are extra colours on offer, not what the product
+  // is.
   //
   // The owner can turn that round per product on the Images tab
   // (sel.baseImagesLast), putting the promoted variations first and the product's
@@ -1314,8 +1313,8 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
     ...(sel.baseImagesLast ? [...promoted, ...base] : [...base, ...promoted]),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // An override the strip no longer offers is dropped rather than left on the
-  // stage: a promoted variation's picture stops being on offer the moment a pick
-  // rules that variation out, and it may be the very one they had clicked.
+  // stage: a promoted variation's picture stops being on offer the moment their
+  // combination resolves, and it may be the very one they had clicked.
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
   const main = held ?? sel.image ?? (sel.baseImagesLast ? thumbs[0]?.url : base[0]?.url) ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
@@ -1371,11 +1370,9 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               payload={extra.payload}
               activeProductId={activeProductId}
               // The promoted variations, so a contributor shows their media too
-              // before a whole combination is settled - narrowed to the ones the
-              // picks still allow, with the surviving unpromoted ones behind them
-              // (see the same note in DetailSlotPartsClient).
+              // before a whole combination is settled. Empty from the moment one
+              // resolves (see the same note in DetailSlotPartsClient).
               featuredProductIds={sel.featuredModelChildIds}
-              candidateProductIds={sel.candidateModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"
@@ -1403,7 +1400,6 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               payload={extra.payload}
               activeProductId={activeProductId}
               featuredProductIds={sel.featuredModelChildIds}
-              candidateProductIds={sel.candidateModelChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"
