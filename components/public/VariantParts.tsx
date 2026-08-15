@@ -297,11 +297,14 @@ function OptionNumber({ n, done }: { n: number; done: boolean }) {
 // the label is small and bold, and white on the theme's terracotta is short of
 // AA at this size. This pairing clears it in both light and dark. No border -
 // the border token is not redefined for dark and would come out light on dark.
-function SaleBadge() {
+// `spaced` is off where the badge's neighbour already spaces it - the swatch-only
+// button lays its contents out with a gap, and a margin on top of that leaves the
+// badge adrift from the colour it belongs to.
+function SaleBadge({ spaced = true }: { spaced?: boolean }) {
   return (
     <span
       style={{
-        display: 'inline-flex', alignItems: 'center', marginLeft: '0.375rem',
+        display: 'inline-flex', alignItems: 'center', marginLeft: spaced ? '0.375rem' : 0,
         padding: '0.0625rem 0.3125rem', borderRadius: 999,
         fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.4,
         letterSpacing: '0.02em', textTransform: 'uppercase',
@@ -986,13 +989,13 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             : active ? 'Selected'
             : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
-          // The line under the name on the swatch-only chip: where an out-of-reach
-          // colour IS to be had, or that this one is reduced. A swatch alone has no
-          // text to hang a badge off, so the offer says itself here instead of being
-          // lost with the label. Neither "Selected" nor the price hint travels - the
-          // tick badge says the first, and the chip is a hover affordance, no place
-          // to put money a shopper has to hover to find.
-          const peekSub = available ? (onSale ? 'On sale' : null) : (note || unavailableWord(v))
+          // The out-of-reach line for the swatch-only chip: the same wording the
+          // pill prints, under the name it already shows there. Only the
+          // availability note travels, not "Selected", the price hint or the sale
+          // mark - the tick badge says the first, the badge beside the swatch says
+          // the last, and the chip is a hover affordance, no place to put money a
+          // shopper has to hover to find.
+          const peekSub = available ? null : (note || unavailableWord(v))
           // And for an out-of-reach swatch the chip has to hang on a WRAPPER round
           // the button rather than sit inside it: a disabled control takes no
           // pointer events, so a chip listening from within never hears the hover -
@@ -1065,7 +1068,16 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                 // when previews are on. An out-of-reach one gets the same chip from
                 // the wrapper outside the button instead (peekOutside), so the swatch
                 // goes in bare here and is not double-wrapped.
-                peekOutside ? swatchNode : <ValuePeek label={v.label} sub={peekSub} preview={previewNode}>{swatchNode}</ValuePeek>
+                // The badge sits OUTSIDE the hover chip's wrapper, beside the
+                // swatch rather than inside the thing that pops up over it: a
+                // colour shown without its name still has to say it is reduced
+                // while the shopper is only looking, not pointing. It turns the
+                // button from a bare dot into a short pill, which is the point -
+                // an offer nobody can see is not an offer.
+                <>
+                  {peekOutside ? swatchNode : <ValuePeek label={v.label} sub={peekSub} preview={previewNode}>{swatchNode}</ValuePeek>}
+                  {onSale && <SaleBadge spaced={false} />}
+                </>
               ) : (
                 <>
                   {/* The pill shows the name already, so its hover chip carries the
