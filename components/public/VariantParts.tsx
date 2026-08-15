@@ -287,11 +287,11 @@ function OptionNumber({ n, done }: { n: number; done: boolean }) {
   )
 }
 
-// The "Sale" badge that sits beside an option's name when the offer is decided
-// there - some of that option's choices are reduced and some are not. It is a
-// signpost, not a price: it says "the money changes down this list", and the
-// figures under each choice (and the struck-through price by the buy button)
-// say by how much. See optionHasSale in selection-logic for when it appears.
+// The "Sale" badge that lands on an individual choice which leads to a reduced
+// price, on a product where only some of the variations are on offer. It marks
+// the choices themselves rather than the option above them, so a shopper reads
+// "180cm - Sale" and knows exactly which one carries the offer. The figure under
+// the choice, and the struck-through price by the buy button, say by how much.
 //
 // Subtle background with the deeper destructive text rather than a solid fill:
 // the label is small and bold, and white on the theme's terracotta is short of
@@ -301,8 +301,8 @@ function SaleBadge() {
   return (
     <span
       style={{
-        display: 'inline-flex', alignItems: 'center', marginLeft: '0.5rem',
-        padding: '0.0625rem 0.375rem', borderRadius: 999,
+        display: 'inline-flex', alignItems: 'center', marginLeft: '0.375rem',
+        padding: '0.0625rem 0.3125rem', borderRadius: 999,
         fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.4,
         letterSpacing: '0.02em', textTransform: 'uppercase',
         background: 'var(--color-destructive-subtle)',
@@ -622,10 +622,6 @@ function VariantOptionsAccordion({
             <span style={{ display: 'inline-flex', alignItems: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
               <OptionNumber n={index + 1} done={!!chosenId} />
               {option.name}
-              {/* The heading is this layout's label, so the badge rides here -
-                  and stays readable with the section shut, which is the state a
-                  shopper meets first. */}
-              {sel.optionHasSale(option.id) && <SaleBadge />}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
               {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
@@ -878,10 +874,6 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
     }}>
       {index != null && <OptionNumber n={index} done={!!chosen} />}
       {option.name}
-      {/* Only where THIS option is the one that decides the offer - see
-          optionHasSale. On a product reduced across the board no option gets
-          one, since none of them narrows anything. */}
-      {sel.optionHasSale(option.id) && <SaleBadge />}
     </span>
   )
   // The name is inline-flex now, so on the stacked path it needs a block wrapper
@@ -893,6 +885,13 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // rather than per value: it walks every value's variants, and the answer is the
   // same for all of them.
   const showPrices = sel.optionAffectsPrice(option.id)
+  // Whether this option's choices are worth marking for the offer: some of them
+  // lead to a reduced price and some do not. Worked out once, like the prices
+  // above, and for the same reason. Where EVERY reachable choice is reduced there
+  // is nothing to tell apart - a badge on all four of them would only repeat the
+  // struck-through price beside the buy button - so the badges stay off and the
+  // choices read as they always did. See optionHasSale in selection-logic.
+  const markSale = sel.optionHasSale(option.id)
 
   if (option.controlType === 'DROPDOWN') {
     return (
@@ -914,7 +913,10 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             // pill controls put on a second line rides the label here instead.
             const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
             const note = available ? '' : availabilityNote(v)
-            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{hint ? ` - ${hint}` : ''}{available ? '' : ` - ${note || unavailableWord(v)}`}</option>
+            // A native <option> takes no badge either, so the sale mark rides the
+            // label as a word - the same place the price hint had to go.
+            const sale = available && markSale && sel.valueOnSale(option.id, v.id)
+            return <option key={v.id} value={v.id} disabled={!available} title={available ? undefined : unavailableTitle(v)}>{v.label}{sale ? ' - Sale' : ''}{hint ? ` - ${hint}` : ''}{available ? '' : ` - ${note || unavailableWord(v)}`}</option>
           })}
         </select>
       </label>
@@ -973,17 +975,24 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // the colour bigger, so there it moves onto the hover chip instead
           // (peekSub, below) rather than being dropped.
           const note = available ? '' : availabilityNote(v)
+          // Whether THIS choice is one of the reduced ones - the badge beside its
+          // name. Only asked where the option has something to tell apart (see
+          // markSale), and never of a choice the shopper cannot have: an
+          // out-of-reach value's line is busy saying where it IS to be had, and a
+          // sale badge on something unbuyable is an advert for a dead end.
+          const onSale = available && markSale && sel.valueOnSale(option.id, v.id)
           const subLabel = swatchOnly ? null
             : !available ? (note || unavailableWord(v))
             : active ? 'Selected'
             : showPrices ? valuePriceHint(sel, option.id, v.id)
             : null
-          // The out-of-reach line for the swatch-only chip: the same wording the
-          // pill prints, under the name it already shows there. Only the
-          // availability note travels, not "Selected" or the price hint - the tick
-          // badge says the first and the chip is a hover affordance, no place to
-          // put money a shopper has to hover to find.
-          const peekSub = available ? null : (note || unavailableWord(v))
+          // The line under the name on the swatch-only chip: where an out-of-reach
+          // colour IS to be had, or that this one is reduced. A swatch alone has no
+          // text to hang a badge off, so the offer says itself here instead of being
+          // lost with the label. Neither "Selected" nor the price hint travels - the
+          // tick badge says the first, and the chip is a hover affordance, no place
+          // to put money a shopper has to hover to find.
+          const peekSub = available ? (onSale ? 'On sale' : null) : (note || unavailableWord(v))
           // And for an out-of-reach swatch the chip has to hang on a WRAPPER round
           // the button rather than sit inside it: a disabled control takes no
           // pointer events, so a chip listening from within never hears the hover -
@@ -994,7 +1003,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // aria-label - and for an out-of-reach value the whole sentence, since a
           // screen reader shopper gets neither the strike-through nor the hover chip
           // that carry it.
-          const peekAria = available ? v.label : unavailableTitle(v)
+          const peekAria = available ? (onSale ? `${v.label} - on sale` : v.label) : unavailableTitle(v)
           // The swatch itself, hoisted out of the JSX below because it is rendered
           // either inside a hover chip or bare, depending on where the chip lives.
           const swatchNode = swatchOnly
@@ -1006,7 +1015,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             <button
               type="button" disabled={!available}
               onClick={() => { sel.setOption(option.id, v.id); onChoose?.() }}
-              title={available ? v.label : unavailableTitle(v)}
+              title={available ? peekAria : unavailableTitle(v)}
               aria-label={swatchOnly ? peekAria : undefined}
               aria-pressed={active}
               style={{
@@ -1056,7 +1065,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                 // when previews are on. An out-of-reach one gets the same chip from
                 // the wrapper outside the button instead (peekOutside), so the swatch
                 // goes in bare here and is not double-wrapped.
-                peekOutside ? swatchNode : <ValuePeek label={v.label} preview={previewNode}>{swatchNode}</ValuePeek>
+                peekOutside ? swatchNode : <ValuePeek label={v.label} sub={peekSub} preview={previewNode}>{swatchNode}</ValuePeek>
               ) : (
                 <>
                   {/* The pill shows the name already, so its hover chip carries the
@@ -1079,7 +1088,13 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                     {/* The strike belongs to the name alone. On the button it
                         struck the line underneath too, which is the one part of an
                         out-of-reach choice the shopper is meant to read. */}
-                    <span style={{ textDecoration: available ? 'none' : 'line-through' }}>{v.label}</span>
+                    {/* The badge sits on the name's own line, so a reduced choice
+                        reads as "180cm Sale" and the sub-line underneath is left
+                        to the money. The strike stays on the name alone. */}
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      <span style={{ textDecoration: available ? 'none' : 'line-through' }}>{v.label}</span>
+                      {onSale && <SaleBadge />}
+                    </span>
                     {subLabel && (
                       <span style={{
                         fontSize: '0.75rem', fontWeight: active || !available ? 600 : 400,
