@@ -54,6 +54,12 @@ export type SwatchPreview = 'show' | 'hide'
 // older behaviour, for an option whose values are too many for that to read as
 // anything but clutter.
 export type UnavailableDisplay = 'show' | 'hide'
+// Where the choices this combination cannot have sit in the row. 'keep' is the
+// order the shop typed them in, which is what this always did. 'last' moves them
+// to the end so the shopper meets the choices they can actually make first - on
+// a chair whose first headrest option is out of stock, the row otherwise opens
+// with a struck-through dead end.
+export type UnavailableOrder = 'keep' | 'last'
 
 // Reusable storefront parts. Each takes the product slug and reads the shared
 // selection store, so they stay in sync whether composed together (the composite
@@ -486,11 +492,12 @@ export type VariantOptionsPartProps = PartProps & {
   swatchDisplay?: SwatchDisplay
   swatchPreview?: SwatchPreview
   unavailable?: UnavailableDisplay
+  unavailableOrder?: UnavailableOrder
 }
 export function VariantOptionsPart({
   preview, slug: explicitSlug, initial, labelPlacement,
   displayMode = 'inline', accordionInitial = 'closed', accordionOnSelect = 'openNext', swatchDisplay = 'pill',
-  swatchPreview = 'show', unavailable = 'show',
+  swatchPreview = 'show', unavailable = 'show', unavailableOrder = 'keep',
 }: VariantOptionsPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
@@ -514,10 +521,10 @@ export function VariantOptionsPart({
     // keeps the landing clear of the header and a sticky bar.
     <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
       {displayMode === 'accordion' ? (
-        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} />
+        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} unavailableOrder={unavailableOrder} />
       ) : (
         visibleOptions.map((option, index) => (
-          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} />
+          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} unavailableOrder={unavailableOrder} />
         ))
       )}
     </div>
@@ -538,7 +545,7 @@ export function VariantOptionsPart({
 // not a plain one, so the next section opens in the same paint as the choice -
 // a post-paint effect left a frame with it still shut, which read as a lag.
 function VariantOptionsAccordion({
-  options, sel, initial, onSelect, swatchDisplay, swatchPreview, unavailable,
+  options, sel, initial, onSelect, swatchDisplay, swatchPreview, unavailable, unavailableOrder = 'keep',
 }: {
   options: SvrOptionWithValues[]
   sel: ReturnType<typeof useVariationSelection>
@@ -547,6 +554,7 @@ function VariantOptionsAccordion({
   swatchDisplay: SwatchDisplay
   swatchPreview: SwatchPreview
   unavailable: UnavailableDisplay
+  unavailableOrder?: UnavailableOrder
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
     // Arriving on a variation link seeds every pick before first paint (the URL
@@ -657,7 +665,7 @@ function VariantOptionsAccordion({
             {open && (
               <div id={panelId} style={{ padding: '0.75rem 0.875rem', borderTop: '1px solid var(--color-border)', borderRadius: '0 0 7px 7px' }}>
                 <OptionControl
-                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable}
+                  option={option} sel={sel} hideLabel swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} unavailableOrder={unavailableOrder}
                   onChoose={autoNext ? () => setPending(option.id) : undefined}
                 />
               </div>
@@ -809,7 +817,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', unavailable = 'show', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; unavailable?: UnavailableDisplay; onChoose?: () => void }) {
+export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', unavailable = 'show', unavailableOrder = 'keep', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; unavailable?: UnavailableDisplay; unavailableOrder?: UnavailableOrder; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -840,8 +848,19 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // picks above have ruled out still says its piece; under 'hide' only what the
   // shopper can actually pick - plus the current pick and any ghost, which stay
   // either way rather than letting the control blank out beneath them.
-  const shownValues = option.values.filter((v) =>
+  const filteredValues = option.values.filter((v) =>
     unavailable === 'show' || sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id)
+  // Under 'last', the choices that cannot be had drop to the end of the row.
+  // A stable partition rather than a sort: within each half the shop's own order
+  // is untouched, so a size run stays 120/140/160 and only the dead ones move.
+  // Display only - the value ids, the selection and every availability answer
+  // are exactly as they were, so nothing downstream can tell the difference.
+  const shownValues = unavailableOrder === 'last'
+    ? [
+        ...filteredValues.filter((v) => sel.isAvailable(option.id, v.id)),
+        ...filteredValues.filter((v) => !sel.isAvailable(option.id, v.id)),
+      ]
+    : filteredValues
   // Beside: the name sits on the first row of choices rather than above them.
   //
   // The name is FLOATED, not a flex item, and this is the whole trick. Flex would

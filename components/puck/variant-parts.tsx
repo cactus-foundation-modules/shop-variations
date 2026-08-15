@@ -1,8 +1,7 @@
 import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
   type OptionLabelPlacement, type VariantDisplayMode, type AccordionInitial, type AccordionOnSelect, type SwatchDisplay, type SwatchPreview,
-  type UnavailableDisplay,
-} from '@/modules/shop-variations/components/public/VariantParts'
+  type UnavailableDisplay, type UnavailableOrder } from '@/modules/shop-variations/components/public/VariantParts'
 
 // Granular storefront parts (mirror shop's ShopDetail* parts) for the Product
 // Detail layout. They share selection state through the client selection store
@@ -22,6 +21,7 @@ export type ShopVariantOptionsProps = {
   swatchDisplay?: SwatchDisplay
   swatchPreview?: SwatchPreview
   unavailable?: UnavailableDisplay
+  unavailableOrder?: UnavailableOrder
 }
 export function ShopVariantOptions(props: ShopVariantOptionsProps) {
   return (
@@ -34,6 +34,7 @@ export function ShopVariantOptions(props: ShopVariantOptionsProps) {
       swatchDisplay={props.swatchDisplay}
       swatchPreview={props.swatchPreview}
       unavailable={props.unavailable}
+      unavailableOrder={props.unavailableOrder}
     />
   )
 }
@@ -98,9 +99,21 @@ export const shopVariantOptionsPuckComponent = {
         { label: 'Hide them', value: 'hide' },
       ],
     },
+    // 'keep' is the order the shop typed the values in, which is what this
+    // always did and stays the default. 'last' is for the case where a row
+    // opens on a dead end - an out-of-stock headrest sitting above the one
+    // that is actually in stock.
+    unavailableOrder: {
+      type: 'radio' as const,
+      label: 'Where those choices sit',
+      options: [
+        { label: 'In their usual place', value: 'keep' },
+        { label: 'After the ones that can be picked', value: 'last' },
+      ],
+    },
   },
   defaultProps: {
-    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: 'show', unavailable: 'show',
+    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: 'show', unavailable: 'show', unavailableOrder: 'keep',
   } as ShopVariantOptionsProps,
   // The accordion-only settings appear only in accordion mode, and "after a
   // choice is made" whenever there's a next section left to auto-open - closed
@@ -109,6 +122,8 @@ export const shopVariantOptionsPuckComponent = {
   resolveFields: (data: { props?: ShopVariantOptionsProps }, { fields }: { fields: Record<string, unknown> }) => {
     const p = data?.props ?? {}
     const out: Record<string, unknown> = { ...fields }
+    // Nothing to order when the unavailable choices are not drawn at all.
+    if (p.unavailable === 'hide') delete out.unavailableOrder
     if (p.displayMode !== 'accordion') {
       delete out.accordionInitial
       delete out.accordionOnSelect
