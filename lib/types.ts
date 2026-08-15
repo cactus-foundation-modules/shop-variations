@@ -165,6 +165,17 @@ export type VariantSelectorVariant = {
   // The struck-through figure when this variant is on offer: its own normal
   // price. Null when it is not, so the storefront has nothing to strike.
   compareAtPrice: number | null
+  // This combination's recommended retail price, where the shop shows one.
+  // Null when the shop has the retail price type switched off, or the
+  // combination carries none. Carried raw rather than pre-judged: whether it is
+  // worth printing depends on the figure actually being charged, which a
+  // personalisation surcharge can still move after this payload is built.
+  //
+  // Optional because this payload crosses to the browser as JSON and is held in
+  // caches that predate the field - one serialised before this shipped carries
+  // no such key, which must read as "no RRP" rather than throwing on the
+  // product page. Everything server-side always sets it.
+  retailPrice?: number | null
   inStock: boolean
   // How many of this combination are on the shelf - staff only. Null for every
   // shopper, and null for staff too where the combination tracks no stock of its
@@ -207,7 +218,18 @@ export type VariantSelectorVariant = {
 export type VariantSelectorPayload = {
   productId: string
   productName: string
+  // What the parent itself is charged at, sale price included - shop's
+  // effectivePrice, the same sum each variant's `price` goes through.
   basePrice: number
+  // The parent's struck-through figure while it is the one being bought: its
+  // normal price when it is on offer, null otherwise. Optional for the same
+  // reason as `priceSuffix` below.
+  baseCompareAtPrice?: number | null
+  // The parent's own RRP, converted alongside the rest. Stands in while no
+  // combination has resolved, and on an add-ons-only product where the parent is
+  // what is being bought. Null on most products with variations, and optional
+  // for the same reason as `priceSuffix` below.
+  baseRetailPrice?: number | null
   // The parent product's own gallery images, shown until a variant with its own
   // image is chosen (the variant-aware gallery).
   baseImages: Array<{ url: string; alt: string }>

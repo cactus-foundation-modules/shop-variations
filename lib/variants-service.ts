@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client'
 import { createProduct, updateProduct, deleteProduct, getProductById, getProductBySlug, getProductMedia } from '@/modules/shop/lib/db/products'
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
-import { effectivePrice, isOnSale } from '@/modules/shop/lib/pricing'
+import { effectivePrice, isOnSale, isPriceTypeEnabled } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
@@ -305,6 +305,7 @@ type ChildRow = {
   id: string
   price: unknown
   sale_price: unknown
+  retail_price: unknown
   track_inventory: boolean
   stock_count: number | null
   out_of_stock_behaviour: string
@@ -327,6 +328,10 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // advertise the full price on a variant that was on offer.
   const config = await getShopConfigCached()
   const { enabledPriceTypes } = config
+  // Whether this shop puts an RRP in front of shoppers at all - the same switch
+  // shop's own price block reads through priceView, so a product with options
+  // and one without can never disagree about whether there is an RRP to show.
+  const showRetail = isPriceTypeEnabled(enabledPriceTypes, 'retail')
   // The child row is queried regardless (it's one extra column on a query that
   // already runs), but is only ever handed to a shopper when the shop has both
   // switched the field on for variations AND agreed to show it - otherwise a
@@ -374,7 +379,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "sale_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier"
+      SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -402,6 +407,14 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     const priced = child
       ? { price: Number(child.price), salePrice: child.sale_price != null ? Number(child.sale_price) : null }
       : { price: Number(parent.price), salePrice: parent.salePrice }
+    // The combination's own RRP, on the same terms shop gives an ordinary
+    // product's: withheld outright when the shop has the retail price type
+    // switched off, and converted to the side of tax the rest of the payload
+    // sits on. Whether it is worth PRINTING (it only is while it sits above what
+    // is being charged) is decided where it is rendered, because a
+    // personalisation surcharge can move the charged figure after this.
+    const retailStored = child ? child.retail_price : parent.retailPrice
+    const retail = showRetail && retailStored != null ? Number(retailStored) : null
     return {
       id: v.id,
       childProductId: v.childProductId,
@@ -410,6 +423,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       enabled: v.enabled,
       price: shown(effectivePrice(priced, enabledPriceTypes)),
       compareAtPrice: isOnSale(priced, enabledPriceTypes) ? shown(Number(priced.price)) : null,
+      retailPrice: retail != null && Number.isFinite(retail) ? shown(retail) : null,
       inStock,
       stockCount: exposeStock && tracks ? stockCount : null,
       tracksStock: tracks,
@@ -425,7 +439,18 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   return {
     productId: parentId,
     productName: parent.name,
-    basePrice: shown(Number(parent.price)),
+    // The parent's own money, through shop's effectivePrice exactly as each
+    // variant's is - so a product bought at its own price (nothing to choose, or
+    // add-ons alone) quotes its sale price rather than the full one it is not
+    // being charged. Reading `price` raw here is what left a reduced product
+    // showing the dearer figure below its own sale price.
+    basePrice: shown(effectivePrice(parent, enabledPriceTypes)),
+    baseCompareAtPrice: isOnSale(parent, enabledPriceTypes) ? shown(Number(parent.price)) : null,
+    // The parent's own RRP, for the stretch before a combination resolves (and
+    // for a product we claimed for its add-ons alone, where the parent IS the
+    // thing being bought). Null on the great majority: a product whose money
+    // lives on its variations keeps no retail price of its own.
+    baseRetailPrice: showRetail && parent.retailPrice != null ? shown(Number(parent.retailPrice)) : null,
     baseImages: baseMedia.filter((m) => m.type === 'IMAGE').map((m) => ({ url: m.url, alt: m.altText ?? parent.name })),
     baseImagesLast,
     options,

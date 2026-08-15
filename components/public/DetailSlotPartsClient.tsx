@@ -356,6 +356,12 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
       {atBase && savePct != null && savePct > 0 && <span className={classNames.save}>Save {savePct}%</span>}
       {!atBase && variantWas != null && <span className={classNames.was}>{money(variantWas, symbol)}</span>}
       {!atBase && variantSavePct != null && variantSavePct > 0 && <span className={classNames.save}>Save {variantSavePct}%</span>}
+      {/* The RRP the chosen combination carries (the parent's while nothing is
+          settled), on the same terms an ordinary product's is shown: only while
+          it sits above what is being charged. The class is shop's own, and shop
+          emits its CSS before handing this part the job, so the line reads the
+          same as it does on a product without options. */}
+      {sel.retailPrice != null && <span className="spd-price-rrp">RRP {money(sel.retailPrice, symbol)}</span>}
       {suffix && <span className="spd-price-taxnote">{suffix}</span>}
       {/* The way back out of a chosen combination belongs with the price it moved,
           not buried under the last option. Shop's price block is a wrapping flex

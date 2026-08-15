@@ -266,7 +266,21 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // The chosen variant's own "was" figure. Personalisation surcharges are added
   // to both sides so the saving stays honest: strike the price this same
   // configuration would have cost off offer, not the bare variant price.
-  const compareAtPrice = variant?.compareAtPrice != null ? variant.compareAtPrice + addonPricing.priceAdjust : null
+  // With nothing to choose, the parent IS what is being bought (a plain product
+  // on a layout that prints its price with our block, or one we claimed for its
+  // add-ons alone), so its own offer is the one to strike. Never while options
+  // are in play: the figure showing then is a variation's, and the parent's
+  // normal price says nothing about it.
+  const compareAtSource = variant ? variant.compareAtPrice ?? null : (!hasOptions ? payload?.baseCompareAtPrice ?? null : null)
+  const compareAtPrice = compareAtSource != null ? compareAtSource + addonPricing.priceAdjust : null
+  // The RRP that goes with the figure above: the chosen combination's own, or
+  // the parent's while nothing is settled. Unlike the "was" price, no surcharge
+  // is added to it - an RRP is the maker's list price for the thing itself, and
+  // padding it by whatever the shopper had engraved would invent a saving the
+  // maker never quoted. Null unless it sits above what is actually being
+  // charged, which is the same rule shop's own price block follows.
+  const retailCandidate = variant ? variant.retailPrice ?? null : (!hasOptions ? payload?.baseRetailPrice ?? null : null)
+  const retailPrice = retailCandidate != null && retailCandidate > price + 0.005 ? retailCandidate : null
   // Every picture the chosen variant owns, and the one the main stage shows.
   // An empty list means the variant brought none of its own, so the parent's
   // gallery stands as it is.
@@ -409,6 +423,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     fromPrice,
     priceVaries,
     compareAtPrice,
+    retailPrice,
     basePrice,
     image,
     variantImages,

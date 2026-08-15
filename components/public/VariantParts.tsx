@@ -1232,6 +1232,27 @@ function FileUpload({ addon, value, onChange, slug }: { addon: SvrAddon; value: 
 }
 
 // ---- Live price ----------------------------------------------------------
+// The price line a product with options shows, dressed exactly as shop dresses
+// one without: the figure in the site's display face, the struck-through price,
+// the saving pill and the RRP all reading the same as they do on an ordinary
+// product page. Same wording, same order, same sizes.
+//
+// The rules are copied rather than imported. Shop's own price part styles itself
+// with a <style> of its own, and a layout carrying this block instead of that
+// part never emits it - so relying on those class names would leave the figure
+// in body text on precisely the pages this block is used. The declarations are
+// the module's own, on its own class names, and every colour is a token.
+const variantPriceCss = `
+.svr-price-block{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.svr-price-now{font-family:var(--display-family,Georgia,serif);font-weight:600;font-size:var(--spd-price-size,34px);color:var(--color-primary)}
+.svr-price-from{font-family:inherit;font-size:1rem;font-weight:400;color:var(--color-text-muted)}
+.svr-price-was{font-size:15px;color:var(--color-text-muted);text-decoration:line-through}
+.svr-price-save{background:var(--color-success-subtle);color:var(--color-success);font-size:12px;font-weight:600;border-radius:9999px;padding:4px 11px}
+.svr-price-rrp{font-size:13px;color:var(--color-text-muted)}
+.svr-price-note{font-size:13px;color:var(--color-text-muted)}
+.svr-price-oos{font-size:0.875rem;font-weight:400;color:var(--color-danger)}
+`
+
 export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
@@ -1243,26 +1264,37 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   // Where the choices all cost the same there is no range to count up from, so
   // the one price shows plain - the hook already puts that figure in `price`.
   const showFrom = sel.hasOptions && !sel.allOptionsChosen && sel.priceVaries
+  const onOffer = !showFrom && sel.compareAtPrice != null && sel.compareAtPrice > sel.price
+  // Whole percent off, worked out against the struck-through figure - the same
+  // sum shop does, so the two blocks can never quote different savings on the
+  // same money.
+  const savePct = onOffer && sel.compareAtPrice ? Math.round(((sel.compareAtPrice - sel.price) / sel.compareAtPrice) * 100) : null
+  // A range has no single RRP worth quoting either: the cheapest combination's
+  // list price says nothing about the one the shopper ends up on.
+  const rrp = !showFrom ? sel.retailPrice : null
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '0.5rem', fontSize: '1.5rem', fontWeight: 700 }}>
+    <div className="svr-price-block">
+      <style dangerouslySetInnerHTML={{ __html: variantPriceCss }} />
       {showFrom
-        ? <span><span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>From </span>{money(sel.fromPrice, sel.currencySymbol)}</span>
-        : <span>{money(sel.price, sel.currencySymbol)}</span>}
+        ? <span className="svr-price-now"><span className="svr-price-from">From </span>{money(sel.fromPrice, sel.currencySymbol)}</span>
+        : <span className="svr-price-now">{money(sel.price, sel.currencySymbol)}</span>}
       {/* The chosen combination's own normal price, struck through, when that
           combination is the one on offer. Not while showing a "From" range -
           there is no single figure to strike against. */}
-      {!showFrom && sel.compareAtPrice != null && sel.compareAtPrice > sel.price && (
-        <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--color-text-muted)', textDecoration: 'line-through' }}>
-          {money(sel.compareAtPrice, sel.currencySymbol)}
-        </span>
+      {onOffer && sel.compareAtPrice != null && (
+        <span className="svr-price-was">{money(sel.compareAtPrice, sel.currencySymbol)}</span>
       )}
+      {savePct != null && savePct > 0 && <span className="svr-price-save">Save {savePct}%</span>}
+      {/* The maker's list price, when the shop shows one and it sits above what
+          is being charged. */}
+      {rrp != null && <span className="svr-price-rrp">RRP {money(rrp, sel.currencySymbol)}</span>}
       {/* Only once there's a combination to be out of stock. Nothing chosen is
           not the same as nothing available, and saying so over the parent's
           price would turn every options product into a sold-out one. */}
-      {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span style={{ fontSize: '0.875rem', fontWeight: 400, color: 'var(--color-danger)' }}>Out of stock</span>}
+      {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span className="svr-price-oos">Out of stock</span>}
       {/* Which side of tax the figure beside it sits on, where the shop has set
           the wording. The payload arrives already converted to match. */}
-      {sel.priceSuffix && <span style={{ fontSize: '0.8125rem', fontWeight: 400, color: 'var(--color-text-muted)' }}>{sel.priceSuffix}</span>}
+      {sel.priceSuffix && <span className="svr-price-note">{sel.priceSuffix}</span>}
       <ResetOptionsLink sel={sel} />
     </div>
   )
