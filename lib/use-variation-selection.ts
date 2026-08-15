@@ -14,7 +14,7 @@
 // after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
@@ -480,6 +480,13 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     // choice starts from the same figure, and a price under each one would be
     // four copies of the same number.
     optionAffectsPrice: (optionId: string) => (payload ? optionAffectsPrice(payload, optionValues, optionId) : false),
+    // Whether picking this value could land on a reduced price, and whether the
+    // option has any such value behind it at all. On a product where only some
+    // variations are discounted, the second is what puts a "Sale" badge over the
+    // option's name so the shopper is told where the offer lives rather than
+    // clicking through every combination to find it.
+    valueOnSale: (optionId: string, valueId: string) => (payload ? valueOnSale(payload, optionValues, optionId, valueId) : false),
+    optionHasSale: (optionId: string) => (payload ? optionHasSale(payload, optionValues, optionId) : false),
     add,
   }
 }

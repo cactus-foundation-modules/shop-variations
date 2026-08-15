@@ -287,6 +287,33 @@ function OptionNumber({ n, done }: { n: number; done: boolean }) {
   )
 }
 
+// The "Sale" badge that sits beside an option's name when the offer is decided
+// there - some of that option's choices are reduced and some are not. It is a
+// signpost, not a price: it says "the money changes down this list", and the
+// figures under each choice (and the struck-through price by the buy button)
+// say by how much. See optionHasSale in selection-logic for when it appears.
+//
+// Subtle background with the deeper destructive text rather than a solid fill:
+// the label is small and bold, and white on the theme's terracotta is short of
+// AA at this size. This pairing clears it in both light and dark. No border -
+// the border token is not redefined for dark and would come out light on dark.
+function SaleBadge() {
+  return (
+    <span
+      style={{
+        display: 'inline-flex', alignItems: 'center', marginLeft: '0.5rem',
+        padding: '0.0625rem 0.375rem', borderRadius: 999,
+        fontSize: '0.6875rem', fontWeight: 700, lineHeight: 1.4,
+        letterSpacing: '0.02em', textTransform: 'uppercase',
+        background: 'var(--color-destructive-subtle)',
+        color: 'var(--color-destructive-hover)',
+      }}
+    >
+      Sale
+    </span>
+  )
+}
+
 // The tick that lands on a chosen value, overlapping its top-right corner. Filled
 // with the theme's primary and ringed in the surface colour so it reads as a badge
 // stuck on the choice rather than a mark inside it, on any background the theme
@@ -595,6 +622,10 @@ function VariantOptionsAccordion({
             <span style={{ display: 'inline-flex', alignItems: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
               <OptionNumber n={index + 1} done={!!chosenId} />
               {option.name}
+              {/* The heading is this layout's label, so the badge rides here -
+                  and stays readable with the section shut, which is the state a
+                  shopper meets first. */}
+              {sel.optionHasSale(option.id) && <SaleBadge />}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
               {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
@@ -847,6 +878,10 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
     }}>
       {index != null && <OptionNumber n={index} done={!!chosen} />}
       {option.name}
+      {/* Only where THIS option is the one that decides the offer - see
+          optionHasSale. On a product reduced across the board no option gets
+          one, since none of them narrows anything. */}
+      {sel.optionHasSale(option.id) && <SaleBadge />}
     </span>
   )
   // The name is inline-flex now, so on the stacked path it needs a block wrapper

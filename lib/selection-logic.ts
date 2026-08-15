@@ -200,6 +200,71 @@ export function valuePriceRange(
   return min === Infinity ? null : { min, max }
 }
 
+// Whether picking a given option value could land the shopper on a reduced
+// price: some buyable combination that carries it, and agrees with every pick
+// made ABOVE it, is on offer. Same directional filter as valuePriceRange, and
+// for the same reason - a later choice must never change what an earlier option
+// says about itself.
+//
+// "On offer" is the variant's own compareAtPrice sitting above what it is
+// actually charged. That figure is worked out server-side by shop's
+// effectivePrice, so this cannot disagree with the money printed beside the buy
+// button. Half a penny of tolerance so floating-point crumbs cannot invent a
+// saving out of two identical figures.
+export function valueOnSale(
+  payload: VariantSelectorPayload,
+  selection: OptionSelection,
+  optionId: string,
+  valueId: string,
+): boolean {
+  const v2o = valueToOptionMap(payload)
+  const targetIndex = payload.options.findIndex((o) => o.id === optionId)
+  for (const variant of payload.variants) {
+    if (!isBuyable(payload, variant)) continue
+    if (variant.compareAtPrice == null || variant.compareAtPrice - variant.price <= 0.005) continue
+    if (!variantAnswersTo(variant, optionId, valueId, v2o)) continue
+    let agrees = true
+    for (let i = 0; i < targetIndex; i++) {
+      const o = payload.options[i]
+      if (!o) continue
+      const sel = selection[o.id]
+      if (sel && !variantAnswersTo(variant, o.id, sel, v2o)) { agrees = false; break }
+    }
+    if (agrees) return true
+  }
+  return false
+}
+
+// Whether THIS option is where the offer is decided: some of its reachable
+// values lead to a reduced price and some do not. What the "Sale" badge over an
+// option's name answers - on a product where only certain variations are
+// discounted, it points at the choice that carries the offer rather than leaving
+// the shopper to click through every combination hunting for it.
+//
+// Deliberately NOT "any of them is on offer". Where every reachable value leads
+// to a reduction the option decides nothing about the money: badge every option
+// on a wholly discounted product and the badges say only what the struck-through
+// price beside the buy button already says, on the one product where they are
+// least use. The option that actually narrows it - the size, say, where only one
+// is on clearance - is the only one that comes out true, whichever other options
+// sit above or below it.
+export function optionHasSale(payload: VariantSelectorPayload, selection: OptionSelection, optionId: string): boolean {
+  const option = payload.options.find((o) => o.id === optionId)
+  if (!option) return false
+  let reachable = 0
+  let reduced = 0
+  for (const v of option.values) {
+    // Reachable on the same directional terms as everything else here: something
+    // buyable carries it and agrees with the picks above. An out-of-reach value
+    // is not a choice the shopper has, so it cannot be the reason a badge does
+    // or does not appear.
+    if (!valuePriceRange(payload, selection, optionId, v.id)) continue
+    reachable += 1
+    if (valueOnSale(payload, selection, optionId, v.id)) reduced += 1
+  }
+  return reduced > 0 && reduced < reachable
+}
+
 // Whether THIS option is one that moves the money: its reachable values do not
 // all start from the same figure. Where they do, printing a price under every
 // value would say the same thing four times and tell the shopper nothing, so the
