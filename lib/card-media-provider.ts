@@ -15,6 +15,7 @@ import { getProductMediaForProducts } from '@/modules/shop/lib/db/products'
 import type { ShopCardMediaProvider, ShopCardMediaPayload } from '@/modules/shop/lib/card-media'
 import type { PartImage } from '@/modules/shop/components/puck/parts/part-context'
 import { getVariantsForProducts } from '@/modules/shop-variations/lib/db/variants'
+import { getCardImageFromVariationSet } from '@/modules/shop-variations/lib/db/product-gallery'
 
 export const shopVariationsCardMedia: ShopCardMediaProvider = {
   async load(productIds) {
@@ -32,10 +33,23 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
       .map((v) => v.childProductId)
     if (childIds.length === 0) return out
 
+    // The products whose owner has asked, on the Images tab, that the tile lead
+    // with a promoted variation's photo rather than the product's own primary.
+    // One query for the whole grid, and empty on every shop that has never
+    // touched the setting.
+    const leadFromVariation = await getCardImageFromVariationSet([...variantsByProduct.keys()])
+
     const mediaByChild = await getProductMediaForProducts(childIds)
 
     for (const [productId, variants] of variantsByProduct) {
       const images: PartImage[] = []
+      // The photo that goes in FRONT of the product's own, where the owner asked
+      // for it: the first variation ticked "Image up front" that actually has a
+      // picture. Nothing here where the setting is off, or where no promoted
+      // variation has one - the card then leads with the product's own, exactly
+      // as before.
+      let lead: PartImage | null = null
+      const wantsLead = leadFromVariation.has(productId)
       for (const v of variants) {
         if (!v.enabled) continue
         // One picture per variation: its primary, else its first still image.
@@ -46,9 +60,17 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
         // carousel image, with the product name already carried by the first.
         // `sourceId` is the variation's child product id, so the card's 3D overlay
         // can show this variation's own model/material when its photo is on screen.
-        if (primary) images.push({ url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId })
+        if (!primary) continue
+        // Alt stays the media's own; shop fills a blank one on whichever image
+        // ends up leading the card with the product's name, so this does not
+        // need the parent rows just to write an alt.
+        if (wantsLead && lead === null && v.showImageInGallery) {
+          lead = { url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId }
+          continue
+        }
+        images.push({ url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId })
       }
-      if (images.length > 0) out.set(productId, { images })
+      if (images.length > 0 || lead) out.set(productId, { images, leadImages: lead ? [lead] : [] })
     }
     return out
   },

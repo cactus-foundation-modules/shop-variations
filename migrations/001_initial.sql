@@ -160,11 +160,13 @@ INSERT INTO "svr_settings" ("id") VALUES ('singleton') ON CONFLICT DO NOTHING;
 
 -- Per-product gallery ordering: a row exists only where the owner has asked for
 -- the product's own photographs to sit BEHIND the variations promoted with
--- "Image up front". Arrived in 014; kept in step here so a fresh install builds
--- the final shape in one go.
+-- "Image up front" (on the product page), or for a promoted variation's photo to
+-- be the picture the product shows in a grid. Arrived in 014 and 015; kept in
+-- step here so a fresh install builds the final shape in one go.
 CREATE TABLE IF NOT EXISTS "svr_product_gallery" (
     "product_id" TEXT NOT NULL,
     "base_images_last" BOOLEAN NOT NULL DEFAULT false,
+    "card_image_from_variation" BOOLEAN NOT NULL DEFAULT false,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_product_gallery_pkey" PRIMARY KEY ("product_id"),
     CONSTRAINT "svr_product_gallery_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE
