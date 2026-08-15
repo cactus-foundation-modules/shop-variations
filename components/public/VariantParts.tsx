@@ -1158,7 +1158,9 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
 }
 
 // ---- Personalisation -----------------------------------------------------
-export function VariantPersonalisationPart({ preview, slug: explicitSlug, initial }: PartProps) {
+export type VariantPersonalisationPartProps = PartProps & { heading?: string }
+
+export function VariantPersonalisationPart({ preview, slug: explicitSlug, initial, heading }: VariantPersonalisationPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   if (preview) return <Skeleton label="Personalisation fields" />
@@ -1167,6 +1169,9 @@ export function VariantPersonalisationPart({ preview, slug: explicitSlug, initia
 
   return (
     <div style={{ display: 'grid', gap: '0.875rem' }}>
+      {/* Nothing at all unless the shop asks for one, which is what this block
+          has always drawn - the fields carry their own labels. */}
+      {heading?.trim() && <h3 style={{ margin: 0, fontSize: '1.0625rem' }}>{heading.trim()}</h3>}
       {sel.payload.addons.map((addon) => (
         <AddonControl key={addon.id} addon={addon} value={sel.addonValues[addon.id]} onChange={(v) => sel.setAddon(addon.id, v)} currency={sel.currencySymbol} slug={slug} />
       ))}
@@ -1272,7 +1277,14 @@ const variantPriceCss = `
 .svr-price-oos{font-size:0.875rem;font-weight:400;color:var(--color-danger)}
 `
 
-export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartProps) {
+export type VariantPricePartProps = PartProps & {
+  showCompare?: string
+  showSave?: string
+  showRrp?: string
+  align?: string
+}
+
+export function VariantPricePart({ preview, slug: explicitSlug, initial, showCompare, showSave, showRrp, align }: VariantPricePartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   if (preview) return <Skeleton label="Variant price" />
@@ -1290,9 +1302,9 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
   const savePct = onOffer && sel.compareAtPrice ? Math.round(((sel.compareAtPrice - sel.price) / sel.compareAtPrice) * 100) : null
   // A range has no single RRP worth quoting either: the cheapest combination's
   // list price says nothing about the one the shopper ends up on.
-  const rrp = !showFrom ? sel.retailPrice : null
+  const rrp = !showFrom && showRrp !== 'no' ? sel.retailPrice : null
   return (
-    <div className="svr-price-block">
+    <div className="svr-price-block" style={align === 'center' || align === 'right' ? { justifyContent: align === 'right' ? 'flex-end' : 'center', textAlign: align } : undefined}>
       <style dangerouslySetInnerHTML={{ __html: variantPriceCss }} />
       {showFrom
         ? <span className="svr-price-now"><span className="svr-price-from">From </span>{money(sel.fromPrice, sel.currencySymbol)}</span>
@@ -1300,10 +1312,10 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial }: PartP
       {/* The chosen combination's own normal price, struck through, when that
           combination is the one on offer. Not while showing a "From" range -
           there is no single figure to strike against. */}
-      {onOffer && sel.compareAtPrice != null && (
+      {showCompare !== 'no' && onOffer && sel.compareAtPrice != null && (
         <span className="svr-price-was">{money(sel.compareAtPrice, sel.currencySymbol)}</span>
       )}
-      {savePct != null && savePct > 0 && <span className="svr-price-save">Save {savePct}%</span>}
+      {showSave !== 'no' && savePct != null && savePct > 0 && <span className="svr-price-save">Save {savePct}%</span>}
       {/* The maker's list price, when the shop shows one and it sits above what
           is being charged. */}
       {rrp != null && <span className="svr-price-rrp">RRP {money(rrp, sel.currencySymbol)}</span>}
@@ -1380,7 +1392,15 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
 // point, resolved by this block's RSC half. This block covers shop's Gallery slot,
 // so it is the only strip on the page and owns showing them - see the note in
 // variant-parts.rsc.tsx.
-export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extras = [] }: PartProps & { extras?: ShopGalleryExtra[] }) {
+export type VariantGalleryPartProps = PartProps & {
+  extras?: ShopGalleryExtra[]
+  // How big the thumbnail strip's tiles are. Blank keeps the 56px this block
+  // has always drawn - which is also the size the contributed 3D thumbnails
+  // are styled to, hence the custom property rather than a literal.
+  thumbSize?: number
+}
+
+export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extras = [], thumbSize }: VariantGalleryPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
   const [override, setOverride] = useState<string | null>(null)
@@ -1442,8 +1462,10 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   // A product whose only picture is a contributed item still has a gallery worth
   // drawing, so this bails only when there is nothing at all to show.
   if (!main && extras.length === 0) return null
+  const size = Number(thumbSize)
+  const sizeVar = Number.isFinite(size) && size > 0 ? ({ ['--svr-thumb' as string]: `${size}px` } as React.CSSProperties) : undefined
   return (
-    <div style={{ display: 'grid', gap: '0.5rem' }}>
+    <div style={{ display: 'grid', gap: '0.5rem', ...sizeVar }}>
       {/* This block styles itself inline, but a contributed thumbnail is rendered
           by the module that supplied it and can only be handed class names. These
           two mirror the image thumbnails' inline style above, so a 3D thumbnail
@@ -1451,7 +1473,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
           than like an unstyled button. */}
       {extras.length > 0 && (
         <style dangerouslySetInnerHTML={{ __html: `
-.svr-gallery-thumb{padding:0;border:2px solid var(--color-border);border-radius:8px;cursor:pointer;background:none;width:56px;height:56px;overflow:hidden;display:block;position:relative}
+.svr-gallery-thumb{padding:0;border:2px solid var(--color-border);border-radius:8px;cursor:pointer;background:none;width:var(--svr-thumb,56px);height:var(--svr-thumb,56px);overflow:hidden;display:block;position:relative}
 .svr-gallery-thumb.on{border-color:var(--color-primary)}
 ` }} />
       )}
@@ -1495,7 +1517,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
           {thumbs.map((t) => (
             <button key={t.url} type="button" onClick={() => { setOverride(t.url); setPicked(null) }} style={{ padding: 0, border: `2px solid ${main === t.url && !picked ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.url} alt={t.alt} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+              <img src={t.url} alt={t.alt} style={{ width: 'var(--svr-thumb, 56px)', height: 'var(--svr-thumb, 56px)', objectFit: 'cover', borderRadius: 6, display: 'block' }} />
             </button>
           ))}
         </div>

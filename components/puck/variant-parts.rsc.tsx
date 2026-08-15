@@ -11,6 +11,9 @@ import {
   shopVariantGalleryPuckComponent,
   type ShopVariantAddToCartProps,
   type ShopVariantOptionsProps,
+  type ShopVariantPersonalisationProps,
+  type ShopVariantPriceProps,
+  type ShopVariantGalleryProps,
 } from '@/modules/shop-variations/components/puck/variant-parts'
 
 // Live (RSC) halves of the granular Product Detail blocks. Kept in their own file
@@ -49,11 +52,21 @@ export async function ShopVariantOptionsRsc(props: ShopVariantOptionsProps) {
 export const shopVariantOptionsPuckRscComponent = { ...shopVariantOptionsPuckComponent, render: ShopVariantOptionsRsc }
 
 // --- Personalisation ---
-export async function ShopVariantPersonalisationRsc() { return <VariantPersonalisationPart {...await bootstrapProps()} /> }
+export async function ShopVariantPersonalisationRsc(props: ShopVariantPersonalisationProps) { return <VariantPersonalisationPart {...await bootstrapProps()} heading={props.heading} /> }
 export const shopVariantPersonalisationPuckRscComponent = { ...shopVariantPersonalisationPuckComponent, render: ShopVariantPersonalisationRsc }
 
 // --- Price ---
-export async function ShopVariantPriceRsc() { return <VariantPricePart {...await bootstrapProps()} /> }
+export async function ShopVariantPriceRsc(props: ShopVariantPriceProps) {
+  return (
+    <VariantPricePart
+      {...await bootstrapProps()}
+      showCompare={props.showCompare}
+      showSave={props.showSave}
+      showRrp={props.showRrp}
+      align={props.align}
+    />
+  )
+}
 export const shopVariantPricePuckRscComponent = { ...shopVariantPricePuckComponent, render: ShopVariantPriceRsc }
 
 // --- Add to cart ---
@@ -68,10 +81,10 @@ export const shopVariantAddToCartPuckRscComponent = { ...shopVariantAddToCartPuc
 // on the page, and therefore the only place a module's contributed gallery media
 // (shop's `shop.gallery-media` point) can appear - resolve it here or installing
 // such a module would do nothing on exactly the layouts that use this block.
-export async function ShopVariantGalleryRsc() {
+export async function ShopVariantGalleryRsc(blockProps: ShopVariantGalleryProps) {
   const props = await bootstrapProps()
   const productId = props.initial?.payload.productId ?? null
   const extras = productId ? await resolveShopGalleryExtras(productId) : []
-  return <VariantGalleryPart {...props} extras={extras} />
+  return <VariantGalleryPart {...props} extras={extras} thumbSize={blockProps.thumbSize} />
 }
 export const shopVariantGalleryPuckRscComponent = { ...shopVariantGalleryPuckComponent, render: ShopVariantGalleryRsc }

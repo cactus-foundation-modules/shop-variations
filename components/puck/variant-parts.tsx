@@ -137,12 +137,46 @@ export const shopVariantOptionsPuckComponent = {
 }
 
 // --- Personalisation ---
-export function ShopVariantPersonalisation() { return <VariantPersonalisationPart preview /> }
-export const shopVariantPersonalisationPuckComponent = { label: 'Shop: Personalisation', fields: {}, render: ShopVariantPersonalisation }
+export type ShopVariantPersonalisationProps = { heading?: string }
+export function ShopVariantPersonalisation(props: ShopVariantPersonalisationProps) {
+  return <VariantPersonalisationPart preview heading={props.heading} />
+}
+export const shopVariantPersonalisationPuckComponent = {
+  label: 'Shop: Personalisation',
+  fields: {
+    // Blank prints nothing at all, which is what this block has always drawn -
+    // the fields carry their own labels.
+    heading: { type: 'text' as const, label: 'Heading above the fields (blank for none)' },
+  },
+  defaultProps: { heading: '' } as ShopVariantPersonalisationProps,
+  render: ShopVariantPersonalisation,
+}
 
 // --- Price ---
-export function ShopVariantPrice() { return <VariantPricePart preview /> }
-export const shopVariantPricePuckComponent = { label: 'Shop: Variant Price', fields: {}, render: ShopVariantPrice }
+const yesNo = [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]
+
+export type ShopVariantPriceProps = { showCompare?: string; showSave?: string; showRrp?: string; align?: string }
+export function ShopVariantPrice(props: ShopVariantPriceProps) {
+  return <VariantPricePart preview showCompare={props.showCompare} showSave={props.showSave} showRrp={props.showRrp} align={props.align} />
+}
+export const shopVariantPricePuckComponent = {
+  label: 'Shop: Variant Price',
+  fields: {
+    // The same three trimmings shop's own Product: Price offers, and for the
+    // same reason - this block replaces it on a product with variations, so an
+    // owner who turned the RRP off there was surprised to find it back here.
+    showCompare: { type: 'select' as const, label: 'Show "was" price', options: yesNo },
+    showSave: { type: 'select' as const, label: 'Show "Save X%"', options: yesNo },
+    showRrp: { type: 'select' as const, label: 'Show RRP', options: yesNo },
+    align: { type: 'select' as const, label: 'Alignment', options: [
+      { value: 'left', label: 'Left' },
+      { value: 'center', label: 'Centre' },
+      { value: 'right', label: 'Right' },
+    ] },
+  },
+  defaultProps: { showCompare: 'yes', showSave: 'yes', showRrp: 'yes', align: 'left' } as ShopVariantPriceProps,
+  render: ShopVariantPrice,
+}
 
 // --- Add to cart ---
 export type ShopVariantAddToCartProps = { label?: string }
@@ -155,5 +189,18 @@ export const shopVariantAddToCartPuckComponent = {
 }
 
 // --- Variant-aware gallery ---
-export function ShopVariantGallery() { return <VariantGalleryPart preview /> }
-export const shopVariantGalleryPuckComponent = { label: 'Shop: Variant Gallery', fields: {}, render: ShopVariantGallery }
+export type ShopVariantGalleryProps = { thumbSize?: number }
+export function ShopVariantGallery(props: ShopVariantGalleryProps) {
+  return <VariantGalleryPart preview thumbSize={props.thumbSize} />
+}
+export const shopVariantGalleryPuckComponent = {
+  label: 'Shop: Variant Gallery',
+  fields: {
+    // Blank keeps the 56px the strip has always drawn. Applied as a custom
+    // property so a contributed 3D thumbnail - styled by the module that
+    // supplied it - resizes with the photographs beside it.
+    thumbSize: { type: 'number' as const, label: 'Thumbnail size (px, blank for the usual 56)', min: 32, max: 120 },
+  },
+  defaultProps: { thumbSize: undefined } as ShopVariantGalleryProps,
+  render: ShopVariantGallery,
+}
