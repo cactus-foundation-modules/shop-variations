@@ -67,6 +67,25 @@ export type VariantFieldProvider = {
    */
   beginImport?(productId: string, childProductIds: string[]): Promise<unknown>
   /**
+   * The batched form of `beginImport`: ONE context covering many parents at once.
+   *
+   * `beginImport` is called once per parent, which is right for an import of one
+   * product and wrong for anything that sweeps a catalogue. The Google Sheet's
+   * check asks "would this row change?" for every variant of every product, and
+   * paying each provider a round trip per parent came to minutes on a real shop -
+   * measured at 184s and 148s for the two providers across 349 parents, which was
+   * the entire remaining cost of a check once everything else had been batched.
+   *
+   * Implement this and a catalogue-wide caller preloads in one go; the context it
+   * returns is handed to `applyImportedRow` and `rowChanged` for EVERY parent in
+   * the batch, so anything it holds must be keyed by something globally unique -
+   * the child product id, or the parent's own id - never by position.
+   *
+   * Entirely optional. A provider with only `beginImport` keeps working exactly
+   * as before, one parent at a time; callers fall back to it.
+   */
+  beginImportMany?(parents: Array<{ productId: string; childProductIds: string[] }>): Promise<unknown>
+  /**
    * Apply one CSV row's provider columns to a variant's child product. `row` is
    * keyed by header label. `ctx` is whatever `beginImport` returned for this
    * parent (undefined when the provider has no `beginImport`).
