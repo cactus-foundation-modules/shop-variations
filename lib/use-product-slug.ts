@@ -10,7 +10,11 @@ import { useEffect, useState } from 'react'
 export function productSlugFromPath(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean)
   const i = parts.indexOf('products')
-  const next = i >= 0 ? parts[i + 1] : undefined
+  // Shop's ROOT product URL style serves the product page at a bare top-level
+  // slug, so a single-segment path is the slug candidate there. A bare segment
+  // that is not a product (an info page) simply matches no product - the same
+  // harmless miss as any malformed path below.
+  const next = i >= 0 ? parts[i + 1] : parts.length === 1 ? parts[0] : undefined
   if (!next) return null
   // A malformed escape in the path ("/shop/products/%") makes decodeURIComponent
   // throw, and thrown from here it took the whole variations block down on a
