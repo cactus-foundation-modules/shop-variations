@@ -32,9 +32,12 @@ type VariantRow = {
   enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; saleSku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
+  // The fewest of this combination sold in one go. Null follows the product's
+  // own figure, which the grid shows as the placeholder.
+  minOrderQuantity: number | null
 }
 type Payload = {
-  product: { id: string; name: string; price: number }
+  product: { id: string; name: string; price: number; minOrderQuantity?: number }
   options: Option[]
   variants: VariantRow[]
   addons: SvrAddon[]
@@ -42,7 +45,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -1039,6 +1042,9 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     )}
                     {supplierField && <th style={{ padding: '0.5rem' }}>{supplierField.label}</th>}
                     <th style={{ padding: '0.5rem' }}>Stock</th>
+                    <th style={{ padding: '0.5rem' }} title="The fewest of this combination a shopper may buy in one go. Leave it empty to follow whatever the product itself says.">
+                      Min qty
+                    </th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
                     {/* Two independent switches: a variation worth showing off for
@@ -1142,6 +1148,14 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             aria-label={`Stock for ${v.label}`}
                             value={valueOf(v, 'stockCount') ?? ''}
                             onChange={(e) => editVariant(v.variantId, { stockCount: e.target.value === '' ? null : Number(e.target.value) })}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem' }}>
+                          <input
+                            type="number" min={1} step="1" style={numInput} placeholder={String(data.product.minOrderQuantity ?? 1)}
+                            aria-label={`Smallest order for ${v.label}`}
+                            value={valueOf(v, 'minOrderQuantity') ?? ''}
+                            onChange={(e) => editVariant(v.variantId, { minOrderQuantity: e.target.value === '' ? null : Number(e.target.value) })}
                           />
                         </td>
                         {weightBasedShippingEnabled && (

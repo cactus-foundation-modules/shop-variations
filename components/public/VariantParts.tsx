@@ -6,6 +6,7 @@ import { useVariationSelection } from '@/modules/shop-variations/lib/use-variati
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
 import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
+import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 // On the live page each part is handed the slug and the payload its RSC half
@@ -1354,13 +1355,19 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 
+  // The floor moves with the chosen combination, so the shown figure is derived
+  // rather than kept in step by an effect - see the same note on the detail
+  // slot's buy row.
+  const min = sel.minQuantity
+  const shownQty = Math.max(min, qty)
+
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
       <SelectionSummary sel={sel} />
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
         <input
-          type="number" min={1} value={qty} aria-label="Quantity"
-          onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+          type="number" min={min} step={1} value={shownQty} aria-label="Quantity"
+          onChange={(e) => setQty(Math.max(min, Number(e.target.value) || min))}
           style={{ width: 64, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)' }}
         />
         {/* The tooltip goes on a wrapper, not on the button: a disabled control
@@ -1372,7 +1379,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
         <span title={reason ?? undefined} style={{ flex: 1, display: 'flex', minWidth: 0 }}>
           <button
             type="button" disabled={!sel.canAdd}
-            onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
+            onClick={() => { if (sel.add(shownQty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
             style={{
               flex: 1, minWidth: 0, background: sel.canAdd ? 'var(--color-primary)' : 'var(--color-bg-subtle)',
               color: sel.canAdd ? 'var(--color-on-primary)' : 'var(--color-text-muted)',
@@ -1387,6 +1394,9 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
           </button>
         </span>
       </div>
+      {min > 1 && (
+        <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>{minOrderSentence(min)}</p>
+      )}
       <AdminStockNote sel={sel} />
       <AdminSkuNote sel={sel} />
     </div>

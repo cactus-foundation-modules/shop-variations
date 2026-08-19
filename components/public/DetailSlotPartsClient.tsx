@@ -20,6 +20,7 @@ import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPoin
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { OPTIONS_AREA_CLASS, STICKY_GALLERY_CLASS, useStickyMobileGallery } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { GalleryThumbStrip } from '@/modules/shop/components/public/GalleryThumbStrip'
+import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import type {
   ShopDetailGallerySlotProps,
   ShopDetailPriceSlotProps,
@@ -421,6 +422,13 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 
+  // The stepper's floor is the chosen combination's own minimum, which moves as
+  // the shopper picks. Derived rather than pushed into state on a change: state
+  // set from a prop needs an effect to keep up, and an effect here would let the
+  // box show a stale (too small) figure for a frame after every option press.
+  const min = sel.minQuantity
+  const shownQty = Math.max(min, qty)
+
   return (
     <div>
       {!optionsPlaced && sel.payload.options.length > 0 && (
@@ -458,12 +466,12 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
       <div className={classNames.row}>
         {showStepper && (
           <div className={classNames.stepper}>
-            <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Decrease quantity">−</button>
+            <button type="button" onClick={() => setQty(Math.max(min, shownQty - 1))} disabled={shownQty <= min} aria-label="Decrease quantity">−</button>
             <input
-              type="text" inputMode="numeric" value={qty} aria-label="Quantity"
-              onChange={(e) => setQty(Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1))}
+              type="text" inputMode="numeric" value={shownQty} aria-label="Quantity"
+              onChange={(e) => setQty(Math.max(min, Number(e.target.value.replace(/\D/g, '')) || min))}
             />
-            <button type="button" onClick={() => setQty((q) => q + 1)} aria-label="Increase quantity">+</button>
+            <button type="button" onClick={() => setQty(shownQty + 1)} aria-label="Increase quantity">+</button>
           </div>
         )}
         {/* The tooltip goes on a wrapper, not on the button: a disabled control
@@ -477,7 +485,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
         <span title={reason ?? undefined} style={{ flex: 1, display: 'flex' }}>
           <button
             type="button" className={classNames.add} disabled={!sel.canAdd}
-            onClick={() => { if (sel.add(qty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
+            onClick={() => { if (sel.add(shownQty)) { setAdded(true); window.setTimeout(() => setAdded(false), 2000) } }}
           >
             {/* The reason the button is locked IS its label while it is locked, so
                 the shopper is answered by the control they are pressing rather
@@ -487,6 +495,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
           </button>
         </span>
       </div>
+      {min > 1 && <p className={classNames.minQuantityNote}>{minOrderSentence(min)}</p>}
       <AdminStockNote sel={sel} />
       <AdminSkuNote sel={sel} />
     </div>

@@ -17,6 +17,7 @@ import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/
 import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { optionParamEntries } from '@/modules/shop-variations/lib/url-selection'
 import { addToCart } from '@/modules/shop/components/public/cart'
+import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
@@ -401,6 +402,13 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // every option is picked" an accident of the stock check rather than a rule.
   const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid
 
+  // The fewest of what is in hand the shop will sell in one go. The chosen
+  // combination's own figure (already resolved against the parent server-side),
+  // falling back to the parent's while nothing is chosen - so the stepper opens
+  // on the right number rather than starting at one and moving under the shopper
+  // the moment they pick a size.
+  const minQuantity = minOrderQuantity(variant?.minOrderQuantity ?? payload?.baseMinOrderQuantity)
+
   // Tell the rest of the page which variation is in hand. Other modules' blocks
   // (the delivery module's service picker, say) have no way into this store and
   // must not import from it, so the answer goes out as a browser event - see
@@ -424,6 +432,10 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
 
   function add(quantity: number): boolean {
     if (!payload || !canAdd) return false
+    // Never add fewer than the minimum, whatever the caller was showing - the
+    // checkout would only refuse the line, and the shopper would find out two
+    // pages later.
+    quantity = Math.max(minQuantity, quantity)
     const targetProductId = variant ? variant.childProductId : payload.productId
     const filled: Record<string, AddonValue> = {}
     for (const a of payload.addons) {
@@ -485,6 +497,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     featuredImages,
     featuredModelChildIds,
     inStock,
+    minQuantity,
     hasOptions,
     allOptionsChosen,
     anyOptionChosen,

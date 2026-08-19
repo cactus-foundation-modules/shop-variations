@@ -43,14 +43,18 @@ export type ChildProductFields = {
   barcode: string | null
   supplier: string | null
   stockCount: number | null
+  // The fewest of this combination sold in one go, null where it simply follows
+  // the product's own figure. Carried for the same change-detection reason as
+  // the prices above.
+  minOrderQuantity: number | null
   weight: number | null
 }
 
 export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
   const map = new Map<string, ChildProductFields>()
   if (childProductIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; sale_sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; weight: unknown }[]>`
-    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "sale_sku", "barcode", "supplier", "stock_count", "weight"
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; sale_sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; min_order_quantity: number | null; weight: unknown }[]>`
+    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "sale_sku", "barcode", "supplier", "stock_count", "min_order_quantity", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
   `
   for (const r of rows) {
@@ -65,6 +69,7 @@ export async function getChildProductFields(childProductIds: string[]): Promise<
       barcode: r.barcode ?? null,
       supplier: r.supplier ?? null,
       stockCount: r.stock_count == null ? null : Number(r.stock_count),
+      minOrderQuantity: r.min_order_quantity == null ? null : Number(r.min_order_quantity),
       weight: r.weight == null ? null : Number(r.weight),
     })
   }

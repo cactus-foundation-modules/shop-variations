@@ -213,6 +213,15 @@ export type VariantSelectorVariant = {
   // Null means this variation has none of its own, in which case the parent's
   // supplier (already the fallback shown before any choice is made) stands.
   supplier: string | null
+  // The fewest of this combination the shop sells in one go, ALREADY resolved
+  // against the parent's own figure - so this is the number the buy row uses,
+  // not something to fall back from. 1 on all but a handful of combinations.
+  //
+  // Optional because this payload crosses to the browser as JSON and is held in
+  // caches that predate the field: one serialised before this shipped carries no
+  // such key, which must read as "one at a time" rather than throwing on the
+  // product page. Everything server-side always sets it.
+  minOrderQuantity?: number
 }
 
 export type VariantSelectorPayload = {
@@ -267,6 +276,11 @@ export type VariantSelectorPayload = {
   // unused, so a supplier's clearance code is never sat in a public page's
   // payload. Optional for the same reason as `priceSuffix`.
   showCodes?: boolean
+  // The PARENT's own smallest order: what the buy row uses before a combination
+  // has resolved, and on a product claimed for its add-ons alone where the
+  // parent is the thing being bought. Optional for the same reason as
+  // `priceSuffix`; absent reads as one at a time.
+  baseMinOrderQuantity?: number
 }
 
 // The same payload, plus the currency symbol, resolved on the server and handed

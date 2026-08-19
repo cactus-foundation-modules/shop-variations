@@ -22,6 +22,9 @@ const Body = z.object({
   supplier: z.string().max(200).nullable().optional(),
   trackInventory: z.boolean().optional(),
   stockCount: z.number().int().nullable().optional(),
+  // The fewest of this combination sold in one go. Null clears it, which means
+  // "follow the product's own figure" rather than "one at a time".
+  minOrderQuantity: z.number().int().min(1).nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
   // Whether this variation's first picture, and separately its 3D model, are
@@ -62,6 +65,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (data.supplier !== undefined) productFields.supplier = data.supplier
   if (data.trackInventory !== undefined) productFields.trackInventory = data.trackInventory
   if (data.stockCount !== undefined) productFields.stockCount = data.stockCount
+  // A minimum of one is no minimum, so it is stored as nothing - the same
+  // normalisation the product editor does, so the two cannot disagree.
+  if (data.minOrderQuantity !== undefined) productFields.minOrderQuantity = data.minOrderQuantity != null && data.minOrderQuantity > 1 ? data.minOrderQuantity : null
   if (data.weight !== undefined) productFields.weight = data.weight
   if (Object.keys(productFields).length > 0) await updateProduct(variant.childProductId, productFields)
 

@@ -11,6 +11,7 @@ import { effectivePrice, isOnSale, isPriceTypeEnabled } from '@/modules/shop/lib
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
+import { minOrderQuantity, resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
@@ -313,6 +314,7 @@ type ChildRow = {
   sku: string | null
   sale_sku: string | null
   supplier: string | null
+  min_order_quantity: number | null
 }
 
 // Everything the storefront selector needs in one payload: option controls,
@@ -379,7 +381,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const imagesByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier"
+      SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier", "min_order_quantity"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -433,6 +435,12 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       sku: exposeCodes ? child?.sku ?? null : null,
       saleSku: exposeCodes ? child?.sale_sku ?? null : null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
+      // The fewest of THIS combination the shop sells in one go, falling back to
+      // the parent's figure where the child carries none - so an owner sets one
+      // minimum on the product rather than across three hundred rows, and still
+      // gets to say "this one size only goes out in pairs". Not gated on any
+      // setting: a shopper has to be told before they press the button.
+      minOrderQuantity: resolveMinOrderQuantity(child?.min_order_quantity, parent.minOrderQuantity),
     }
   })
 
@@ -460,6 +468,10 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     showStockCounts: exposeStock,
     showCodes: exposeCodes,
     baseStock: exposeStock ? { tracked: parent.trackInventory, count: parent.stockCount } : null,
+    // The parent's own smallest order: what stands before a combination has
+    // resolved, and what IS the minimum on a product claimed for its add-ons
+    // alone, where the parent is the thing being bought.
+    baseMinOrderQuantity: minOrderQuantity(parent.minOrderQuantity),
   }
 }
 
@@ -580,13 +592,20 @@ export type VariantEditorRow = {
   supplier: string | null
   trackInventory: boolean
   stockCount: number | null
+  // The fewest of this combination the shop sells in one go. Null means "as the
+  // product says" rather than "one" - the grid shows the parent's figure as the
+  // placeholder so a blank cell is not mistaken for no minimum.
+  minOrderQuantity: number | null
   weight: number | null
   // Every image on this variant's hidden child product, primary first.
   imageUrls: string[]
 }
 
 export type EditorPayload = {
-  product: { id: string; name: string; slug: string; price: number }
+  // `minOrderQuantity` is the PARENT's own, already normalised - the grid shows
+  // it as the placeholder in each row's Min qty box, so a blank cell reads as
+  // "as the product says" rather than as "no minimum".
+  product: { id: string; name: string; slug: string; price: number; minOrderQuantity: number }
   options: SvrOptionWithValues[]
   variants: VariantEditorRow[]
   addons: SvrAddon[]
@@ -602,6 +621,7 @@ function optionalPrice(value: unknown): number | null {
 type ChildEditRow = ChildRow & {
   sale_sku: string | null
   barcode: string | null
+  min_order_quantity: number | null
   supplier: string | null
   weight: unknown
   retail_price: unknown
@@ -609,7 +629,7 @@ type ChildEditRow = ChildRow & {
   cost_price: unknown
 }
 
-type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string }
+type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string; minOrderQuantity?: number | null }
 
 // Shared by getEditorPayload and getEditorPayloadsBatch: turns one parent's
 // already-fetched options/variants/value-map/addons plus the shared child-row
@@ -650,13 +670,19 @@ function buildEditorPayload(
       supplier: child?.supplier ?? null,
       trackInventory: child?.track_inventory ?? false,
       stockCount: child?.stock_count ?? null,
+      minOrderQuantity: child?.min_order_quantity ?? null,
       weight: child?.weight != null ? Number(child.weight) : null,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
     }
   })
 
   return {
-    product: { id: parent.id, name: parent.name, slug: parent.slug, price: Number(parent.price) },
+    product: {
+      id: parent.id, name: parent.name, slug: parent.slug, price: Number(parent.price),
+      // What a blank cell in the grid's Min qty column actually means for this
+      // product, so the placeholder can say it rather than showing an empty box.
+      minOrderQuantity: minOrderQuantity(parent.minOrderQuantity),
+    },
     options,
     variants: rows,
     addons,
@@ -670,7 +696,7 @@ async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: 
   if (childIds.length === 0) return { childById, imagesByChild }
   const childRows = await prisma.$queryRaw<ChildEditRow[]>`
     SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight"
+           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight", "min_order_quantity"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
   `
   for (const r of childRows) childById.set(r.id, r)
@@ -780,6 +806,9 @@ export async function upsertVariantForCombination(
     barcode?: string | null
     supplier?: string | null
     stockCount?: number | null
+    // The fewest of this combination sold in one go. null clears it, which means
+    // "as the product says" rather than "one".
+    minOrderQuantity?: number | null
     weight?: number | null
   },
   ctx?: VariantUpsertContext,
@@ -847,6 +876,7 @@ export async function upsertVariantForCombination(
       || (fields.barcode !== undefined && (currentChild.barcode ?? null) !== (fields.barcode ?? null))
       || (fields.supplier !== undefined && (currentChild.supplier ?? null) !== (fields.supplier ?? null))
       || (fields.stockCount !== undefined && currentChild.stockCount !== fields.stockCount)
+      || (fields.minOrderQuantity !== undefined && (currentChild.minOrderQuantity ?? null) !== (fields.minOrderQuantity ?? null))
       || (fields.weight !== undefined && (currentChild.weight == null ? null : Number(currentChild.weight)) !== fields.weight)
   }
 
@@ -862,6 +892,7 @@ export async function upsertVariantForCombination(
       ...(fields.barcode !== undefined ? { barcode: fields.barcode } : {}),
       ...(fields.supplier !== undefined ? { supplier: fields.supplier } : {}),
       ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
+      ...(fields.minOrderQuantity !== undefined ? { minOrderQuantity: fields.minOrderQuantity } : {}),
       ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
     }
     // Batch caller: bank the write for a concurrent flush. Everyone else writes

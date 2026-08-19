@@ -102,7 +102,10 @@ export async function exportVariationsCsv(): Promise<string> {
   // by value-set exactly as it always did.
   // Sale SKU sits next to the SKU it stands in for while an offer runs, not with
   // the prices: it is a code, and the eye looking for a code looks there.
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
+  // Min Qty sits after Stock: it is a counting column and belongs with the other
+  // one, and appending it there keeps every column a sheet already knows in
+  // place except Barcode onwards, which the Pull aligns by header anyway.
+  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -125,7 +128,9 @@ export async function exportVariationsCsv(): Promise<string> {
         p.product.slug, p.product.name, ...pairs,
         v.sku ?? '', v.saleSku ?? '', String(v.price),
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
-        v.stockCount != null ? String(v.stockCount) : '', v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
+        v.stockCount != null ? String(v.stockCount) : '',
+        v.minOrderQuantity != null ? String(v.minOrderQuantity) : '',
+        v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         v.childProductId,
         ...fieldCells,
       ]))
@@ -206,6 +211,9 @@ export async function importVariationsCsv(
   // leaves the field alone rather than blanking it - the same rule every other
   // late-arriving column follows.
   const saleSkuCol = idx('Sale SKU')
+  // The smallest order. Absent from every sheet written before it existed, which
+  // leaves the field alone rather than blanking it.
+  const minQtyCol = idx('Min Qty')
   const salePriceCol = idx('Sale Price'), rrpCol = idx('RRP'), tradePriceCol = idx('Trade Price'), costPriceCol = idx('Cost Price')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
@@ -620,6 +628,12 @@ export async function importVariationsCsv(
           barcode: barcodeCol >= 0 ? (gr.cols[barcodeCol]?.trim() || null) : undefined,
           supplier: supplierCol >= 0 ? (gr.cols[supplierCol]?.trim() || null) : undefined,
           stockCount: stockCol >= 0 ? (num(gr.cols[stockCol]) ?? null) : undefined,
+          // A sheet saying 1 (or 0, or nothing) means "as the product says", so
+          // it lands as null rather than as a figure that would then have to be
+          // read past everywhere a minimum is resolved.
+          minOrderQuantity: minQtyCol >= 0
+            ? (() => { const n = num(gr.cols[minQtyCol]); return n != null && n > 1 ? Math.floor(n) : null })()
+            : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
         }, upsertCtx)
         rowNumByChild.set(childProductId, gr.rowNum)
