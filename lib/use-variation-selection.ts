@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { optionParamEntries } from '@/modules/shop-variations/lib/url-selection'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
@@ -38,6 +39,11 @@ type Entry = {
   // that. A counter rather than a flag, so an island watches it as an effect
   // dependency and there is nothing to clear afterwards.
   resetEpoch: number
+  // True when this entry was seeded from a server-resolved payload - which
+  // only happens while the product's own page renders (the detail-parts
+  // provider records the slug on the way past). The URL sync below uses it to
+  // tell "this IS the product's page" from a block rendered somewhere else.
+  seeded: boolean
   subs: Set<() => void>
 }
 
@@ -55,7 +61,7 @@ let currencyFetched = false
 const isServer = typeof window === 'undefined'
 
 function newEntry(slug: string): Entry {
-  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, subs: new Set() }
+  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, seeded: false, subs: new Set() }
 }
 
 // Turn a flat list of option-value ids (a deep-linked variant's combination)
@@ -82,6 +88,7 @@ function seededEntry(slug: string, bootstrap: VariationBootstrap): Entry {
   entry.payload = bootstrap.payload
   entry.currencySymbol = bootstrap.currencySymbol
   entry.loaded = true
+  entry.seeded = true
   if (bootstrap.preselectOptionValueIds && bootstrap.preselectOptionValueIds.length > 0) {
     entry.optionValues = optionValuesFromValueIds(bootstrap.payload, bootstrap.preselectOptionValueIds)
   }
@@ -145,6 +152,44 @@ function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): vo
   currencyFetched = true
 }
 
+// Write the picks into the address bar (one parameter per option - see
+// url-selection.ts), so the URL in hand IS the shareable link to this exact
+// configuration: whoever opens it gets the same options chosen, and the social
+// preview shows the same picture (the server reads these parameters back in
+// variation-bootstrap.ts and the social-image provider).
+//
+// replaceState, not pushState - a colour click must not bury the back button.
+// Only on the product's own page: `seeded` says the server identified this
+// product while rendering this page (true on its deep-link URLs too), and the
+// path check catches the fetch-path fallback on the product's own URL. A block
+// showing this product on some OTHER page must leave that page's address bar
+// alone. On a variant deep link (the child's slug in the path), the first pick
+// rewrites the path to the parent's slug so the parameters compose against the
+// page they name rather than fighting the child slug's own preselection.
+function syncSelectionToUrl(entry: Entry): void {
+  if (isServer || !entry.payload) return
+  try {
+    const url = new URL(window.location.href)
+    const segments = url.pathname.split('/').filter(Boolean)
+    const lastSegment = segments[segments.length - 1]
+    const last = lastSegment ? decodeURIComponent(lastSegment) : ''
+    const onOwnPath = last === entry.slug
+    if (!entry.seeded && !onOwnPath) return
+    if (!onOwnPath && segments.length > 0) {
+      segments[segments.length - 1] = encodeURIComponent(entry.slug)
+      url.pathname = `/${segments.join('/')}`
+    }
+    for (const [key, valueSlug] of optionParamEntries(entry.payload, entry.optionValues)) {
+      if (valueSlug) url.searchParams.set(key, valueSlug)
+      else url.searchParams.delete(key)
+    }
+    const next = url.toString()
+    if (next !== window.location.href) window.history.replaceState(window.history.state, '', next)
+  } catch {
+    // A URL we cannot rewrite is a cosmetic loss, never a broken selector.
+  }
+}
+
 export function setOptionValue(slug: string, optionId: string, valueId: string): void {
   const entry = getEntry(slug)
   // Set the changed option and keep every other pick exactly as it stands -
@@ -158,6 +203,7 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
   // the choice that no longer fits.
   entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
   notify(entry)
+  syncSelectionToUrl(entry)
 }
 
 // Back to the opening state: every option unchosen, so the price falls back to
@@ -170,6 +216,7 @@ export function resetOptionValues(slug: string): void {
   entry.optionValues = {}
   entry.resetEpoch += 1
   notify(entry)
+  syncSelectionToUrl(entry)
 }
 
 export function setAddonValue(slug: string, addonId: string, value: AddonValue): void {

@@ -14,7 +14,9 @@
 // why they live apart from the editor-safe block files.
 import { cache } from 'react'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
+import { currentProductPageSearchParams } from '@/modules/shop/lib/product-page-params'
 import { getVariantSelectorPayloadBySlug } from '@/modules/shop-variations/lib/variants-service'
+import { selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 // Request-scoped slot holding the product being rendered. `cache` hands back the
@@ -65,10 +67,17 @@ export const getVariationBootstrap = cache(async (slug: string): Promise<Variati
     getShopConfigCached(),
   ])
   if (!payload) return null
-  // A deep-linked variant's picks, if this request arrived through one. Only
-  // ones this payload actually carries are passed on, so a stale or foreign id
-  // can never seed a pick the controls have no value for. Absent otherwise.
-  const preselect = currentPreselectOptionValues()
+  // A deep-linked variant's picks, if this request arrived through one - else
+  // the picks a shared link's own option parameters name (the address bar the
+  // shopper copied; see url-selection.ts). Only ones this payload actually
+  // carries are passed on, so a stale or foreign id can never seed a pick the
+  // controls have no value for. Absent otherwise.
+  let preselect = currentPreselectOptionValues()
+  if (!preselect || preselect.length === 0) {
+    const searchParams = currentProductPageSearchParams()
+    const fromParams = searchParams ? selectionValueIdsFromParams(payload, searchParams) : []
+    if (fromParams.length > 0) preselect = fromParams
+  }
   const known = preselect ? new Set(payload.options.flatMap((o) => o.values.map((v) => v.id))) : null
   const preselectOptionValueIds = preselect?.filter((id) => known?.has(id))
   return {
