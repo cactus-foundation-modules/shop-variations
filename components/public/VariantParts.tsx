@@ -576,7 +576,13 @@ function VariantOptionsAccordion({
   useIsomorphicLayoutEffect(() => {
     if (!pending) return
     const idx = options.findIndex((o) => o.id === pending)
-    const nextId = idx >= 0 ? options[idx + 1]?.id : undefined
+    // Not simply the section after this one: the very pick being drained may have
+    // auto-settled the option(s) that follow it (withAutoSelected - one reachable
+    // value, chosen for the shopper, drawn without a toggle). A settled section
+    // cannot open and needs nothing from the shopper, so advancing onto it left
+    // the reveal stalled there. The section to open is the first one after the
+    // pick still without an answer.
+    const nextId = idx >= 0 ? options.slice(idx + 1).find((o) => !sel.optionValues[o.id])?.id : undefined
     // Draining a one-shot "a choice was made" signal after the reveal render, not
     // deriving render state; the guard above makes it fire once per choice.
     setPending(null)
@@ -587,7 +593,7 @@ function VariantOptionsAccordion({
       if (nextId) s.add(nextId)
       return s
     })
-  }, [pending, options, onSelect])
+  }, [pending, options, onSelect, sel.optionValues])
 
   const toggle = (id: string) => setOpenIds((prev) => {
     const s = new Set(prev)
