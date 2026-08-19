@@ -390,7 +390,10 @@ export function VariantSlotSupplierValueClient({ slug, fallback, initial }: Seed
 // combination, not on the parent row shop can see.
 export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames, layoutBlockTypes, initial }: Seeded<ShopDetailPurchaseSlotProps>) {
   const sel = useVariationSelection(slug, initial)
-  const [qty, setQty] = useState(1)
+  // null = the shopper has not touched the stepper, so it shows whatever the
+  // chosen combination's minimum is and keeps up as they change their mind.
+  // Once they have set a figure it is theirs, minimum or not.
+  const [qty, setQty] = useState<number | null>(null)
   const [added, setAdded] = useState(false)
   // Options and personalisation ride along in this slot because shop has no part
   // of its own for them. When the author has already placed our granular block
@@ -422,12 +425,18 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 
-  // The stepper's floor is the chosen combination's own minimum, which moves as
-  // the shopper picks. Derived rather than pushed into state on a change: state
-  // set from a prop needs an effect to keep up, and an effect here would let the
-  // box show a stale (too small) figure for a frame after every option press.
+  // The stepper OPENS on the chosen combination's minimum and moves with it,
+  // but its floor is 1: a listing's minimum is met across the basket, so one of
+  // this colour and three of another is a perfectly good way to reach four.
+  // Derived rather than pushed into state on a change - state set from a prop
+  // needs an effect to keep up, and an effect here would leave the box showing a
+  // stale figure for a frame after every option press.
   const min = sel.minQuantity
-  const shownQty = Math.max(min, qty)
+  const shownQty = Math.max(1, qty ?? min)
+  // A product with options meets its minimum across whichever combinations end
+  // up in the basket; one claimed for its add-ons alone is a single line and
+  // meets it on its own. The wording has to say which.
+  const minPooled = sel.hasOptions
 
   return (
     <div>
@@ -466,10 +475,10 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
       <div className={classNames.row}>
         {showStepper && (
           <div className={classNames.stepper}>
-            <button type="button" onClick={() => setQty(Math.max(min, shownQty - 1))} disabled={shownQty <= min} aria-label="Decrease quantity">−</button>
+            <button type="button" onClick={() => setQty(Math.max(1, shownQty - 1))} disabled={shownQty <= 1} aria-label="Decrease quantity">−</button>
             <input
               type="text" inputMode="numeric" value={shownQty} aria-label="Quantity"
-              onChange={(e) => setQty(Math.max(min, Number(e.target.value.replace(/\D/g, '')) || min))}
+              onChange={(e) => setQty(Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1))}
             />
             <button type="button" onClick={() => setQty(shownQty + 1)} aria-label="Increase quantity">+</button>
           </div>
@@ -495,7 +504,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
           </button>
         </span>
       </div>
-      {min > 1 && <p className={classNames.minQuantityNote}>{minOrderSentence(min)}</p>}
+      {min > 1 && <p className={classNames.minQuantityNote}>{minOrderSentence(min, minPooled)}</p>}
       <AdminStockNote sel={sel} />
       <AdminSkuNote sel={sel} />
     </div>

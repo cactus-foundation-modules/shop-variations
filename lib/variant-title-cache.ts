@@ -12,18 +12,27 @@
 // request-store pattern.
 import { cache } from 'react'
 import type { ShpProduct } from '@/modules/shop/lib/types'
-import type { CartLineTitle } from '@/modules/shop/lib/line-meta'
+import type { CartLineMinOrder, CartLineTitle } from '@/modules/shop/lib/line-meta'
+import { resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
 import { getProductById, getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getVariantByChildProductId, getVariantParentsByChild } from '@/modules/shop-variations/lib/db/variants'
 
 type TitleStore = {
   titleByProduct: Map<string, CartLineTitle>
+  // Which parent listing each variant child belongs to, and that parent's own
+  // minimum order. Filled by the same batched pass as the titles, because the
+  // cart-line resolver needs all three and they come out of one lookup - see
+  // getVariantMinOrder.
+  parentByProduct: Map<string, string>
+  parentMinByProduct: Map<string, number | null>
   prefetched: boolean
 }
 
 // One store per request (see addon-cache for the same cache() pattern).
 const requestStore = cache((): TitleStore => ({
   titleByProduct: new Map(),
+  parentByProduct: new Map(),
+  parentMinByProduct: new Map(),
   prefetched: false,
 }))
 
@@ -51,8 +60,12 @@ export async function prefetchVariantTitles(products: ShpProduct[]): Promise<voi
     const parents = await getProductsByIds([...new Set(parentByChild.values())])
     for (const child of children) {
       const parentId = parentByChild.get(child.id)
+      if (parentId) store.parentByProduct.set(child.id, parentId)
       const parent = parentId ? parents.get(parentId) : undefined
-      if (parent) store.titleByProduct.set(child.id, splitTitle(child.name, parent.name))
+      if (parent) {
+        store.titleByProduct.set(child.id, splitTitle(child.name, parent.name))
+        store.parentMinByProduct.set(child.id, parent.minOrderQuantity)
+      }
     }
   }
   store.prefetched = true
@@ -72,4 +85,36 @@ export async function buildVariantTitle(product: ShpProduct): Promise<CartLineTi
   const parent = await getProductById(variant.productId)
   if (!parent) return null
   return splitTitle(product.name, parent.name)
+}
+
+// Everything shop needs to hold a variation to its listing's minimum order: the
+// listing this line is a way of buying, and the figure that listing actually
+// asks for. Null for anything that is not a variation.
+//
+// The quantity matters as much as the key. A variation child's own
+// `min_order_quantity` is very nearly always blank - the owner sets one figure
+// on the product, which is the whole point of the fallback - so shop reading the
+// child row alone saw no minimum at all and let a basket of one through the
+// checkout while the product page insisted on four. Only this module can see the
+// parent, so only this module can answer it.
+//
+// Served from the same request batch as the titles; falls back to the direct
+// lookups when shop did not prefetch, exactly as buildVariantTitle does.
+export async function getVariantMinOrder(product: ShpProduct): Promise<CartLineMinOrder | null> {
+  if (!product.catalogueHidden) return null
+  const store = requestStore()
+  if (store.prefetched) {
+    const key = store.parentByProduct.get(product.id)
+    if (!key) return null
+    // parentMinByProduct is keyed by CHILD id, like every other map here.
+    return { key, quantity: resolveMinOrderQuantity(product.minOrderQuantity, store.parentMinByProduct.get(product.id) ?? null) }
+  }
+
+  const variant = await getVariantByChildProductId(product.id)
+  if (!variant) return null
+  const parent = await getProductById(variant.productId)
+  return {
+    key: variant.productId,
+    quantity: resolveMinOrderQuantity(product.minOrderQuantity, parent?.minOrderQuantity ?? null),
+  }
 }

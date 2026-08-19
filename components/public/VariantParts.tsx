@@ -1342,7 +1342,9 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial, showCom
 export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, label }: PartProps & { label?: string }) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
-  const [qty, setQty] = useState(1)
+  // null = untouched, so the box shows the chosen combination's minimum and
+  // keeps up as the shopper changes their mind - see the detail slot's buy row.
+  const [qty, setQty] = useState<number | null>(null)
   const [added, setAdded] = useState(false)
   if (preview) return <Skeleton label="Add to basket" />
   if (!slug || !sel.loaded || !sel.payload) return null
@@ -1355,19 +1357,19 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 
-  // The floor moves with the chosen combination, so the shown figure is derived
-  // rather than kept in step by an effect - see the same note on the detail
-  // slot's buy row.
+  // Opens on the chosen combination's minimum, floored at 1 - the minimum is met
+  // across the basket, not by this line alone. See the same note on the detail
+  // slot's buy row for why it is derived rather than kept in step by an effect.
   const min = sel.minQuantity
-  const shownQty = Math.max(min, qty)
+  const shownQty = Math.max(1, qty ?? min)
 
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
       <SelectionSummary sel={sel} />
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
         <input
-          type="number" min={min} step={1} value={shownQty} aria-label="Quantity"
-          onChange={(e) => setQty(Math.max(min, Number(e.target.value) || min))}
+          type="number" min={1} step={1} value={shownQty} aria-label="Quantity"
+          onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
           style={{ width: 64, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)' }}
         />
         {/* The tooltip goes on a wrapper, not on the button: a disabled control
@@ -1395,7 +1397,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
         </span>
       </div>
       {min > 1 && (
-        <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>{minOrderSentence(min)}</p>
+        <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>{minOrderSentence(min, sel.hasOptions)}</p>
       )}
       <AdminStockNote sel={sel} />
       <AdminSkuNote sel={sel} />

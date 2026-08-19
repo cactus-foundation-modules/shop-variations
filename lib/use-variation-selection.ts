@@ -402,11 +402,12 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // every option is picked" an accident of the stock check rather than a rule.
   const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid
 
-  // The fewest of what is in hand the shop will sell in one go. The chosen
+  // The minimum this listing answers to for what is in hand: the chosen
   // combination's own figure (already resolved against the parent server-side),
-  // falling back to the parent's while nothing is chosen - so the stepper opens
-  // on the right number rather than starting at one and moving under the shopper
-  // the moment they pick a size.
+  // falling back to the parent's while nothing is chosen. It is what the stepper
+  // OPENS on and what the note under the button quotes - not a floor, because a
+  // product with options meets its minimum across whichever mix of combinations
+  // ends up in the basket.
   const minQuantity = minOrderQuantity(variant?.minOrderQuantity ?? payload?.baseMinOrderQuantity)
 
   // Tell the rest of the page which variation is in hand. Other modules' blocks
@@ -432,10 +433,11 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
 
   function add(quantity: number): boolean {
     if (!payload || !canAdd) return false
-    // Never add fewer than the minimum, whatever the caller was showing - the
-    // checkout would only refuse the line, and the shopper would find out two
-    // pages later.
-    quantity = Math.max(minQuantity, quantity)
+    // Deliberately NOT clamped to the minimum: a listing's minimum is met across
+    // the whole basket, so one of this colour and three of another is a perfectly
+    // good way to reach four. Shop pools the lines and holds the basket back if
+    // they do not add up - see its lib/min-order.ts.
+    quantity = Math.max(1, quantity)
     const targetProductId = variant ? variant.childProductId : payload.productId
     const filled: Record<string, AddonValue> = {}
     for (const a of payload.addons) {

@@ -1042,7 +1042,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     )}
                     {supplierField && <th style={{ padding: '0.5rem' }}>{supplierField.label}</th>}
                     <th style={{ padding: '0.5rem' }}>Stock</th>
-                    <th style={{ padding: '0.5rem' }} title="The fewest of this combination a shopper may buy in one go. Leave it empty to follow whatever the product itself says.">
+                    <th style={{ padding: '0.5rem' }} title="The fewest of this product a shopper may buy in one go, counted across every combination in their basket - four of one colour and four in a mix both count as four. Leave it empty to follow whatever the product itself says.">
                       Min qty
                     </th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
