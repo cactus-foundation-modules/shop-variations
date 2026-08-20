@@ -74,3 +74,20 @@ export function optionParamEntries(
   }
   return entries
 }
+
+// The query string for a set of picks, in the order the options are displayed:
+// `headrest=with-headrest&upholstery-colour=rivet-forge`. Entries whose value is
+// null are dropped, so a partial selection produces the parameters it does have.
+// Returns '' for nothing picked, so callers can append it behind a `?` test.
+//
+// Shared by the two places that have to agree on the exact spelling of a
+// variation's address: lib/sitemap.ts, which publishes it for indexing, and
+// lib/canonical-query-provider.ts, which is what tells a search engine that the
+// address is a page in its own right. Two spellings of the same combination
+// would have the sitemap advertising a URL the page then disowns.
+export function buildVariationQuery(entries: Array<[key: string, valueSlug: string | null]>): string {
+  return entries
+    .filter((e): e is [string, string] => !!e[1])
+    .map(([key, slug]) => `${encodeURIComponent(key)}=${encodeURIComponent(slug)}`)
+    .join('&')
+}
