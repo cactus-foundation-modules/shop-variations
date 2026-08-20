@@ -1445,29 +1445,23 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   if (preview) return <Skeleton label="Variant gallery" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
-  const base = sel.payload.baseImages
   // Every image the chosen variant owns leads the strip, in its own order, with
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
   //
-  // The promoted variations' pictures bring up the rear, and stay there until a
-  // whole combination resolves (see sel.featuredImages). Behind the product's own
-  // rather than in front: they are extra colours on offer, not what the product
-  // is.
-  //
-  // The owner can turn that round per product on the Images tab
-  // (sel.baseImagesLast), putting the promoted variations first and the product's
-  // own pictures behind them.
-  const promoted = sel.featuredImages.map((url) => ({ url, alt: 'Another finish' }))
+  // That gallery is the product's own photographs and the variations promoted
+  // with "Image up front", in the single order the owner dragged them into on the
+  // Images tab (see sel.galleryImages). The promoted ones stay in it until a whole
+  // combination resolves, and drop out from then on.
   const thumbs = [
     ...variantImages.map((url) => ({ url, alt: 'Selected variant' })),
-    ...(sel.baseImagesLast ? [...promoted, ...base] : [...base, ...promoted]),
+    ...sel.galleryImages.map((i) => ({ url: i.url, alt: i.alt || 'Another finish' })),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // An override the strip no longer offers is dropped rather than left on the
   // stage: a promoted variation's picture stops being on offer the moment their
   // combination resolves, and it may be the very one they had clicked.
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
-  const main = held ?? sel.image ?? (sel.baseImagesLast ? thumbs[0]?.url : base[0]?.url) ?? thumbs[0]?.url ?? null
+  const main = held ?? sel.image ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
   const activeProductId = sel.variant?.childProductId ?? null
   // Whether what is on the stage is the shopper's own configuration rather than

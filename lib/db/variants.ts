@@ -10,6 +10,7 @@ function mapVariant(r: Record<string, unknown>): SvrVariant {
     enabled: r.enabled as boolean,
     showImageInGallery: r.show_image_in_gallery as boolean,
     showModelInGallery: r.show_model_in_gallery as boolean,
+    galleryPosition: (r.gallery_position as number | null) ?? null,
     position: r.position as number,
   }
 }
@@ -236,6 +237,22 @@ export async function setVariantShowImageInGallery(id: string, showImageInGaller
 
 export async function setVariantShowModelInGallery(id: string, showModelInGallery: boolean): Promise<void> {
   await prisma.$executeRaw`UPDATE "svr_variants" SET "show_model_in_gallery" = ${showModelInGallery} WHERE "id" = ${id}`
+}
+
+// Where each promoted variation's photo sits in the parent's gallery - its index
+// in the finished strip, the parent's own pictures counted in (migration 016).
+// Written as one statement because the Images tab hands back the whole
+// arrangement at once, and a loop of single UPDATEs would be a round trip per
+// tile every time an image was dragged.
+export async function setVariantGalleryPositions(positions: { id: string; galleryPosition: number | null }[]): Promise<void> {
+  if (positions.length === 0) return
+  const tuples = positions.map((p) => Prisma.sql`(${p.id}::text, ${p.galleryPosition}::int)`)
+  await prisma.$executeRaw`
+    UPDATE "svr_variants" AS v
+    SET "gallery_position" = c.slot
+    FROM (VALUES ${Prisma.join(tuples)}) AS c(id, slot)
+    WHERE v."id" = c.id
+  `
 }
 
 export async function deleteVariant(id: string): Promise<void> {

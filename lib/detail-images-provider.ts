@@ -4,17 +4,16 @@
 // in the same order, as the product's own page.
 //
 // The rule is the product page's, reproduced rather than reinvented: enabled
-// variations ticked "Image up front", in matrix order, one representative picture
-// each - a promoted variation is a taster of the range, and four angles of the oak
-// desk would bury the product's own photographs. Where the owner has asked for the
-// product's own to sit BEHIND them (the Images tab's setting, `baseImagesLast`),
-// they go in front; otherwise behind. See lib/use-variation-selection.ts, which
-// applies the same two rules to the live gallery.
+// variations ticked "Image up front", one representative picture each - a
+// promoted variation is a taster of the range, and four angles of the oak desk
+// would bury the product's own photographs - each carrying the slot the owner
+// dragged it to in the product's Images grid. Shop lays its own photographs out
+// and drops these into those slots; see lib/gallery-order.ts, which the live
+// gallery uses to do exactly the same thing.
 import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import type { ShopDetailImagesProvider, ShopExtraDetailImages } from '@/modules/shop/lib/detail-images'
 import { getVariants } from '@/modules/shop-variations/lib/db/variants'
-import { getBaseImagesLast } from '@/modules/shop-variations/lib/db/product-gallery'
 
 export const shopVariationsDetailImages: ShopDetailImagesProvider = {
   async load(productId): Promise<ShopExtraDetailImages | null> {
@@ -41,10 +40,10 @@ export const shopVariationsDetailImages: ShopDetailImagesProvider = {
     // simply contributes none - it may have been promoted for its 3D model.
     const images = promoted.flatMap((v) => {
       const image = firstByChild.get(v.childProductId)
-      return image ? [image] : []
+      return image ? [{ ...image, position: v.galleryPosition }] : []
     })
     if (images.length === 0) return null
 
-    return { images, placement: (await getBaseImagesLast(productId)) ? 'before' : 'after' }
+    return { images }
   },
 }

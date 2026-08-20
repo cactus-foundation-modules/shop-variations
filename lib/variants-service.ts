@@ -15,7 +15,6 @@ import { minOrderQuantity, resolveMinOrderQuantity } from '@/modules/shop/lib/mi
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
-import { getBaseImagesLast } from '@/modules/shop-variations/lib/db/product-gallery'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -366,27 +365,30 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const adjust = makeDisplayAdjuster(taxDisplay, parent.taxClassId)
   const shown = (amount: number) => (adjust ? adjust(amount) : amount)
 
-  const [options, variants, valueMap, aliasMap, addons, baseMedia, baseImagesLast] = await Promise.all([
+  const [options, variants, valueMap, aliasMap, addons, baseMedia] = await Promise.all([
     getOptionsWithValues(parentId),
     getVariants(parentId),
     getVariantValueMap(parentId),
     getVariantAliasMap(parentId),
     getAddons(parentId),
     getProductMedia(parentId),
-    getBaseImagesLast(parentId),
   ])
 
   const childIds = variants.map((v) => v.childProductId)
   const childById = new Map<string, ChildRow>()
   const imagesByChild = new Map<string, string[]>()
+  // Each of those pictures' descriptions, kept in step with the urls above so a
+  // promoted variation's photo carries what the owner typed on the Images tab
+  // rather than the parent's name.
+  const altsByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
       SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier", "min_order_quantity"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
-    const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
-      SELECT "product_id", "url"
+    const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string; alt_text: string | null }[]>`
+      SELECT "product_id", "url", "alt_text"
       FROM "shp_product_media"
       WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
       ORDER BY "product_id", "is_primary" DESC, "position" ASC
@@ -395,6 +397,9 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       const list = imagesByChild.get(r.product_id)
       if (list) list.push(r.url)
       else imagesByChild.set(r.product_id, [r.url])
+      const alts = altsByChild.get(r.product_id)
+      if (alts) alts.push(r.alt_text ?? '')
+      else altsByChild.set(r.product_id, [r.alt_text ?? ''])
     }
   }
 
@@ -430,8 +435,10 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       stockCount: exposeStock && tracks ? stockCount : null,
       tracksStock: tracks,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
+      imageAlts: altsByChild.get(v.childProductId) ?? [],
       showImageInGallery: v.showImageInGallery,
       showModelInGallery: v.showModelInGallery,
+      galleryPosition: v.galleryPosition,
       sku: exposeCodes ? child?.sku ?? null : null,
       saleSku: exposeCodes ? child?.sale_sku ?? null : null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
@@ -460,7 +467,6 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     // lives on its variations keeps no retail price of its own.
     baseRetailPrice: showRetail && parent.retailPrice != null ? shown(Number(parent.retailPrice)) : null,
     baseImages: baseMedia.filter((m) => m.type === 'IMAGE').map((m) => ({ url: m.url, alt: m.altText ?? parent.name })),
-    baseImagesLast,
     options,
     variants: selectorVariants,
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,
@@ -845,7 +851,7 @@ export async function upsertVariantForCombination(
     if (ctx) {
       // Matches what createVariant just wrote: a new variation is never
       // promoted onto the parent's gallery until someone ticks one of the boxes.
-      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, position: existing.length })
+      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, galleryPosition: null, position: existing.length })
       ctx.valueMap[cv.id] = optionValueIds
     }
   }

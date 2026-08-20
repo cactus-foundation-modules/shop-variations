@@ -139,21 +139,19 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // the parent's gallery behind it. A variant photographed from four angles shows
   // all four, not just the one the stage happens to be on.
   //
-  // The promoted variations' pictures (see sel.featuredImages) bring up the rear,
-  // and stay there until a whole combination resolves. Behind the product's own
-  // rather than in front of them: they are extra colours on offer, not what the
-  // product is, and the stage still opens on the photograph the owner made
-  // primary.
+  // That gallery is the product's own photographs and the variations promoted
+  // with "Image up front", in the single order the owner dragged them into on the
+  // Images tab (see sel.galleryImages) - so the stage opens on whichever picture
+  // they put at the front, which on a range whose own shots are line drawings is
+  // a variation rather than the product's own. The promoted ones stay in the
+  // strip until a whole combination resolves, and drop out from then on.
   //
-  // Unless the owner has said otherwise on the Images tab (sel.baseImagesLast),
-  // in which case the two swap: the promoted variations lead and the product's
-  // own pictures follow. That is the right way round where the product's own
-  // shots are line drawings or a bare cut-out and the variations are the
-  // photographs worth opening on.
-  const promoted = sel.featuredImages.map((url) => ({ url, alt: productName }))
+  // Shop's own server-rendered set stands in until the payload lands, so the
+  // strip is drawn on the first paint rather than appearing a moment later.
+  const gallery = sel.payload ? sel.galleryImages : images
   const thumbs = [
     ...variantImages.map((url) => ({ url, alt: productName })),
-    ...(sel.baseImagesLast ? [...promoted, ...images] : [...images, ...promoted]),
+    ...gallery.map((i) => ({ url: i.url, alt: i.alt || productName })),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // A thumbnail the shopper clicked that the strip no longer offers is dropped
   // rather than left on the stage. A promoted variation's picture stops being on
@@ -161,7 +159,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // had clicked, which is exactly how the wrong finish ends up sat there under a
   // strip that no longer lists it.
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
-  const main = held ?? variantImage ?? (sel.baseImagesLast ? thumbs[0]?.url : images[0]?.url) ?? thumbs[0]?.url ?? null
+  const main = held ?? variantImage ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
 
   // Magnifying is shop's behaviour for shop's image. A contributed stage owns its

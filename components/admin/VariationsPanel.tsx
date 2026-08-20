@@ -1051,7 +1051,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         its photo is not always the one worth leading with in 3D.
                         The headings are short because the row of columns is
                         already wider than a laptop; the titles carry the rule. */}
-                    <th style={{ padding: '0.5rem' }} title="Show this variation's first photo on the product page before any option is chosen. It drops out again as soon as the shopper picks something.">
+                    <th style={{ padding: '0.5rem' }} title="Show this variation's first photo on the product page before any option is chosen. It drops out again as soon as the shopper picks something. Where it sits among the product's own pictures is arranged on the Images tab.">
                       Image up front
                     </th>
                     <th style={{ padding: '0.5rem' }} title="Show this variation's 3D model on the product page before any option is chosen (needs the 3D views module, and a model attached to this row). It drops out again as soon as the shopper picks something.">

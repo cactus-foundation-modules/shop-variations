@@ -83,6 +83,12 @@ CREATE TABLE IF NOT EXISTS "svr_variants" (
     -- 3D. See 011.
     "show_image_in_gallery" BOOLEAN NOT NULL DEFAULT false,
     "show_model_in_gallery" BOOLEAN NOT NULL DEFAULT false,
+    -- Where a promoted variation's photo sits in the parent's gallery: its index
+    -- in the finished strip, the parent's own photographs and every promoted
+    -- variation counted together. NULL means "after the parent's own", which is
+    -- where a newly promoted one starts. Arranged from the product's Images tab;
+    -- see 016.
+    "gallery_position" INTEGER,
     "position" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_variants_pkey" PRIMARY KEY ("id"),
@@ -158,16 +164,9 @@ CREATE TABLE IF NOT EXISTS "svr_settings" (
 );
 INSERT INTO "svr_settings" ("id") VALUES ('singleton') ON CONFLICT DO NOTHING;
 
--- Per-product gallery ordering: a row exists only where the owner has asked for
--- the product's own photographs to sit BEHIND the variations promoted with
--- "Image up front" (on the product page), or for a promoted variation's photo to
--- be the picture the product shows in a grid. Arrived in 014 and 015; kept in
--- step here so a fresh install builds the final shape in one go.
-CREATE TABLE IF NOT EXISTS "svr_product_gallery" (
-    "product_id" TEXT NOT NULL,
-    "base_images_last" BOOLEAN NOT NULL DEFAULT false,
-    "card_image_from_variation" BOOLEAN NOT NULL DEFAULT false,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "svr_product_gallery_pkey" PRIMARY KEY ("product_id"),
-    CONSTRAINT "svr_product_gallery_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE
-);
+-- Per-product gallery ordering lived in "svr_product_gallery" (014, 015) as a
+-- pair of tick boxes - which of two piles went first, and which one the grid
+-- took its picture from. Replaced in 016 by svr_variants.gallery_position, which
+-- says outright where each promoted variation sits among the parent's own
+-- photographs, so there are no piles to order. The table is not created here at
+-- all: 016 drops it, and a fresh install has no reason to build it first.

@@ -7,6 +7,10 @@
 // photographs on its page, so the card puts them next to the parent's too and shop's
 // hover-swap is allowed to reveal one. The rest of the range follows in matrix order.
 //
+// Where the owner has dragged one of those promoted variations to the very front
+// of the gallery on the Images tab, it leads the tile too - the tile and the page
+// it opens should not disagree about what the product looks like.
+//
 // Server-safe, batched: a grid asks once for all its products and this runs two
 // queries for the whole set (the variants, then their children's media) rather than
 // one per card. Precedent and shape mirror the sibling price provider,
@@ -18,7 +22,7 @@ import { getProductMediaForProducts } from '@/modules/shop/lib/db/products'
 import type { ShopCardMediaProvider, ShopCardMediaPayload } from '@/modules/shop/lib/card-media'
 import type { PartImage } from '@/modules/shop/components/puck/parts/part-context'
 import { getVariantsForProducts } from '@/modules/shop-variations/lib/db/variants'
-import { getCardImageFromVariationSet } from '@/modules/shop-variations/lib/db/product-gallery'
+import { galleryLeadsWithPromoted } from '@/modules/shop-variations/lib/gallery-order'
 
 export const shopVariationsCardMedia: ShopCardMediaProvider = {
   async load(productIds) {
@@ -36,12 +40,6 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
       .map((v) => v.childProductId)
     if (childIds.length === 0) return out
 
-    // The products whose owner has asked, on the Images tab, that the tile lead
-    // with a promoted variation's photo rather than the product's own primary.
-    // One query for the whole grid, and empty on every shop that has never
-    // touched the setting.
-    const leadFromVariation = await getCardImageFromVariationSet([...variantsByProduct.keys()])
-
     const mediaByChild = await getProductMediaForProducts(childIds)
 
     for (const [productId, variants] of variantsByProduct) {
@@ -54,13 +52,21 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
       // it is marked `promoted`.
       const promotedImages: PartImage[] = []
       const plainImages: PartImage[] = []
-      // The photo that goes in FRONT of the product's own, where the owner asked
-      // for it: the first variation ticked "Image up front" that actually has a
-      // picture. Nothing here where the setting is off, or where no promoted
-      // variation has one - the card then leads with the product's own, exactly
-      // as before.
+      // The photo that goes in FRONT of the product's own, where the owner put one
+      // there: the variation holding the gallery's first slot, if it actually has
+      // a picture. Nothing here otherwise - the card then leads with the
+      // product's own, exactly as before.
       let lead: PartImage | null = null
-      const wantsLead = leadFromVariation.has(productId)
+      // Whether the product page OPENS on a promoted variation rather than on the
+      // product's own first photograph - which is the same question a tile is
+      // asking, so the two agree without the tile having to think about it. A
+      // variation leads exactly when the owner dragged it to the front of the
+      // gallery on the Images tab, and that needs no image rows to answer: it is
+      // the variation holding slot 0. Nothing here on the great majority, where
+      // the product's own photograph leads exactly as it always did.
+      const wantsLead = galleryLeadsWithPromoted(
+        variants.filter((v) => v.enabled && v.showImageInGallery).map((v) => v.galleryPosition),
+      )
       for (const v of variants) {
         if (!v.enabled) continue
         // One picture per variation: its primary, else its first still image.
@@ -75,7 +81,7 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
         // Alt stays the media's own; shop fills a blank one on whichever image
         // ends up leading the card with the product's name, so this does not
         // need the parent rows just to write an alt.
-        if (wantsLead && lead === null && v.showImageInGallery) {
+        if (wantsLead && lead === null && v.showImageInGallery && v.galleryPosition === 0) {
           lead = { url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId }
           continue
         }

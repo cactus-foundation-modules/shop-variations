@@ -8,7 +8,7 @@
 // request arrives with a full combination - a variant's own deep-link slug, or
 // option parameters written by a shopper sharing the address bar - else the
 // parent's first photograph or a promoted variation's, whichever the owner put
-// first. Declines (null) on a product we don't claim, and shop falls back to
+// at the front of the gallery. Declines (null) on a product we don't claim, and shop falls back to
 // its own first photograph.
 //
 // Server-safe: runs inside generateMetadata. Registered through
@@ -20,6 +20,7 @@ import type { ShpProduct } from '@/modules/shop/lib/types'
 import { getVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
 import { resolveVariant, valueToOptionMap, withAutoSelected, withStrandedFilled, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { mergeGalleryItems } from '@/modules/shop-variations/lib/gallery-order'
 
 export const shopVariationsSocialImage: ShopProductSocialImageProvider = {
   async resolve(product: ShpProduct): Promise<string | null> {
@@ -53,12 +54,18 @@ export const shopVariationsSocialImage: ShopProductSocialImageProvider = {
 
     const variantImages = variant?.imageUrls ?? []
     const promoted = !variant ? payload.variants.filter((v) => v.enabled) : []
-    const featuredImages = promoted.filter((v) => v.showImageInGallery).map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
-    const baseImage = payload.baseImages[0]?.url
-    return (
-      variantImages[0]
-      ?? (payload.baseImagesLast ? featuredImages[0] ?? baseImage : baseImage ?? featuredImages[0])
-      ?? null
+    // The same merge the gallery does: the product's own photographs with the
+    // promoted variations folded in where the owner put them on the Images tab.
+    // The scraper is promised the picture the page will open on, so the answer
+    // has to be the front of that one list, not a guess between two piles.
+    const gallery = mergeGalleryItems(
+      payload.baseImages.map((i) => i.url),
+      promoted.flatMap((v) => {
+        if (!v.showImageInGallery) return []
+        const url = v.imageUrls[0]
+        return url ? [{ galleryPosition: v.galleryPosition ?? null, item: url }] : []
+      }),
     )
+    return variantImages[0] ?? gallery[0] ?? null
   },
 }

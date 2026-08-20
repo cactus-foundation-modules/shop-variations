@@ -20,6 +20,7 @@ import { addToCart } from '@/modules/shop/components/public/cart'
 import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
+import { mergeGalleryItems } from '@/modules/shop-variations/lib/gallery-order'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 type Entry = {
@@ -358,17 +359,25 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // a taster of what the range offers, and four angles of the oak desk would
   // bury the product's own photographs on its own page.
   const promoted = payload && !variant ? payload.variants.filter((v) => v.enabled) : []
-  const featuredImages = promoted.filter((v) => v.showImageInGallery).map((v) => v.imageUrls[0]).filter((url): url is string => !!url)
-  // Whether the product's own photographs sit behind the promoted variations'
-  // rather than in front of them - the owner's choice on the Images tab. It
-  // governs the whole strip's order and, with it, what the stage opens on.
-  const baseImagesLast = payload?.baseImagesLast ?? false
+  const featuredImages = promoted.flatMap((v) => {
+    if (!v.showImageInGallery) return []
+    const url = v.imageUrls[0]
+    if (!url) return []
+    return [{ galleryPosition: v.galleryPosition ?? null, item: { url, alt: v.imageAlts?.[0] || '' } }]
+  })
+  // The gallery the shopper opens on: the product's own photographs with the
+  // promoted variations folded in at the slots the owner dragged them to on the
+  // Images tab. One list rather than two piles, because that is what it is - see
+  // lib/gallery-order.ts, which the server-rendered views share so a strip drawn
+  // without this hook comes out in the same order.
+  const galleryImages = mergeGalleryItems(
+    payload?.baseImages.map((i) => ({ url: i.url, alt: i.alt })) ?? [],
+    featuredImages,
+  )
   // What the main stage shows: the chosen variant's own first picture, else
-  // whichever set the owner put first. An empty list means the variant brought
-  // none of its own, so the parent's gallery stands as it is.
-  const image = variantImages[0]
-    ?? (baseImagesLast ? featuredImages[0] ?? payload?.baseImages[0]?.url : payload?.baseImages[0]?.url ?? featuredImages[0])
-    ?? null
+  // whatever the owner put at the front of that gallery. An empty list means the
+  // variant brought none of its own, so the parent's gallery stands as it is.
+  const image = variantImages[0] ?? galleryImages[0]?.url ?? null
   // By child product id, for whatever else hangs media off a product (the 3D
   // module's models, today) - a variation with no photograph of its own can
   // still be promoted for its model alone.
@@ -488,15 +497,16 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     basePrice,
     image,
     variantImages,
-    // Which way round the strip goes: false (the usual) puts the product's own
-    // photographs first, true puts the promoted variations first.
-    baseImagesLast,
-    // The promoted variations' first pictures, and the variations promoted for
-    // their MODEL by child product id - independent lists, both up until a whole
-    // combination resolves and empty from then on. A gallery adds the pictures to
-    // its strip and hands the ids to whatever else contributes media (see shop's
+    // The product's own photographs and the promoted variations' in one list, in
+    // the order the owner arranged them on the Images tab. The promoted ones drop
+    // out the moment a whole combination resolves, so this is the parent's own
+    // set from then on.
+    galleryImages,
+    // The variations promoted for their MODEL, by child product id - a separate
+    // list from the pictures above because the two are promoted independently,
+    // and up until a whole combination resolves in exactly the same way. A
+    // gallery hands the ids to whatever else contributes media (see shop's
     // ShopGalleryExtraThumbsProps).
-    featuredImages,
     featuredModelChildIds,
     inStock,
     minQuantity,

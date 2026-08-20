@@ -84,6 +84,12 @@ export type SvrVariant = {
   // owner picks out - see migration 011.
   showImageInGallery: boolean
   showModelInGallery: boolean
+  // Where this variation's promoted photo sits in the parent's gallery: its index
+  // in the finished strip, the parent's own pictures counted in. Null for "after
+  // the parent's own", which is where a newly promoted one starts and what every
+  // product looked like before the Images tab could arrange them. Meaningless
+  // while showImageInGallery is off. See migration 016 and lib/gallery-order.ts.
+  galleryPosition: number | null
   position: number
 }
 
@@ -191,6 +197,12 @@ export type VariantSelectorVariant = {
   // may carry a whole set of pictures, not one: the first is what the main stage
   // snaps to when the combination is chosen, the rest join the thumbnail strip.
   imageUrls: string[]
+  // Each of those pictures' own descriptions, same order as `imageUrls` and the
+  // same length. Written on the Images tab where the variation is promoted, so
+  // its photo carries a description in the gallery rather than borrowing the
+  // parent's name. Optional for the same reason as the flags below: a payload
+  // serialised into a cache before this shipped carries no such key.
+  imageAlts?: string[]
   // Whether the owner has promoted this variation's first picture, and
   // separately its 3D model, onto the parent's gallery: they join the
   // product's own while nothing has been chosen, and drop out again on the
@@ -203,6 +215,12 @@ export type VariantSelectorVariant = {
   // product page. Everything server-side always sets both.
   showImageInGallery?: boolean
   showModelInGallery?: boolean
+  // Where the promoted picture sits in the parent's gallery - its index in the
+  // finished strip, the parent's own photographs counted in. Absent or null means
+  // "after the parent's own", which is both the starting state and what an older
+  // cached payload reads as, so a gallery built from one that predates this comes
+  // out exactly as it used to.
+  galleryPosition?: number | null
   // This combination's own product code, and the code the supplier's clearance
   // stock is currently ordered under. Both are staff references, so both are
   // null in a shopper's payload rather than merely unrendered - see
@@ -242,12 +260,6 @@ export type VariantSelectorPayload = {
   // The parent product's own gallery images, shown until a variant with its own
   // image is chosen (the variant-aware gallery).
   baseImages: Array<{ url: string; alt: string }>
-  // Whether those own images sit BEHIND the variations promoted with "Image up
-  // front" rather than in front of them - the owner's choice, per product, from
-  // the Images tab. Off for the overwhelming majority, and optional for the same
-  // reason as the flags on a variant above: a payload serialised into a cache
-  // before this shipped carries no such key, which must read as "off".
-  baseImagesLast?: boolean
   options: SvrOptionWithValues[]
   variants: VariantSelectorVariant[]
   addons: SvrAddon[]
