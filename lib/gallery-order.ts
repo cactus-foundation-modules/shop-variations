@@ -49,13 +49,3 @@ export function mergeGalleryItems<T>(own: T[], promoted: Array<GalleryPromoted<T
   while (next < own.length) merged.push(own[next++]!)
   return merged
 }
-
-/**
- * Whether the finished gallery OPENS on a promoted variation rather than on the
- * product's own first photograph - which is the whole question a grid needs
- * answering, and it can be answered without loading a single image row: a
- * variation leads exactly when one of them claimed slot 0.
- */
-export function galleryLeadsWithPromoted(positions: Array<number | null>): boolean {
-  return positions.some((position) => position === 0)
-}

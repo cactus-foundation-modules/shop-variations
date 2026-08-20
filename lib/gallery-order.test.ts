@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeGalleryItems, galleryLeadsWithPromoted, type GalleryPromoted } from '@/modules/shop-variations/lib/gallery-order'
+import { mergeGalleryItems, type GalleryPromoted } from '@/modules/shop-variations/lib/gallery-order'
 
 const at = (galleryPosition: number | null, item: string): GalleryPromoted<string> => ({ galleryPosition, item })
 
@@ -37,14 +37,5 @@ describe('mergeGalleryItems', () => {
 
   it('places every variation even where there are no product pictures at all', () => {
     expect(mergeGalleryItems([], [at(2, 'x'), at(null, 'y')])).toEqual(['x', 'y'])
-  })
-})
-
-describe('galleryLeadsWithPromoted', () => {
-  it('is true only when a variation claimed the very first slot', () => {
-    expect(galleryLeadsWithPromoted([0, 3])).toBe(true)
-    expect(galleryLeadsWithPromoted([1, 2])).toBe(false)
-    expect(galleryLeadsWithPromoted([null])).toBe(false)
-    expect(galleryLeadsWithPromoted([])).toBe(false)
   })
 })
