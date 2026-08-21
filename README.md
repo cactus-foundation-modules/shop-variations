@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="module-art.webp" alt="Shop Variations module" width="640" />
+</p>
+
 # Shop Variations module
 
 Adds product options to the Cactus shop:
