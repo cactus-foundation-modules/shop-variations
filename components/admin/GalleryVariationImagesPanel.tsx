@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useProductEditorSave } from '@/modules/shop/components/admin/product-editor/context'
+import { useProductEditorSave, useProductEditorSaveTick } from '@/modules/shop/components/admin/product-editor/context'
 import { useRegisterGalleryExtras, type GalleryExtraItem } from '@/modules/shop/components/admin/product-editor/gallery-extras'
 
 type Promoted = {
@@ -38,6 +38,12 @@ export function GalleryVariationImagesPanel({ productId }: { productId: string }
   // and the Save button is what makes it stick.
   const [demoted, setDemoted] = useState<string[]>([])
 
+  // Which variations are promoted is decided on the Variations tab, and both
+  // tabs stay mounted the whole time the product is open. So the set is read
+  // again after every save, not only on mount - otherwise ticking "Image up
+  // front" next door left this grid showing the old set until a page reload.
+  const saveTick = useProductEditorSaveTick()
+
   useEffect(() => {
     let alive = true
     void (async () => {
@@ -56,7 +62,7 @@ export function GalleryVariationImagesPanel({ productId }: { productId: string }
       }
     })()
     return () => { alive = false }
-  }, [productId])
+  }, [productId, saveTick])
 
   const live = useMemo(() => value.filter((p) => !demoted.includes(p.variantId)), [value, demoted])
 
