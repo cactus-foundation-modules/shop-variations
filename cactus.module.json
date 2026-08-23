@@ -1,6 +1,6 @@
 {
   "name": "shop-variations",
-  "version": "0.1.157",
+  "version": "0.1.158",
   "tablePrefix": "svr_",
   "description": "Product options for the shop: variant matrices (size/colour) with per-variant price, stock, SKU and image, plus personalisation add-ons including file uploads.",
   "requiresCoreVersion": "0.5.1151",
@@ -63,6 +63,12 @@
       "id": "variations-tax-class",
       "import": "./lib/tax-class-sync",
       "component": "syncVariationsOnProductSaved"
+    },
+    {
+      "point": "shop.product-saved",
+      "id": "variations-child-identity",
+      "import": "./lib/child-identity",
+      "component": "syncVariationsIdentityOnProductSaved"
     },
     {
       "point": "shop.product-detail-parts",

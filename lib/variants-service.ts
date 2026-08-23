@@ -5,7 +5,8 @@
 import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import { createProduct, updateProduct, deleteProduct, getProductById, getProductBySlug, getProductMedia } from '@/modules/shop/lib/db/products'
-import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
+import { ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
+import { syncVariantChildIdentity, variantChildName, variantChildSlug } from '@/modules/shop-variations/lib/child-identity'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale, isPriceTypeEnabled } from '@/modules/shop/lib/pricing'
 import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
@@ -85,9 +86,9 @@ export async function generateMatrix(parentId: string): Promise<GenerateMatrixRe
     const labels = options.map((o) => {
       const chosen = combo.find((id) => o.values.some((v) => v.id === id))
       return chosen ? valueLabel.get(chosen) : undefined
-    }).filter(Boolean)
-    const name = `${parent.name} - ${labels.join(' / ')}`
-    const slug = await ensureUniqueProductSlug(slugify(name))
+    }).filter((l): l is string => Boolean(l))
+    const name = variantChildName(parent.name, labels)
+    const slug = await ensureUniqueProductSlug(variantChildSlug(parent.slug, labels))
     const child = await createProduct({
       name,
       slug,
@@ -212,9 +213,9 @@ export async function createSingleVariant(parentId: string, optionValueIds: stri
     throw new Error('That combination already exists')
   }
 
-  const labels = combo.map((id) => labelByValueId.get(id)).filter(Boolean)
-  const name = `${parent.name} - ${labels.join(' / ')}`
-  const slug = await ensureUniqueProductSlug(slugify(name))
+  const labels = combo.map((id) => labelByValueId.get(id)).filter((l): l is string => Boolean(l))
+  const name = variantChildName(parent.name, labels)
+  const slug = await ensureUniqueProductSlug(variantChildSlug(parent.slug, labels))
   const child = await createProduct({
     name,
     slug,
@@ -234,45 +235,15 @@ export async function createSingleVariant(parentId: string, optionValueIds: stri
   return { variantId: created.id }
 }
 
-// Re-compose every variant child product's name from the current option value
-// labels. Child names are snapshotted at generate time, so a value rename leaves
-// them stale until this runs. Slugs are deliberately left alone: they are already
-// live urls, and the children are catalogue-hidden anyway. Placed orders keep the
-// name they snapshotted, which is the point of that snapshot.
+// Re-compose every variant child product's name AND web address from the
+// current option value labels. Both are snapshotted at generate time, so a value
+// rename - or a rename of the listing itself - leaves them stale until this
+// runs. Placed orders keep the name they snapshotted, which is the point of that
+// snapshot. The work itself lives in child-identity.ts, which the
+// `shop.product-saved` listener shares.
 export async function syncVariantChildNames(parentId: string): Promise<number> {
-  const parent = await getProductById(parentId)
-  if (!parent) return 0
-
-  const options = await getOptionsWithValues(parentId)
-  const labelByValueId = new Map<string, string>()
-  const optionOrderByValueId = new Map<string, number>()
-  options.forEach((o, oi) => o.values.forEach((v) => {
-    labelByValueId.set(v.id, v.label)
-    optionOrderByValueId.set(v.id, oi)
-  }))
-
-  const variants = await getVariants(parentId)
-  if (variants.length === 0) return 0
-  const valueMap = await getVariantValueMap(parentId)
-
-  const currentNames = new Map<string, string>()
-  const childRows = await prisma.$queryRaw<{ id: string; name: string }[]>`
-    SELECT "id", "name" FROM "shp_products" WHERE "id" IN (${Prisma.join(variants.map((v) => v.childProductId))})
-  `
-  for (const r of childRows) currentNames.set(r.id, r.name)
-
-  let renamed = 0
-  for (const variant of variants) {
-    const ids = (valueMap[variant.id] ?? []).slice()
-      .sort((a, b) => (optionOrderByValueId.get(a) ?? 0) - (optionOrderByValueId.get(b) ?? 0))
-    const labels = ids.map((id) => labelByValueId.get(id)).filter(Boolean)
-    if (labels.length === 0) continue
-    const name = `${parent.name} - ${labels.join(' / ')}`
-    if (currentNames.get(variant.childProductId) === name) continue
-    await updateProduct(variant.childProductId, { name })
-    renamed += 1
-  }
-  return renamed
+  const { renamed, reslugged } = await syncVariantChildIdentity(parentId)
+  return Math.max(renamed, reslugged)
 }
 
 // Delete every variant + child product for a parent (used when clearing the
@@ -834,8 +805,8 @@ export async function upsertVariantForCombination(
     childId = match.childProductId
     variantId = match.id
   } else {
-    const name = `${parent.name} - ${valueLabels.join(' / ')}`
-    const slug = await ensureUniqueProductSlug(slugify(name))
+    const name = variantChildName(parent.name, valueLabels)
+    const slug = await ensureUniqueProductSlug(variantChildSlug(parent.slug, valueLabels))
     const child = await createProduct({
       name, slug, type: parent.type, status: 'ACTIVE', price: fields.price ?? Number(parent.price),
       taxClassId: parent.taxClassId, trackInventory: parent.trackInventory,
