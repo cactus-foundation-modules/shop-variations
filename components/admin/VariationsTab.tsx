@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
+import { useTabParam } from '@/modules/shop-variations/lib/admin-tab-url'
 import { VariationsBrowser } from '@/modules/shop-variations/components/admin/VariationsBrowser'
 import { VariationsImportScreen } from '@/modules/shop-variations/components/admin/VariationsImportScreen'
 
@@ -9,7 +10,7 @@ import { VariationsImportScreen } from '@/modules/shop-variations/components/adm
 // Catalogue. The browser is the everyday view; the import and bulk tools sit
 // behind a sub-tab rather than the sidebar link they used to have.
 export function VariationsTab() {
-  const [tab, setTab] = useState<'browse' | 'tools'>('browse')
+  const [tab, setTab] = useTabParam('sub', 'browse', ['browse', 'tools'] as const)
 
   return (
     <div>
