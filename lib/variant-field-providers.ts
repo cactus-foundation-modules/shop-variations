@@ -1,6 +1,5 @@
 import type { ComponentType } from 'react'
-import { prisma } from '@/lib/db/prisma'
-import { INSTALLED_MODULE_WHERE } from '@/lib/modules/live-status'
+import { getInstalledManifests } from '@/lib/modules/live-status'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
@@ -126,10 +125,7 @@ type ManifestEntry = { point: string; id: string; permission?: string }
 export async function resolveVariantFieldProviders(
   user?: Awaited<ReturnType<typeof getSessionFromCookie>>,
 ): Promise<Array<{ id: string; provider: VariantFieldProvider }>> {
-  const modules = await prisma.module.findMany({
-    where: { ...INSTALLED_MODULE_WHERE },
-    select: { manifest: true },
-  })
+  const modules = await getInstalledManifests()
   const components = moduleExtensionPointComponents[POINT] ?? {}
   const out: Array<{ id: string; provider: VariantFieldProvider }> = []
   const seen = new Set<string>()

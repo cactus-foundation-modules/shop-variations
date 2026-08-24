@@ -97,22 +97,49 @@ export async function getVariantsForProducts(productIds: string[]): Promise<Map<
 }
 
 // Same as getVariantValueMap, for every product in one go, keyed by product id
-// then variant id.
+// then variant id. Two queries rather than one join, for the reason set out on
+// getVariantValueMap below.
 export async function getVariantValueMapForProducts(productIds: string[]): Promise<Map<string, Record<string, string[]>>> {
   const map = new Map<string, Record<string, string[]>>()
   if (productIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ product_id: string; variant_id: string; option_value_id: string }[]>`
-    SELECT v."product_id", vv."variant_id", vv."option_value_id"
-    FROM "svr_variant_values" vv
-    JOIN "svr_variants" v ON v."id" = vv."variant_id"
-    WHERE v."product_id" IN (${Prisma.join(productIds)})
+  const variants = await prisma.$queryRaw<{ id: string; product_id: string }[]>`
+    SELECT "id", "product_id" FROM "svr_variants" WHERE "product_id" IN (${Prisma.join(productIds)})
   `
+  if (variants.length === 0) return map
+  const productByVariant = new Map(variants.map((v) => [v.id, v.product_id]))
+  const rows = await getValuesForVariants(variants.map((v) => v.id))
   for (const r of rows) {
-    const perProduct = map.get(r.product_id) ?? {}
+    const productId = productByVariant.get(r.variant_id)
+    if (!productId) continue
+    const perProduct = map.get(productId) ?? {}
     ;(perProduct[r.variant_id] ??= []).push(r.option_value_id)
-    map.set(r.product_id, perProduct)
+    map.set(productId, perProduct)
   }
   return map
+}
+
+// The value rows for a set of variant ids.
+//
+// `= ANY($1::text[])` rather than a join back to svr_variants, and that is the
+// whole point of this helper existing. Asked as a join - "every value whose
+// variant belongs to this product" - Postgres costs the two sides, picks a hash
+// join and sequentially scans the ENTIRE svr_variant_values table to find them:
+// on a 588-variant desk that is 69,854 rows read to return 2,352, and across the
+// live install's life it came to 972 million rows, more than any other table by
+// a factor of two. Handed the variant ids directly it uses the (variant_id,
+// option_value_id) primary key as a covering index instead - an index-only scan,
+// measured at roughly 3ms against 25ms for the join, and the plan holds after
+// Postgres switches the prepared statement to a generic plan.
+//
+// The extra round trip to fetch the ids is real but tiny: svr_variants is
+// indexed on product_id and every caller here needs the variant rows anyway.
+async function getValuesForVariants(variantIds: string[]): Promise<{ variant_id: string; option_value_id: string }[]> {
+  if (variantIds.length === 0) return []
+  return prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`
+    SELECT "variant_id", "option_value_id"
+    FROM "svr_variant_values"
+    WHERE "variant_id" = ANY(${variantIds}::text[])
+  `
 }
 
 export async function getVariantById(id: string): Promise<SvrVariant | null> {
@@ -143,14 +170,13 @@ export async function getVariantParentsByChild(childProductIds: string[]): Promi
   return map
 }
 
-// option_value_ids for each variant of a product, keyed by variant id.
+// option_value_ids for each variant of a product, keyed by variant id. Two
+// queries rather than one join - see getValuesForVariants for why.
 export async function getVariantValueMap(productId: string): Promise<Record<string, string[]>> {
-  const rows = await prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`
-    SELECT vv."variant_id", vv."option_value_id"
-    FROM "svr_variant_values" vv
-    JOIN "svr_variants" v ON v."id" = vv."variant_id"
-    WHERE v."product_id" = ${productId}
+  const variants = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "svr_variants" WHERE "product_id" = ${productId}
   `
+  const rows = await getValuesForVariants(variants.map((v) => v.id))
   const map: Record<string, string[]> = {}
   for (const r of rows) (map[r.variant_id] ??= []).push(r.option_value_id)
   return map
@@ -164,11 +190,14 @@ export async function getVariantValueMap(productId: string): Promise<Record<stri
 // set, or an alias would read as a different combination and be "corrected" away.
 // Only the storefront selector payload takes these.
 export async function getVariantAliasMap(productId: string): Promise<Record<string, string[]>> {
-  const rows = await prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`
-    SELECT a."variant_id", a."option_value_id"
-    FROM "svr_variant_option_aliases" a
-    JOIN "svr_variants" v ON v."id" = a."variant_id"
-    WHERE v."product_id" = ${productId}
+  const variants = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "svr_variants" WHERE "product_id" = ${productId}
+  `
+  const variantIds = variants.map((v) => v.id)
+  const rows = variantIds.length === 0 ? [] : await prisma.$queryRaw<{ variant_id: string; option_value_id: string }[]>`
+    SELECT "variant_id", "option_value_id"
+    FROM "svr_variant_option_aliases"
+    WHERE "variant_id" = ANY(${variantIds}::text[])
   `
   const map: Record<string, string[]> = {}
   for (const r of rows) (map[r.variant_id] ??= []).push(r.option_value_id)
