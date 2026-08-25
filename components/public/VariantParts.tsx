@@ -279,6 +279,13 @@ function OptionNumber({ n, done }: { n: number; done: boolean }) {
   return (
     <span
       aria-hidden
+      // Un-answered, the marker is a muted digit in a muted ring - both drawn to
+      // read on the header's own surface, and both lost the moment a themed
+      // button hover repaints that surface. The two opt-ins hand the ring and
+      // the digit the hover foreground for as long as the header is hovered.
+      // Answered it needs neither: it is a solid fill in the primary colour with
+      // its own matched text, and stays legible on whatever lands behind it.
+      {...(done ? null : { 'data-cactus-hover-fg': '', 'data-cactus-hover-border': '' })}
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: 22, height: 22, flex: 'none', marginRight: '0.5rem',
@@ -642,9 +649,13 @@ function VariantOptionsAccordion({
               {option.name}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-              {chosenLabel && <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
+              {/* Both are muted against the header's resting surface and would
+                  stay muted under a themed hover fill - the chevron doubly so,
+                  drawn in currentColor off its own inline colour rather than
+                  inheriting the button's. */}
+              {chosenLabel && <span data-cactus-hover-fg style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>{chosenLabel}</span>}
               {collapsible && (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-base, 0.15s)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden data-cactus-hover-fg style={{ color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-base, 0.15s)' }}>
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               )}
@@ -662,6 +673,11 @@ function VariantOptionsAccordion({
             {collapsible ? (
               <button
                 type="button" onClick={() => toggle(option.id)} aria-expanded={open} aria-controls={panelId}
+                // The header's own colour is set inline, so a themed hover fill
+                // repaints behind the option's name without moving the name
+                // itself. The opt-in works on the hovered button as well as on
+                // the parts inside it, so the whole header changes together.
+                data-cactus-hover-fg
                 style={{ ...headerStyle, cursor: 'pointer' }}
               >
                 {headerInner}
