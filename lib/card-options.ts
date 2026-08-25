@@ -116,11 +116,12 @@ export function summariseOptionForCard(option: SvrOptionWithValues, seatOf?: (va
     id: option.id,
     label: option.cardLabel?.trim() || option.name,
     kind: kindOf(option.controlType),
-    // A card chip is 18px tall; the small rendition, where one exists, serves it
-    // as well as the full photograph and weighs a fraction. Collapsed here
-    // rather than shipping both urls, because a grid of forty cards ships this
-    // payload forty times and a card never has a use for the original.
-    values: shown.map((v) => ({ label: v.label, swatch: v.swatchSmall ?? v.swatch, vi: seatOf?.(v.id) })),
+    // A card chip is 18px tall, so the tiny rendition serves it as well as the
+    // full photograph and weighs a fiftieth. The small copy is the fallback and
+    // the original the last resort. Collapsed to one url here rather than
+    // shipping all three, because a grid of forty cards ships this payload forty
+    // times and a card never has a use for the bigger ones.
+    values: shown.map((v) => ({ label: v.label, swatch: v.swatchTiny ?? v.swatchSmall ?? v.swatch, vi: seatOf?.(v.id) })),
     more: option.values.length - shown.length,
     ...(fit != null ? { fit } : {}),
   }

@@ -24,4 +24,7 @@ export async function shopVariationsMediaReferenceRewriter(change: MediaReferenc
   await prisma.$executeRaw`
     UPDATE "svr_option_values" SET "swatch_small" = ${newUrl} WHERE "swatch_small" = ${oldUrl}
   `
+  await prisma.$executeRaw`
+    UPDATE "svr_option_values" SET "swatch_tiny" = ${newUrl} WHERE "swatch_tiny" = ${oldUrl}
+  `
 }

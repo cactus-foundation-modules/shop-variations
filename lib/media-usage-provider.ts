@@ -13,6 +13,8 @@ export async function shopVariationsMediaUsageProvider(): Promise<string[]> {
     UNION ALL
     SELECT "swatch_small" AS ref FROM "svr_option_values" WHERE "swatch_small" IS NOT NULL
     UNION ALL
+    SELECT "swatch_tiny" AS ref FROM "svr_option_values" WHERE "swatch_tiny" IS NOT NULL
+    UNION ALL
     SELECT "media_ref" AS ref FROM "svr_uploads" WHERE "media_ref" IS NOT NULL
     UNION ALL
     SELECT "media_key" AS ref FROM "svr_uploads" WHERE "media_key" IS NOT NULL

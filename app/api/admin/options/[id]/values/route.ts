@@ -67,9 +67,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let sourceSlug: string | null = null
   let label = parsed.data.label.trim()
   let swatch = parsed.data.swatch ?? null
-  // Only a source module makes small renditions; a hand-typed value on an
+  // Only a source module makes the shrunk copies; a hand-typed value on an
   // unsourced option goes without and the storefront falls back to the swatch.
   let swatchSmall: string | null = null
+  let swatchTiny: string | null = null
   if (!label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   if (option?.sourceProvider && option.sourceRef) {
     const user = await getSessionFromCookie()
@@ -85,6 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       label = created.label
       swatch = created.swatch
       swatchSmall = created.swatchSmall ?? null
+      swatchTiny = created.swatchTiny ?? null
       // A reused source value the option already copied down would land here as
       // a duplicate slug; the dedupe below turns that into "-2" rather than a
       // refusal, and duplicate LABELS are allowed outright (two "Black"s with
@@ -94,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const slug = await ensureUniqueOptionValueSlug(id, sourceSlug || slugify(label) || 'value')
-  const value = await createOptionValue(id, label, slug, swatch, option?.values.length ?? 0, sourceRef, swatchSmall)
+  const value = await createOptionValue(id, label, slug, swatch, option?.values.length ?? 0, sourceRef, swatchSmall, swatchTiny)
 
   // File an image-swatch picture in the product's colours folder (a no-op for a
   // hex colour swatch or an externally-hosted url).
@@ -143,7 +145,7 @@ async function addFromSource(optionId: string, productId: string, valueRefs: str
     const wantedSlug = v.slug || slugify(v.label) || 'value'
     if (slugsHeld.has(wantedSlug)) { skipped.push(v.label); continue }
     const slug = await ensureUniqueOptionValueSlug(optionId, wantedSlug)
-    const created = await createOptionValue(optionId, v.label, slug, v.swatch ?? null, position, v.ref, v.swatchSmall ?? null)
+    const created = await createOptionValue(optionId, v.label, slug, v.swatch ?? null, position, v.ref, v.swatchSmall ?? null, v.swatchTiny ?? null)
     if (v.swatch) await fileSwatchImage(productId, created.id, v.swatch)
     slugsHeld.add(slug)
     position += 1

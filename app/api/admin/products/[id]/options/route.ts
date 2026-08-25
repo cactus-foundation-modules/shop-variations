@@ -54,7 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // trusting labels posted by the browser, so what lands in the database is
   // whatever the source actually says right now. Only the picked refs, the
   // option name and the control type come from the client.
-  let values: { label: string; slug: string | null; swatch: string | null; swatchSmall: string | null; sourceRef: string | null }[]
+  let values: { label: string; slug: string | null; swatch: string | null; swatchSmall: string | null; swatchTiny: string | null; sourceRef: string | null }[]
   // Set once the source is read: true when the owner has named this option
   // something other than what the source calls it, so refreshes leave the name be.
   let nameOverridden = false
@@ -68,13 +68,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const wanted = new Set(source.valueRefs)
     values = resolved.values
       .filter((v) => wanted.has(v.ref))
-      .map((v) => ({ label: v.label, slug: v.slug ?? null, swatch: v.swatch ?? null, swatchSmall: v.swatchSmall ?? null, sourceRef: v.ref }))
+      .map((v) => ({ label: v.label, slug: v.slug ?? null, swatch: v.swatch ?? null, swatchSmall: v.swatchSmall ?? null, swatchTiny: v.swatchTiny ?? null, sourceRef: v.ref }))
     if (values.length === 0) return NextResponse.json({ error: 'None of those values exist any more.' }, { status: 400 })
     nameOverridden = resolved.name.trim().toLowerCase() !== name.toLowerCase()
   } else {
     // Hand-typed values carry no small rendition - only a source module makes
     // those - so the storefront simply falls back to the swatch itself.
-    values = (parsed.data.values ?? []).map((v) => ({ label: v.label, slug: null, swatch: v.swatch ?? null, swatchSmall: null, sourceRef: null }))
+    values = (parsed.data.values ?? []).map((v) => ({ label: v.label, slug: null, swatch: v.swatch ?? null, swatchSmall: null, swatchTiny: null, sourceRef: null }))
   }
 
   const option = await createOption(
@@ -91,7 +91,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Sourced values keep the source's slug (the sheet spelling stays the same
     // everywhere); typed ones slugify their label. Deduped per option either way.
     const slug = await ensureUniqueOptionValueSlug(option.id, v.slug || slugify(v.label) || 'value')
-    const value = await createOptionValue(option.id, v.label, slug, v.swatch, pos, v.sourceRef, v.swatchSmall)
+    const value = await createOptionValue(option.id, v.label, slug, v.swatch, pos, v.sourceRef, v.swatchSmall, v.swatchTiny)
     // File an image-swatch picture in the product's colours folder (a no-op for
     // a hex colour swatch or an externally-hosted url).
     if (v.swatch) await fileSwatchImage(id, value.id, v.swatch)

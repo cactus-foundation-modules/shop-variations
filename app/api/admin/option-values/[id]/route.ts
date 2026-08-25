@@ -29,14 +29,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const label = parsed.data.label?.trim()
   if (label !== undefined && !label) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
-  // A hand-edited swatch drops the small rendition rather than keeping one made
+  // A hand-edited swatch drops both shrunk copies rather than keeping ones made
   // from the PREVIOUS picture: this module never makes the files itself (a
-  // source module does), so a stale small showing the old picture is the only
-  // thing keeping it could mean. The storefront falls back to the new swatch.
+  // source module does), so a stale copy showing the old picture is the only
+  // thing keeping them could mean. The storefront falls back to the new swatch.
   await updateOptionValue(id, {
     ...parsed.data,
     ...(label !== undefined ? { label } : {}),
-    ...(parsed.data.swatch !== undefined ? { swatchSmall: null } : {}),
+    ...(parsed.data.swatch !== undefined ? { swatchSmall: null, swatchTiny: null } : {}),
   })
 
   // An image-swatch picture (the only swatch that is a media url; a colour swatch

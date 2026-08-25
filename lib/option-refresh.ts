@@ -80,21 +80,23 @@ export async function refreshOptionFromSource(
     if (existing) {
       const labelChanged = existing.label !== incoming.label
       const swatchChanged = (existing.swatch ?? null) !== (incoming.swatch ?? null)
-      // The small rendition follows the swatch. A provider from before small
-      // copies existed omits the field entirely; the stored one is then left
-      // alone rather than read as "clear it" - undefined and null mean
-      // different things here on purpose.
+      // The shrunk copies follow the swatch. A provider from before either copy
+      // existed omits the field entirely; the stored one is then left alone
+      // rather than read as "clear it" - undefined and null mean different
+      // things here on purpose.
       const smallChanged = incoming.swatchSmall !== undefined && (existing.swatchSmall ?? null) !== (incoming.swatchSmall ?? null)
+      const tinyChanged = incoming.swatchTiny !== undefined && (existing.swatchTiny ?? null) !== (incoming.swatchTiny ?? null)
       // The copy's slug follows the source's, so the sheet spelling stays the
       // same everywhere - but only when the source's slug is free on this option
       // (another value may have claimed it by hand).
       const sourceSlug = incoming.slug ?? null
       const slugChanged = sourceSlug !== null && sourceSlug !== existing.slug && !slugsHeld.has(sourceSlug)
-      if (!labelChanged && !swatchChanged && !smallChanged && !slugChanged) continue
+      if (!labelChanged && !swatchChanged && !smallChanged && !tinyChanged && !slugChanged) continue
       await updateOptionValue(existing.id, {
         label: incoming.label,
         swatch: incoming.swatch ?? null,
         ...(incoming.swatchSmall !== undefined ? { swatchSmall: incoming.swatchSmall ?? null } : {}),
+        ...(incoming.swatchTiny !== undefined ? { swatchTiny: incoming.swatchTiny ?? null } : {}),
         ...(slugChanged ? { slug: sourceSlug } : {}),
       })
       if (slugChanged) {
@@ -110,7 +112,7 @@ export async function refreshOptionFromSource(
     const wantedSlug = incoming.slug || slugify(incoming.label) || 'value'
     if (slugsHeld.has(wantedSlug)) continue
     const slug = await ensureUniqueOptionValueSlug(option.id, wantedSlug)
-    await createOptionValue(option.id, incoming.label, slug, incoming.swatch ?? null, nextPosition, incoming.ref, incoming.swatchSmall ?? null)
+    await createOptionValue(option.id, incoming.label, slug, incoming.swatch ?? null, nextPosition, incoming.ref, incoming.swatchSmall ?? null, incoming.swatchTiny ?? null)
     slugsHeld.add(slug)
     nextPosition += 1
     added += 1

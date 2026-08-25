@@ -102,7 +102,7 @@ describe('importVariationsCsv option-source write-back', () => {
     expect(createValue).toHaveBeenCalledWith('attr-finish', { label: 'Oak & White', swatch: null, slug: null })
     // Local copy keeps the sheet's spelling but takes the source's ref, which is
     // what a later Refresh matches on.
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Oak & White', 'oak-white', null, expect.any(Number), 'src-new', null)
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Oak & White', 'oak-white', null, expect.any(Number), 'src-new', null, null)
   })
 
   it('inherits an existing source value rather than adding it twice', async () => {
@@ -125,7 +125,7 @@ describe('importVariationsCsv option-source write-back', () => {
 
     await importVariationsCsv([HEADER, 'desk,Finish,Beech & White,100'].join('\n'))
 
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', '#123456', expect.any(Number), 'src-new', null)
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', '#123456', expect.any(Number), 'src-new', null, null)
   })
 
   it('fails the row rather than writing locally when the source refuses', async () => {
@@ -147,6 +147,6 @@ describe('importVariationsCsv option-source write-back', () => {
 
     expect(result.errors).toEqual([])
     expect(createValue).not.toHaveBeenCalled()
-    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', null, expect.any(Number), null, null)
+    expect(createOptionValue).toHaveBeenCalledWith('opt-finish', 'Beech & White', 'beech-white', null, expect.any(Number), null, null, null)
   })
 })

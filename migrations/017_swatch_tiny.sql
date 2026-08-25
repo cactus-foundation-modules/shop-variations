@@ -1,0 +1,17 @@
+-- Adds a third rendition of an image swatch: the tiny one.
+--
+-- 013 added `swatch_small`, a 400px copy, sized for the biggest thing the
+-- product page draws from it - the 200px preview a shopper gets on hovering an
+-- option, at a 2x display.
+--
+-- Category pages draw the same picture much smaller: an 18px chip on a card, a
+-- 14px dot in the filter list. A 400px fabric photograph weighs about 50 KB, so
+-- a category of two dozen colours pulled over a megabyte of them to paint dots.
+--
+-- `swatch_tiny` is the url of a 128px copy - enough for the biggest little thing
+-- on a listing, a 56px picture-swatch filter tile at 2x. Values copied from an
+-- attribute get it synced across by product-attributes-for-shop (which also
+-- makes the file); cards prefer it and fall back through `swatch_small` to
+-- `swatch`. The product page keeps preferring `swatch_small`, and the 3D module
+-- keeps reading `swatch` and never sees either copy.
+ALTER TABLE "svr_option_values" ADD COLUMN IF NOT EXISTS "swatch_tiny" TEXT;

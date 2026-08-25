@@ -40,6 +40,13 @@ export type OptionSourceValue = {
    * null - null meaning "there is no small copy", which clears a stale one.
    */
   swatchSmall?: string | null
+  /**
+   * The url of a tiny rendition, matching svr_option_values.swatch_tiny. Optional
+   * on exactly the same terms as `swatchSmall` above, and for the same reason: a
+   * provider written before tiny copies existed must not be read as asking for
+   * the stored one to be cleared.
+   */
+  swatchTiny?: string | null
 }
 
 export type OptionSource = {

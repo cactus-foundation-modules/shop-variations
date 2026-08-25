@@ -293,7 +293,7 @@ export async function importVariationsCsv(
     // fetched from the provider the first time a new value on that option needs
     // one and cached for the parent. A hand-typed option, an absent provider, or
     // a source since deleted all cache empty maps and never ask again.
-    type SourceEntry = { ref: string; swatch: string | null; swatchSmall: string | null; slug: string | null; label: string }
+    type SourceEntry = { ref: string; swatch: string | null; swatchSmall: string | null; swatchTiny: string | null; slug: string | null; label: string }
     type SourceMaps = { byLabel: Map<string, SourceEntry>; bySlug: Map<string, SourceEntry> }
     const sourceValuesByOption = new Map<string, SourceMaps>()
     async function sourceValuesFor(option: { id: string; sourceProvider: string | null; sourceRef: string | null }): Promise<SourceMaps> {
@@ -305,7 +305,7 @@ export async function importVariationsCsv(
         if (provider) {
           const source = await provider.getSource(option.sourceRef).catch(() => null)
           for (const v of source?.values ?? []) {
-            const entry: SourceEntry = { ref: v.ref, swatch: v.swatch, swatchSmall: v.swatchSmall ?? null, slug: v.slug ?? null, label: v.label }
+            const entry: SourceEntry = { ref: v.ref, swatch: v.swatch, swatchSmall: v.swatchSmall ?? null, swatchTiny: v.swatchTiny ?? null, slug: v.slug ?? null, label: v.label }
             // First-in wins on a duplicated label; slugs are unique at the source.
             if (!maps.byLabel.has(v.label.toLowerCase())) maps.byLabel.set(v.label.toLowerCase(), entry)
             if (entry.slug) maps.bySlug.set(entry.slug, entry)
@@ -341,7 +341,7 @@ export async function importVariationsCsv(
       if (!created) throw new Error(`Could not add "${valLabel}" to the list "${optName}" takes its values from`)
       // Into this parent's cache, so the next row naming the same new value
       // reuses it instead of asking the source again for every row it appears on.
-      const entry: SourceEntry = { ref: created.ref, swatch: created.swatch, swatchSmall: created.swatchSmall ?? null, slug: created.slug ?? null, label: created.label }
+      const entry: SourceEntry = { ref: created.ref, swatch: created.swatch, swatchSmall: created.swatchSmall ?? null, swatchTiny: created.swatchTiny ?? null, slug: created.slug ?? null, label: created.label }
       const maps = await sourceValuesFor(option)
       if (!maps.byLabel.has(created.label.toLowerCase())) maps.byLabel.set(created.label.toLowerCase(), entry)
       if (entry.slug) maps.bySlug.set(entry.slug, entry)
@@ -408,7 +408,7 @@ export async function importVariationsCsv(
         option.id,
         cellSlug || fromSource?.slug || slugify(valLabel) || 'value',
       )
-      const value = await createOptionValue(option.id, valLabel, slug, fromSource?.swatch ?? null, valueIdBySlug.size, fromSource?.ref ?? null, fromSource?.swatchSmall ?? null)
+      const value = await createOptionValue(option.id, valLabel, slug, fromSource?.swatch ?? null, valueIdBySlug.size, fromSource?.ref ?? null, fromSource?.swatchSmall ?? null, fromSource?.swatchTiny ?? null)
       valueIdBySlug.set(`${optKey}|${slug}`, value.id)
       if (!valueIdByKey.has(`${optKey}|${valLabel.toLowerCase()}`)) valueIdByKey.set(`${optKey}|${valLabel.toLowerCase()}`, value.id)
       valueInfo.set(value.id, { optionId: option.id, optionName: optKey, label: valLabel, slug, swatch: fromSource?.swatch ?? null, sourceRef: fromSource?.ref ?? null })
@@ -501,7 +501,7 @@ export async function importVariationsCsv(
         // of desks ended up showing Silver's grey under a "Black" swatch.
         const option = optionByName.get(info.optionName)
         const sourceList = option
-          ? [...(await sourceValuesFor(option)).byLabel.values()].map((v) => ({ label: v.label, ref: v.ref, swatch: v.swatch, swatchSmall: v.swatchSmall }))
+          ? [...(await sourceValuesFor(option)).byLabel.values()].map((v) => ({ label: v.label, ref: v.ref, swatch: v.swatch, swatchSmall: v.swatchSmall, swatchTiny: v.swatchTiny }))
           : []
         const repoint = repointOnRename({
           currentSourceRef: info.sourceRef,
@@ -512,11 +512,12 @@ export async function importVariationsCsv(
             .filter(([id, i]) => id !== valueId && i.optionId === info.optionId)
             .map(([, i]) => i.sourceRef),
         })
-        const fields: { label: string; swatch?: string | null; swatchSmall?: string | null; sourceRef?: string | null } = { label: newLabel }
+        const fields: { label: string; swatch?: string | null; swatchSmall?: string | null; swatchTiny?: string | null; sourceRef?: string | null } = { label: newLabel }
         if (repoint.kind === 'adopt') {
           fields.sourceRef = repoint.ref
           if (repoint.swatch !== undefined) fields.swatch = repoint.swatch
           if (repoint.swatchSmall !== undefined) fields.swatchSmall = repoint.swatchSmall
+          if (repoint.swatchTiny !== undefined) fields.swatchTiny = repoint.swatchTiny
         } else if (repoint.kind === 'clear') {
           fields.sourceRef = null
         }
