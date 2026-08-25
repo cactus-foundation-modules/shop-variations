@@ -6,6 +6,7 @@ import { useVariationSelection } from '@/modules/shop-variations/lib/use-variati
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
 import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
+import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -1373,6 +1374,26 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
   // keeps up as the shopper changes their mind - see the detail slot's buy row.
   const [qty, setQty] = useState<number | null>(null)
   const [added, setAdded] = useState(false)
+
+  // Opens on the chosen combination's minimum, floored at 1 - the minimum is met
+  // across the basket, not by this line alone. See the same note on the detail
+  // slot's buy row for why it is derived rather than kept in step by an effect.
+  // Worked out up here rather than beside the markup because the publish below
+  // is a hook, and hooks cannot sit after the early returns.
+  const min = sel.minQuantity
+  const shownQty = Math.max(1, qty ?? min)
+
+  // How many are in hand, announced for a block that has to do arithmetic with
+  // it - an accessories box offering one screen per desk needs to know four
+  // desks are being bought. The editor's preview publishes nothing: there is no
+  // shopper there, and an author dragging blocks about must not move a figure
+  // some other block is doing sums with.
+  const listingProductId = sel.payload?.productId ?? ''
+  useEffect(() => {
+    if (preview || !listingProductId) return
+    publishPurchaseQuantity({ productId: listingProductId, quantity: shownQty })
+  }, [preview, listingProductId, shownQty])
+
   if (preview) return <Skeleton label="Add to basket" />
   if (!slug || !sel.loaded || !sel.payload) return null
 
@@ -1383,12 +1404,6 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
-
-  // Opens on the chosen combination's minimum, floored at 1 - the minimum is met
-  // across the basket, not by this line alone. See the same note on the detail
-  // slot's buy row for why it is derived rather than kept in step by an effect.
-  const min = sel.minQuantity
-  const shownQty = Math.max(1, qty ?? min)
 
   return (
     <div style={{ display: 'grid', gap: '0.5rem' }}>
