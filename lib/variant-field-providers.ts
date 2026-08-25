@@ -2,7 +2,7 @@ import type { ComponentType } from 'react'
 import { getInstalledManifests } from '@/lib/modules/live-status'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
-import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
+import { modulePublicExtensionPointComponents as moduleExtensionPointComponents } from '@/lib/modules/extension-points.public'
 
 // A generic, attribute-agnostic way for another module to hang extra per-variant
 // fields on this module. Unlike `shop-variations.variant-columns` - which is a
