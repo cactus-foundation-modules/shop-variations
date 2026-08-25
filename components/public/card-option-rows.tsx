@@ -113,8 +113,14 @@ const activeTextStyle: CSSProperties = { color: 'var(--color-primary)', fontWeig
 function SwatchValue({ value, kind }: { value: CardOptionSummary['values'][number]; kind: CardOptionSummary['kind'] }) {
   if (!value.swatch) return <span>{value.label}</span>
   if (kind === 'image') {
+    // Lazy, and not optional. A chip is 18px and weighs nothing on its own, but
+    // a grid page carries one per colour per card - a 432-product collection
+    // asked for about 2,600 of these at once, all eagerly, all to the same
+    // media host. Everything else on the page queued behind them, the tab icon
+    // included, which is how a colour swatch ends up being why a favicon is
+    // missing.
     // eslint-disable-next-line @next/next/no-img-element -- a swatch is a fixed 18px chip, and next/image would add a loader round-trip per colour per card
-    return <img src={value.swatch} alt={value.label} title={value.label} style={thumbStyle} />
+    return <img src={value.swatch} alt={value.label} title={value.label} style={thumbStyle} loading="lazy" decoding="async" />
   }
   return <span role="img" aria-label={value.label} title={value.label} style={{ ...dotStyle, background: value.swatch }} />
 }
