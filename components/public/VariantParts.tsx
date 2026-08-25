@@ -820,12 +820,15 @@ function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
 // baseline-aligned flex row, so the gap that holds it clear of the figure is the
 // control's own - one control, one look, wherever the price happens to be.
 // A button rather than an anchor: it goes nowhere, and a keyboard or screen
-// reader shopper should be told as much.
+// reader shopper should be told as much. It reads as a link though, and the
+// site's Styles > Buttons hover fill would otherwise paint a tan pill around a
+// piece of quiet text sitting beside the price - so it carries
+// `data-cactus-unstyled` and draws itself, which is what that opt-out is for.
 export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
   if (!sel.anyOptionChosen) return null
   return (
     <button
-      type="button" onClick={() => sel.resetOptions()}
+      type="button" onClick={() => sel.resetOptions()} data-cactus-unstyled=""
       style={{
         marginLeft: '2.5rem', padding: 0, background: 'none', border: 'none',
         color: 'var(--color-text-muted)', fontFamily: 'inherit', fontSize: '0.8125rem',
@@ -1149,8 +1152,16 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
                       <span style={{ textDecoration: available ? 'none' : 'line-through' }}>{v.label}</span>
                       {onSale && <SaleBadge />}
                     </span>
+                    {/* The price, or "Selected" on the chosen one, in a colour
+                        picked to sit quietly under the name on the resting pill.
+                        A themed hover fill arrives over the whole button and
+                        leaves this line exactly where it was, so a muted grey or
+                        the primary teal ends up marooned on the hover colour
+                        while the name above it moves. `inherit` hands it the
+                        button's own colour for the duration, so the pair read as
+                        the one label whichever way the site paints its hover. */}
                     {subLabel && (
-                      <span style={{
+                      <span data-cactus-hover-fg="inherit" style={{
                         fontSize: '0.75rem', fontWeight: active || !available ? 600 : 400,
                         color: active ? 'var(--color-primary)' : 'var(--color-text-muted)',
                       }}>
