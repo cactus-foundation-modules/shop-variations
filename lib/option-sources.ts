@@ -1,7 +1,7 @@
 import { getInstalledManifests } from '@/lib/modules/live-status'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
-import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
+import { modulePublicExtensionPointComponents as moduleExtensionPointComponents } from '@/lib/modules/extension-points.public'
 import type { SvrControlType } from '@/modules/shop-variations/lib/types'
 
 // A generic way for another module to offer ready-made options - "add a Colour
