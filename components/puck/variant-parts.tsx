@@ -1,7 +1,8 @@
 import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
-  type OptionLabelPlacement, type VariantDisplayMode, type AccordionInitial, type AccordionOnSelect, type SwatchDisplay, type SwatchPreview,
+  type OptionLabelPlacement, type VariantDisplayMode, type AccordionInitial, type AccordionOnSelect, type SwatchDisplay, type SwatchPreviewSetting,
   type UnavailableDisplay, type UnavailableOrder } from '@/modules/shop-variations/components/public/VariantParts'
+import { ResponsiveSelectField } from '@/lib/puck/fields/registry'
 
 // Granular storefront parts (mirror shop's ShopDetail* parts) for the Product
 // Detail layout. They share selection state through the client selection store
@@ -19,7 +20,7 @@ export type ShopVariantOptionsProps = {
   accordionInitial?: AccordionInitial
   accordionOnSelect?: AccordionOnSelect
   swatchDisplay?: SwatchDisplay
-  swatchPreview?: SwatchPreview
+  swatchPreview?: SwatchPreviewSetting
   unavailable?: UnavailableDisplay
   unavailableOrder?: UnavailableOrder
 }
@@ -83,11 +84,16 @@ export const shopVariantOptionsPuckComponent = {
         { label: 'Swatch only (name on hover)', value: 'swatchOnly' },
       ],
     },
+    // Per breakpoint, because the answer honestly differs by screen: on a
+    // desktop the bigger look is a hover away and costs the shopper nothing,
+    // while a phone has no hover at all - pressing a swatch to choose it IS the
+    // hover, so the preview lands over the page whether it was wanted or not.
     swatchPreview: {
-      type: 'radio' as const,
+      type: 'custom' as const,
       label: 'Colour & image previews',
+      render: ResponsiveSelectField,
       options: [
-        { label: 'Show a bigger look on hover', value: 'show' },
+        { label: 'Show a bigger look', value: 'show' },
         { label: 'No preview', value: 'hide' },
       ],
     },
@@ -113,7 +119,7 @@ export const shopVariantOptionsPuckComponent = {
     },
   },
   defaultProps: {
-    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: 'show', unavailable: 'show', unavailableOrder: 'keep',
+    labelPlacement: 'above', displayMode: 'inline', accordionInitial: 'closed', accordionOnSelect: 'openNext', swatchDisplay: 'pill', swatchPreview: { desktop: 'show' }, unavailable: 'show', unavailableOrder: 'keep',
   } as ShopVariantOptionsProps,
   // The accordion-only settings appear only in accordion mode, and "after a
   // choice is made" whenever there's a next section left to auto-open - closed

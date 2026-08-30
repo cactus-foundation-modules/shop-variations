@@ -3,6 +3,7 @@ import {
 } from '@/modules/shop-variations/components/public/VariantParts'
 import { bootstrapForCurrentProduct, currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { resolveShopGalleryExtras } from '@/modules/shop/lib/gallery-media'
+import { getResponsiveBreakpoints } from '@/lib/puck/responsiveValue'
 import {
   shopVariantOptionsPuckComponent,
   shopVariantPersonalisationPuckComponent,
@@ -46,6 +47,10 @@ export async function ShopVariantOptionsRsc(props: ShopVariantOptionsProps) {
       swatchDisplay={props.swatchDisplay}
       swatchPreview={props.swatchPreview}
       unavailable={props.unavailable}
+      unavailableOrder={props.unavailableOrder}
+      // Resolved here rather than in the island: the client bundle gets its own
+      // copy of core's responsive module state and nothing ever sets it there.
+      breakpoints={getResponsiveBreakpoints()}
     />
   )
 }

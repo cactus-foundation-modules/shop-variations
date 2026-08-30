@@ -9,6 +9,7 @@ import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
+import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
 
 // On the live page each part is handed the slug and the payload its RSC half
 // already resolved, so the controls are in the server's HTML from the off.
@@ -47,6 +48,72 @@ export type SwatchDisplay = 'pill' | 'swatchOnly'
 // SwatchDisplay: the swatch-only look still names the value on hover either way,
 // it just gains the picture above the name when previews are on.
 export type SwatchPreview = 'show' | 'hide'
+
+// The same answer given once per breakpoint, because a 200px picture that reads
+// as a helpful second look on a desktop hover is a panel over half the screen
+// when a thumb presses the same swatch on a phone - a phone has no hover, so a
+// tap IS the hover and the shopper gets the preview whether they wanted it or
+// not. Stored as core's ResponsiveValue (desktop wins, tablet falls back to
+// desktop, mobile to tablet then desktop); a plain string is the shape every
+// layout saved before this existed and still means "this, everywhere".
+export type SwatchPreviewSetting = ResponsiveValue<SwatchPreview> | SwatchPreview
+
+// Which breakpoints the enlarged preview is on at. Resolved once, high up, and
+// passed down rather than re-derived per value.
+export type SwatchPreviewShown = Record<Device, boolean>
+const PREVIEW_EVERYWHERE: SwatchPreviewShown = { desktop: true, tablet: true, mobile: true }
+
+export function resolveSwatchPreview(value: SwatchPreviewSetting | undefined): SwatchPreviewShown {
+  const rv = normalizeResponsiveValue<SwatchPreview>(value)
+  const at = (d: Device) => (pickResponsive(rv, d) ?? 'show') === 'show'
+  return { desktop: at('desktop'), tablet: at('tablet'), mobile: at('mobile') }
+}
+
+// The chip is drawn one way with a picture in it and another without, and which
+// of the two it is now depends on the width of the screen - so the four
+// measurements that differ travel as custom properties and a media rule per
+// switched-off breakpoint swaps them. Only the breakpoints that actually differ
+// from "previews on" emit anything: a block left alone renders byte-identically
+// to before this setting existed, and one switched off everywhere never builds
+// the preview in the first place (see `previewNode`), so it emits nothing either.
+//
+// The breakpoint widths arrive as an argument. This file is a client island and
+// its copy of core's responsive module state is never set, so the numbers have to
+// travel from the server - the same reason the search module's box takes them in
+// its config.
+const PEEK_PREVIEW_OFF_VARS = '--svr-peek-gap:0;--svr-peek-radius:var(--radius-sm,4px);--svr-peek-shadow:var(--shadow-md);--svr-peek-pad:2px 8px;--svr-peek-namepad:0'
+const PREVIEW_OFF_CLASS: Record<Device, string> = { desktop: 'svr-pv-off-d', tablet: 'svr-pv-off-t', mobile: 'svr-pv-off-m' }
+
+// Same ranges core's own media helpers use, including the 0.02px offset that
+// keeps a screen sitting exactly on a breakpoint in ONE band rather than two.
+function previewMediaQuery(device: Device, bp: { mobile: number; tablet: number }): string {
+  if (device === 'mobile') return `@media(max-width:${bp.mobile}px)`
+  if (device === 'tablet') return `@media(min-width:${bp.mobile + 0.02}px) and (max-width:${bp.tablet}px)`
+  return `@media(min-width:${bp.tablet + 0.02}px)`
+}
+
+export function swatchPreviewCss(shown: SwatchPreviewShown, bp: { mobile: number; tablet: number }): string {
+  const devices: Device[] = ['desktop', 'tablet', 'mobile']
+  return devices.filter((d) => !shown[d]).map((d) => {
+    const c = `.${PREVIEW_OFF_CLASS[d]}`
+    // !important on both, for the reason core's own responsiveMediaCssFor carries
+    // it: the preview and the chip are drawn with an inline `display`, and an
+    // inline style beats any stylesheet selector, so a plain rule here would be
+    // ignored and the preview would sit there at every width. The custom
+    // properties above need no such thing - nothing sets those inline.
+    return `${previewMediaQuery(d, bp)}{${c}{${PEEK_PREVIEW_OFF_VARS}}`
+      + `${c} .svr-peek-pv{display:none !important}`
+      // A pill already shows the value's name, so its chip carries the preview and
+      // nothing else - with the preview gone there is nothing left to pop, and an
+      // empty bordered box under the swatch is worse than no chip at all.
+      + `${c} .svr-peek--nolabel{display:none !important}}`
+  }).join('\n')
+}
+
+export function swatchPreviewOffClasses(shown: SwatchPreviewShown): string {
+  const devices: Device[] = ['desktop', 'tablet', 'mobile']
+  return devices.filter((d) => !shown[d]).map((d) => PREVIEW_OFF_CLASS[d]).join(' ')
+}
 
 // What becomes of a choice the picks above it have put out of reach. 'show'
 // keeps it in the row, struck through and unpickable, with a line underneath
@@ -499,14 +566,18 @@ export type VariantOptionsPartProps = PartProps & {
   accordionInitial?: AccordionInitial
   accordionOnSelect?: AccordionOnSelect
   swatchDisplay?: SwatchDisplay
-  swatchPreview?: SwatchPreview
+  swatchPreview?: SwatchPreviewSetting
   unavailable?: UnavailableDisplay
   unavailableOrder?: UnavailableOrder
+  // The site's own tablet/mobile widths, resolved on the server and handed over
+  // - see swatchPreviewCss for why they cannot be read here.
+  breakpoints?: { mobile: number; tablet: number }
 }
 export function VariantOptionsPart({
   preview, slug: explicitSlug, initial, labelPlacement,
   displayMode = 'inline', accordionInitial = 'closed', accordionOnSelect = 'openNext', swatchDisplay = 'pill',
   swatchPreview = 'show', unavailable = 'show', unavailableOrder = 'keep',
+  breakpoints = { mobile: 640, tablet: 1024 },
 }: VariantOptionsPartProps) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
@@ -522,18 +593,25 @@ export function VariantOptionsPart({
   const visibleOptions = sel.payload.options.filter((_, index) => sel.isOptionVisible(index))
   if (visibleOptions.length === 0) return null
 
+  // Off at every width is the old 'hide': the preview is never built, so there is
+  // no picture in the markup and no CSS to hide it with.
+  const previewShown = resolveSwatchPreview(swatchPreview)
+  const previewOffClasses = swatchPreviewOffClasses(previewShown)
+  const previewCss = swatchPreviewCss(previewShown, breakpoints)
+
   return (
     // The class marks the option pickers' extent for the pinned mobile gallery
     // (lib/use-sticky-mobile-gallery.ts); it carries no styling.
     // data-spd-configure is shop's documented hook: its tab strip's Configure
     // action scrolls here rather than to the buy button, and the scroll margin
     // keeps the landing clear of the header and a sticky bar.
-    <div className={OPTIONS_AREA_CLASS} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
+    <div className={`${OPTIONS_AREA_CLASS}${previewOffClasses ? ` ${previewOffClasses}` : ''}`} data-spd-configure style={{ display: 'grid', gap: '1rem', scrollMarginTop: 'calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px) + 16px)' }}>
+      {previewCss && <style dangerouslySetInnerHTML={{ __html: previewCss }} />}
       {displayMode === 'accordion' ? (
-        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} unavailableOrder={unavailableOrder} />
+        <VariantOptionsAccordion options={visibleOptions} sel={sel} initial={accordionInitial} onSelect={accordionOnSelect} swatchDisplay={swatchDisplay} swatchPreview={previewShown} unavailable={unavailable} unavailableOrder={unavailableOrder} />
       ) : (
         visibleOptions.map((option, index) => (
-          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={swatchPreview} unavailable={unavailable} unavailableOrder={unavailableOrder} />
+          <OptionControl key={option.id} option={option} sel={sel} index={index + 1} labelPlacement={labelPlacement} swatchDisplay={swatchDisplay} swatchPreview={previewShown} unavailable={unavailable} unavailableOrder={unavailableOrder} />
         ))
       )}
     </div>
@@ -561,7 +639,7 @@ function VariantOptionsAccordion({
   initial: AccordionInitial
   onSelect: AccordionOnSelect
   swatchDisplay: SwatchDisplay
-  swatchPreview: SwatchPreview
+  swatchPreview: SwatchPreviewShown
   unavailable: UnavailableDisplay
   unavailableOrder?: UnavailableOrder
 }) {
@@ -720,6 +798,12 @@ function VariantOptionsAccordion({
 function ValuePeek({ label, sub, struck = false, preview, wrapStyle, children }: { label?: string; sub?: string | null; struck?: boolean; preview?: React.ReactNode; wrapStyle?: React.CSSProperties; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   if (!label && !preview) return <>{children}</>
+  // The four measurements that differ between "with a picture in it" and
+  // "without" read from custom properties whenever there IS a picture, so a
+  // breakpoint the preview is switched off at can swap them for the plain-chip
+  // set without an !important war with these inline styles. A chip that never
+  // had a picture keeps the literal plain values it always had.
+  const hasPreview = Boolean(preview)
   return (
     <span
       style={{ position: 'relative', display: 'inline-flex', ...wrapStyle }}
@@ -729,14 +813,18 @@ function ValuePeek({ label, sub, struck = false, preview, wrapStyle, children }:
       {open && (
         <span
           role="tooltip"
+          className={`svr-peek${hasPreview ? ' svr-peek--pv' : ''}${hasPreview && !label ? ' svr-peek--nolabel' : ''}`}
           style={{
             position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
             zIndex: 20, whiteSpace: 'nowrap', pointerEvents: 'none',
-            display: 'grid', justifyItems: 'center', gap: preview && label ? 4 : 0,
+            display: 'grid', justifyItems: 'center',
+            gap: hasPreview && label ? 'var(--svr-peek-gap,4px)' : 0,
             background: 'var(--color-surface)', color: 'var(--color-text)',
-            border: '1px solid var(--color-border)', borderRadius: preview ? 8 : 'var(--radius-sm, 4px)',
-            boxShadow: preview ? 'var(--shadow-lg)' : 'var(--shadow-md)',
-            padding: preview ? 4 : '2px 8px', fontSize: 'var(--text-xs, 0.75rem)',
+            border: '1px solid var(--color-border)',
+            borderRadius: hasPreview ? 'var(--svr-peek-radius,8px)' : 'var(--radius-sm, 4px)',
+            boxShadow: hasPreview ? 'var(--svr-peek-shadow,var(--shadow-lg))' : 'var(--shadow-md)',
+            padding: hasPreview ? 'var(--svr-peek-pad,4px)' : '2px 8px',
+            fontSize: 'var(--text-xs, 0.75rem)',
           }}
         >
           {preview}
@@ -747,7 +835,7 @@ function ValuePeek({ label, sub, struck = false, preview, wrapStyle, children }:
             // did. The strike belongs to the name alone - it struck the line
             // underneath too when it sat on the wrapper, and that line is the one
             // part of an out-of-reach choice the shopper is meant to read.
-            <span style={{ display: 'grid', justifyItems: 'center', lineHeight: 1.3, padding: preview ? '0 4px 2px' : 0 }}>
+            <span style={{ display: 'grid', justifyItems: 'center', lineHeight: 1.3, padding: hasPreview ? 'var(--svr-peek-namepad,0 4px 2px)' : 0 }}>
               <span style={{ textDecoration: struck ? 'line-through' : 'none' }}>{label}</span>
               {sub && (
                 // Wraps, unlike the rest of the chip: a list of upstream values
@@ -786,7 +874,7 @@ function ValuePeek({ label, sub, struck = false, preview, wrapStyle, children }:
 // speed-up. `crossOrigin` is written BEFORE `src` because that is the order React sets
 // them in, and the attribute only counts if it is there when the load starts - which is
 // also why the retry remounts the element rather than editing it in place.
-function SwatchImg({ src, style }: { src: string; style: React.CSSProperties }) {
+function SwatchImg({ src, style, className }: { src: string; style: React.CSSProperties; className?: string }) {
   // The url that would not load in CORS mode, rather than a plain "off" flag: the
   // fallback belongs to the picture that failed, so a value showing a different
   // picture gets its own fresh attempt with no effect to reset anything.
@@ -801,6 +889,7 @@ function SwatchImg({ src, style }: { src: string; style: React.CSSProperties }) 
       onError={() => setRefused(src)}
       alt=""
       aria-hidden
+      className={className}
       style={style}
     />
   )
@@ -809,11 +898,14 @@ function SwatchImg({ src, style }: { src: string; style: React.CSSProperties }) 
 // The enlarged look a preview pops: the picture itself for an image value, and
 // for a colour value the same colour drawn big enough to actually judge, since a
 // 16px dot tells a shopper very little about a paint or a fabric.
+// The class is what a breakpoint with previews switched off hides - see
+// swatchPreviewCss. It rides the picture itself rather than a wrapper, so the
+// chip's grid still sees the preview and the name as its own two rows.
 function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
   if (src) {
-    return <SwatchImg src={src} style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
+    return <SwatchImg className="svr-peek-pv" src={src} style={{ width: 200, height: 200, objectFit: 'contain', display: 'block', borderRadius: 4 }} />
   }
-  return <span aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
+  return <span className="svr-peek-pv" aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
 
 // Sits alongside the live price, in both hosts (see DetailSlotPartsClient), and
@@ -844,7 +936,7 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 
 // Exported so the slot parts (DetailSlotParts.tsx) render the identical control
 // inside shop's own detail chrome - one control, two hosts.
-export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = 'show', unavailable = 'show', unavailableOrder = 'keep', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreview; unavailable?: UnavailableDisplay; unavailableOrder?: UnavailableOrder; onChoose?: () => void }) {
+export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = PREVIEW_EVERYWHERE, unavailable = 'show', unavailableOrder = 'keep', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreviewShown; unavailable?: UnavailableDisplay; unavailableOrder?: UnavailableOrder; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
@@ -1014,7 +1106,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
           // The enlarged look, when previews are on and the value has something
           // to enlarge. Both looks pop the same chip; they differ only in whether
           // the name rides along in it (the pill already shows the name).
-          const previewNode = swatchPreview === 'show' && v.swatch && (isSwatch || isImage)
+          const previewNode = (swatchPreview.desktop || swatchPreview.tablet || swatchPreview.mobile) && v.swatch && (isSwatch || isImage)
             ? <ValuePreview src={isImage ? picture ?? undefined : undefined} colour={isSwatch ? v.swatch : undefined} />
             : undefined
           // The second line under the value's name: where an out-of-reach choice
