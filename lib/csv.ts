@@ -16,6 +16,7 @@ import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/vari
 import { skusToClearForRearrange, externalSkuBlockers, type SkuHolder } from '@/modules/shop-variations/lib/sku-rearrange'
 import { repointOnRename } from '@/modules/shop-variations/lib/rename-repoint'
 import { resolveOptionSourceProviders, type OptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
+import { VARIATIONS_OPTION_GROUP, VARIATIONS_EXTRA_GROUP } from '@/modules/shop-variations/lib/export-columns'
 
 // A variant can carry several images, so the single `Image` cell holds them all
 // as a comma-separated list, primary first. One url still reads (and imports) as
@@ -55,7 +56,15 @@ export function parseVariantImages(cell: string): string[] {
   return cell.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
-export async function exportVariationsCsv(): Promise<string> {
+/**
+ * Every variation as CSV, one row per variant. `columns` narrows it to the kinds
+ * the owner picked in the export modal (see lib/export-columns.ts): a fixed
+ * column is named by its own header, the whole Option/Value block is
+ * VARIATIONS_OPTION_GROUP, and every provider-contributed column is
+ * VARIATIONS_EXTRA_GROUP. Omitted - as the Google-Sheet Push calls it - the
+ * whole grid comes back exactly as before.
+ */
+export async function exportVariationsCsv(columns?: readonly string[]): Promise<string> {
   const ids = await getProductIdsWithVariations()
   const payloads = (await Promise.all(ids.map((id) => getEditorPayload(id)))).filter((p): p is NonNullable<typeof p> => !!p && p.variants.length > 0)
   const maxOptions = payloads.reduce((m, p) => Math.max(m, p.options.length), 1)
@@ -105,7 +114,23 @@ export async function exportVariationsCsv(): Promise<string> {
   // Min Qty sits after Stock: it is a counting column and belongs with the other
   // one, and appending it there keeps every column a sheet already knows in
   // place except Barcode onwards, which the Pull aligns by header anyway.
-  const lines = [toCsvRow(['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder])]
+  const header = ['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder]
+
+  // What each column is selectable AS, position by position. Built alongside the
+  // header rather than matched against it by label, so a provider column that
+  // happens to be called "Price" can never turn the real Price column on or off.
+  const kinds = [
+    'Parent Slug', 'Parent Name',
+    ...optionCols.map(() => VARIATIONS_OPTION_GROUP),
+    'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS,
+    'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID',
+    ...fieldHeaderOrder.map(() => VARIATIONS_EXTRA_GROUP),
+  ]
+  const wanted = columns && columns.length > 0 ? new Set(columns) : null
+  const keep = kinds.map((k) => !wanted || wanted.has(k))
+  const pick = (cells: string[]): string[] => (wanted ? cells.filter((_, i) => keep[i]) : cells)
+
+  const lines = [toCsvRow(pick(header))]
 
   for (const p of payloads) {
     const cols = fieldColsByProduct.get(p.product.id) ?? []
@@ -124,7 +149,7 @@ export async function exportVariationsCsv(): Promise<string> {
         const col = cols.find((c) => c.label === label)
         return col ? values[v.childProductId]?.[col.key] ?? '' : ''
       })
-      lines.push(toCsvRow([
+      lines.push(toCsvRow(pick([
         p.product.slug, p.product.name, ...pairs,
         v.sku ?? '', v.saleSku ?? '', String(v.price),
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
@@ -133,7 +158,7 @@ export async function exportVariationsCsv(): Promise<string> {
         v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         v.childProductId,
         ...fieldCells,
-      ]))
+      ])))
     }
   }
   return lines.join('\n')

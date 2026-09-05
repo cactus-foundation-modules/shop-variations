@@ -1,15 +1,26 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { VariationsTabs } from '@/modules/shop-variations/components/admin/VariationsTabs'
+import { ExportColumnsModal } from '@/modules/shop/components/admin/ExportColumnsModal'
+import { VARIATIONS_EXPORT_GROUPS, VARIATIONS_REQUIRED_COLUMNS } from '@/modules/shop-variations/lib/export-columns'
 
 type ImportResult = { created: number; updated: number; errors: Array<{ row: number; reason: string }> }
+
+// Every kind the picker can offer - the fixed columns plus the two moving blocks.
+// Ticking the lot is the old download, so the url carries no `columns` at all.
+const ALL_EXPORT_KINDS = VARIATIONS_EXPORT_GROUPS.reduce((n, g) => n + g.columns.length, 0)
+
+function exportHref(keys: string[]): string {
+  if (keys.length === ALL_EXPORT_KINDS) return '/api/m/shop-variations/admin/export'
+  return `/api/m/shop-variations/admin/export?columns=${encodeURIComponent(keys.join(','))}`
+}
 
 export function VariationsImportScreen() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
 
   async function onFile(file: File) {
     setBusy(true); setError(null); setResult(null)
@@ -29,13 +40,25 @@ export function VariationsImportScreen() {
   return (
     <div>
       <div className="page-header"><h1 className="page-title">Import / export</h1></div>
+
+      {exportOpen && (
+        <ExportColumnsModal
+          title="Export variations to CSV"
+          description="Tick the columns you want in the file. Variant ID stays put - it is how each row finds its way back to the right variant when you upload the file again."
+          groups={VARIATIONS_EXPORT_GROUPS}
+          storageKey="shop-variations.export.columns"
+          requiredKeys={VARIATIONS_REQUIRED_COLUMNS}
+          buildHref={exportHref}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       <VariationsTabs active="import" />
 
       <div style={{ display: 'grid', gap: '1.5rem', maxWidth: 640 }}>
         <section style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
           <h2 style={{ fontSize: '1.0625rem', marginTop: 0 }}>Export</h2>
           <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}>Download every variant as a CSV - one row per variant, with its options and per-variant price, stock, SKU, barcode and weight.</p>
-          <Link className="btn btn-secondary" href="/api/m/shop-variations/admin/export">Download variations CSV</Link>
+          <button type="button" className="btn btn-secondary" onClick={() => setExportOpen(true)}>Download variations CSV</button>
         </section>
 
         <section style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
