@@ -4,7 +4,6 @@ import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { prisma } from '@/lib/db/prisma'
 import { INSTALLED_MODULE_WHERE } from '@/lib/modules/live-status'
-import { moduleExtensionPointComponents } from '@/lib/modules/extension-points'
 import { VariationsPanel, type VariantColumn } from '@/modules/shop-variations/components/admin/VariationsPanel'
 import { resolveVariantFieldProviders } from '@/modules/shop-variations/lib/variant-field-providers'
 
@@ -54,6 +53,13 @@ async function resolveVariantColumns(user: Awaited<ReturnType<typeof getSessionF
     }
   }
 
+  // Dynamic on purpose: this file is reached FROM the generated registry
+  // (it contributes a component of its own), so a static import back to it
+  // closes a cycle. Turbopack merges a cycle into one scope and can fail a
+  // production build with "Cannot access 'x' before initialization", on some
+  // module sets and not others. See scripts/check-import-cycles.mjs.
+  const { moduleExtensionPointComponents } =
+    await import('@/lib/modules/extension-points')
   const components = moduleExtensionPointComponents['shop-variations.variant-columns'] ?? {}
   return entries
     .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
