@@ -26,7 +26,7 @@ import { currentProductPageSearchParams } from '@/modules/shop/lib/product-page-
 import type { ShopProductCanonicalQueryProvider } from '@/modules/shop/lib/product-canonical'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import { getVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap'
-import { buildVariationQuery, optionParamEntries, selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
+import { selectionValueIdsFromParams, variationCanonicalQuery } from '@/modules/shop-variations/lib/url-selection'
 import { resolveVariant, valueToOptionMap, withAutoSelected, withStrandedFilled, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 
 export const shopVariationsCanonicalQuery: ShopProductCanonicalQueryProvider = {
@@ -62,14 +62,8 @@ export const shopVariationsCanonicalQuery: ShopProductCanonicalQueryProvider = {
 
     // Spelled from the VARIATION's own values rather than from what was typed,
     // so an alias value and a hand-reordered query string both land on the one
-    // address - and on exactly the address lib/sitemap.ts published.
-    const canonicalSelection: OptionSelection = {}
-    for (const valueId of variant.optionValueIds) {
-      const optionId = valueToOption.get(valueId)
-      if (optionId) canonicalSelection[optionId] = valueId
-    }
-    if (payload.options.some((o) => !canonicalSelection[o.id])) return null
-
-    return buildVariationQuery(optionParamEntries(payload, canonicalSelection)) || null
+    // address - and on exactly the address lib/sitemap.ts published and the
+    // Google Shopping feed links to, because all three call this one function.
+    return variationCanonicalQuery(payload.options, variant.optionValueIds)
   },
 }

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db/prisma'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { hidesOutOfStockFromShoppers, outOfStockSql } from '@/modules/shop/lib/stock-visibility'
 import { productUrl, type ProductUrlStyle } from '@/modules/shop/lib/product-url'
-import { buildVariationQuery, optionParamKey } from '@/modules/shop-variations/lib/url-selection'
+import { variationCanonicalQuery, type VariationUrlOption } from '@/modules/shop-variations/lib/url-selection'
 
 // Every buyable combination of a product's options, as its own URL, merged into
 // the site's /sitemap.xml by scripts/generate-module-router.mjs (which scans for
@@ -23,10 +23,11 @@ import { buildVariationQuery, optionParamKey } from '@/modules/shop-variations/l
 //     listed. A half-described one (no value for one of the product's options)
 //     never resolves on the page, so publishing its URL would advertise an
 //     address that quietly renders the bare listing.
-//  2. What is published must be exactly what the page then declares canonical -
-//     see lib/canonical-query-provider.ts. Both spell the address with
-//     buildVariationQuery, in display order, from the variation's OWN values
-//     (never an alias), so the two cannot drift apart.
+//  2. What is published must be exactly what the page then declares canonical
+//     (lib/canonical-query-provider.ts) and what the Google Shopping feed links
+//     to. All three call variationCanonicalQuery in lib/url-selection.ts, which
+//     spells the address in display order from the variation's OWN values
+//     (never an alias), so the three cannot drift apart.
 
 // Sitemaps are capped at 50,000 URLs by the protocol - go over and the file is
 // rejected whole, taking the ordinary product pages down with it. This leaves
@@ -117,21 +118,22 @@ export function buildVariationEntries(
   // A product where a later option is left without a name of its own is dropped
   // whole below - two of its combinations would otherwise share one address, and
   // guessing which one a URL meant is exactly what the reader refuses to do.
-  const optionsByProduct = new Map<string, Array<{ optionId: string; paramKey: string }>>()
-  const ambiguousProducts = new Set<string>()
+  const valuesByOption = new Map<string, Array<{ id: string; slug: string }>>()
+  for (const row of values) {
+    let list = valuesByOption.get(row.option_id)
+    if (!list) { list = []; valuesByOption.set(row.option_id, list) }
+    list.push({ id: row.value_id, slug: row.value_slug })
+  }
+
+  const optionsByProduct = new Map<string, VariationUrlOption[]>()
   for (const row of options) {
     let list = optionsByProduct.get(row.product_id)
     if (!list) { list = []; optionsByProduct.set(row.product_id, list) }
-    const paramKey = optionParamKey(row.option_name)
-    if (!paramKey || list.some((o) => o.paramKey === paramKey)) {
-      ambiguousProducts.add(row.product_id)
-      continue
-    }
-    list.push({ optionId: row.option_id, paramKey })
+    // Options with no values at all are kept, so a product carrying one drops
+    // out below rather than publishing a combination that answers fewer
+    // questions than the page asks.
+    list.push({ id: row.option_id, name: row.option_name, values: valuesByOption.get(row.option_id) ?? [] })
   }
-
-  const valueIndex = new Map<string, { optionId: string; slug: string }>()
-  for (const row of values) valueIndex.set(row.value_id, { optionId: row.option_id, slug: row.value_slug })
 
   const seen = new Set<string>()
   const entries: MetadataRoute.Sitemap = []
@@ -139,21 +141,13 @@ export function buildVariationEntries(
   let unresolvable = 0
 
   for (const variant of variants) {
-    if (ambiguousProducts.has(variant.parent_id)) { unresolvable++; continue }
     const productOptions = optionsByProduct.get(variant.parent_id)
     if (!productOptions || productOptions.length === 0) continue
 
-    // One value per option, every option answered.
-    const slugByOption = new Map<string, string>()
-    let usable = true
-    for (const valueId of variant.value_ids) {
-      const value = valueIndex.get(valueId)
-      if (!value || slugByOption.has(value.optionId)) { usable = false; break }
-      slugByOption.set(value.optionId, value.slug)
-    }
-    if (!usable || slugByOption.size !== productOptions.length) { unresolvable++; continue }
-
-    const query = buildVariationQuery(productOptions.map((o) => [o.paramKey, slugByOption.get(o.optionId) ?? null]))
+    // Every rule about what does and does not have an address of its own lives
+    // in this one function, shared with the page's canonical tag and the Google
+    // Shopping feed's links - see lib/url-selection.ts.
+    const query = variationCanonicalQuery(productOptions, variant.value_ids)
     if (!query) { unresolvable++; continue }
 
     const url = `${productUrl(siteUrl, variant.parent_slug, urlStyle)}?${query}`

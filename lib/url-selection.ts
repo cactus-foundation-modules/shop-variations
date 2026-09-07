@@ -91,3 +91,68 @@ export function buildVariationQuery(entries: Array<[key: string, valueSlug: stri
     .map(([key, slug]) => `${encodeURIComponent(key)}=${encodeURIComponent(slug)}`)
     .join('&')
 }
+
+// The minimum an option has to say for a variation's address to be spelled.
+// Enough of SvrOptionWithValues that a selector payload's options pass straight
+// in, and little enough that lib/sitemap.ts can build one out of its two SQL
+// rows - which is the point: one function, so the three places that publish this
+// address cannot spell it three ways.
+export type VariationUrlOption = {
+  id: string
+  name: string
+  values: Array<{ id: string; slug: string }>
+}
+
+// The published address for one variation, as a query string, spelled from the
+// variation's OWN option values in display order.
+//
+// The single source of that spelling for everything that hands the address to
+// a search engine: lib/sitemap.ts publishes it, lib/canonical-query-provider.ts
+// declares it canonical on the page, and google-shopping-for-shop links to it
+// from the feed. Three spellings of one combination would have the sitemap
+// advertising a URL the page disowns and the feed landing on a third address.
+//
+// Null where the combination has no unambiguous address of its own, and the
+// caller should fall back to whatever it used before rather than invent one:
+//
+//  - a product where two options slugify to the same parameter name, so two
+//    combinations would share one address and reading it back is a coin flip;
+//  - a variation that leaves one of the product's options unanswered, or names
+//    a value that is not one of them - the address would quietly render the
+//    bare listing instead of the thing it names;
+//  - a variation naming two values of a single option, which resolves to
+//    nothing.
+export function variationCanonicalQuery(
+  options: VariationUrlOption[],
+  optionValueIds: string[],
+): string | null {
+  if (options.length === 0) return null
+
+  // First claim would normally win (optionsByParamKey above), but a URL nobody
+  // can read back is worse than no URL, so a clash disqualifies the product.
+  const keyByOption = new Map<string, string>()
+  const claimed = new Set<string>()
+  for (const option of options) {
+    const key = optionParamKey(option.name)
+    if (!key || claimed.has(key)) return null
+    claimed.add(key)
+    keyByOption.set(option.id, key)
+  }
+
+  const optionByValue = new Map<string, { optionId: string; slug: string }>()
+  for (const option of options) {
+    for (const value of option.values) optionByValue.set(value.id, { optionId: option.id, slug: value.slug })
+  }
+
+  const slugByOption = new Map<string, string>()
+  for (const valueId of optionValueIds) {
+    const found = optionByValue.get(valueId)
+    if (!found || slugByOption.has(found.optionId)) return null
+    slugByOption.set(found.optionId, found.slug)
+  }
+  if (slugByOption.size !== options.length) return null
+
+  return buildVariationQuery(
+    options.map((o) => [keyByOption.get(o.id)!, slugByOption.get(o.id) ?? null]),
+  ) || null
+}
