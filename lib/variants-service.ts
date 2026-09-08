@@ -13,7 +13,8 @@ import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-d
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
 import { minOrderQuantity, resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
-import { isReturnable } from '@/modules/shop/lib/returnable'
+import { resolveDiscretionary, resolveReturnable, returnsPolicy, returnsPolicyNote, nonReturnableNote, type ReturnsPolicy } from '@/modules/shop/lib/returnable'
+import { canSeeReturnsPolicy } from '@/modules/shop/lib/admin-returns'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
@@ -286,6 +287,8 @@ type ChildRow = {
   sale_sku: string | null
   supplier: string | null
   min_order_quantity: number | null
+  returnable: boolean | null
+  returns_discretionary: boolean | null
 }
 
 // Everything the storefront selector needs in one payload: option controls,
@@ -324,6 +327,12 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // copy has nothing in it to read out of the network tab. See shop's
   // lib/admin-codes.ts.
   const exposeCodes = await canSeeProductCodes()
+  // And what the returns policy says about the combination in hand. Withheld the
+  // same way, for the same reason - see shop's lib/admin-returns.ts. Not a
+  // secret, but the product page is not where a shopper is told a thing cannot
+  // come back, and a payload nobody can read it out of is one fewer thing to get
+  // wrong later.
+  const exposeReturns = await canSeeReturnsPolicy()
 
   // Whether the shop prints its prices net or gross is shop's own setting, and
   // it applies to a variation exactly as it does to an ordinary product - so
@@ -355,7 +364,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   const altsByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
-      SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier", "min_order_quantity"
+      SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier", "min_order_quantity", "returnable", "returns_discretionary"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
@@ -420,6 +429,17 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       // gets to say "this one size only goes out in pairs". Not gated on any
       // setting: a shopper has to be told before they press the button.
       minOrderQuantity: resolveMinOrderQuantity(child?.min_order_quantity, parent.minOrderQuantity),
+      // Resolved here, not on the client: falling back to the listing is the
+      // whole point of the column, and only the server can see the listing's
+      // row. Left undefined for a shopper, so there is nothing to read either
+      // way - the same withholding the stock count and the codes get.
+      returnable: exposeReturns ? resolveReturnable(child?.returnable, parent.returnable) : undefined,
+      // The third answer, resolved the same way and withheld the same way. Only
+      // meaningful where the flag above says yes - goods nobody takes back are
+      // not taken back at anyone's discretion either.
+      returnsDiscretionary: exposeReturns
+        ? resolveDiscretionary(child?.returns_discretionary, parent.returnsDiscretionary)
+        : undefined,
     }
   })
 
@@ -445,6 +465,22 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     priceSuffix: taxDisplay.display.suffix,
     showStockCounts: exposeStock,
     showCodes: exposeCodes,
+    showReturns: exposeReturns,
+    // The listing's own answer, and the only copy of the owner's wording there
+    // is: a reason is written on the listing, never per combination, so a
+    // variation that refuses returns borrows this sentence.
+    baseReturns: exposeReturns
+      ? (() => {
+        const policy = returnsPolicy(parent.returnable, parent.returnsDiscretionary)
+        return {
+          policy,
+          // The stock sentence stands in wherever the owner wrote nothing, and
+          // an ALLOWED listing keeps one too: a combination can carry its own
+          // refusal, and it borrows this wording when it does.
+          note: returnsPolicyNote(policy, parent.nonReturnableNote) ?? nonReturnableNote(parent.nonReturnableNote),
+        }
+      })()
+      : null,
     baseStock: exposeStock ? { tracked: parent.trackInventory, count: parent.stockCount } : null,
     // The parent's own smallest order: what stands before a combination has
     // resolved, and what IS the minimum on a product claimed for its add-ons
@@ -578,6 +614,9 @@ export type VariantEditorRow = {
   // says" rather than "yes" - the grid shows the listing's answer as the
   // placeholder, so a blank is not mistaken for a decision.
   returnable: boolean | null
+  // And whether that return is the shop's to refuse. Same nullable meaning, and
+  // the two are read as one answer by the grid's single Returns control.
+  returnsDiscretionary: boolean | null
   weight: number | null
   // Every image on this variant's hidden child product, primary first.
   imageUrls: string[]
@@ -587,7 +626,7 @@ export type EditorPayload = {
   // `minOrderQuantity` is the PARENT's own, already normalised - the grid shows
   // it as the placeholder in each row's Min qty box, so a blank cell reads as
   // "as the product says" rather than as "no minimum".
-  product: { id: string; name: string; slug: string; price: number; minOrderQuantity: number; returnable: boolean }
+  product: { id: string; name: string; slug: string; price: number; minOrderQuantity: number; returnsPolicy: ReturnsPolicy }
   options: SvrOptionWithValues[]
   variants: VariantEditorRow[]
   addons: SvrAddon[]
@@ -605,6 +644,7 @@ type ChildEditRow = ChildRow & {
   barcode: string | null
   min_order_quantity: number | null
   returnable: boolean | null
+  returns_discretionary: boolean | null
   supplier: string | null
   weight: unknown
   retail_price: unknown
@@ -612,7 +652,7 @@ type ChildEditRow = ChildRow & {
   cost_price: unknown
 }
 
-type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string; minOrderQuantity?: number | null; returnable?: boolean | null }
+type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string; minOrderQuantity?: number | null; returnable?: boolean | null; returnsDiscretionary?: boolean | null }
 
 // Shared by getEditorPayload and getEditorPayloadsBatch: turns one parent's
 // already-fetched options/variants/value-map/addons plus the shared child-row
@@ -655,6 +695,7 @@ function buildEditorPayload(
       stockCount: child?.stock_count ?? null,
       minOrderQuantity: child?.min_order_quantity ?? null,
       returnable: child?.returnable ?? null,
+      returnsDiscretionary: child?.returns_discretionary ?? null,
       weight: child?.weight != null ? Number(child.weight) : null,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
     }
@@ -667,8 +708,8 @@ function buildEditorPayload(
       // product, so the placeholder can say it rather than showing an empty box.
       minOrderQuantity: minOrderQuantity(parent.minOrderQuantity),
       // What a blank cell in the grid's Returns column means for this product,
-      // so the tri-state control can show it rather than an empty box.
-      returnable: isReturnable(parent.returnable),
+      // so the control can show it rather than an empty box.
+      returnsPolicy: returnsPolicy(parent.returnable, parent.returnsDiscretionary),
     },
     options,
     variants: rows,
@@ -683,7 +724,7 @@ async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: 
   if (childIds.length === 0) return { childById, imagesByChild }
   const childRows = await prisma.$queryRaw<ChildEditRow[]>`
     SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight", "min_order_quantity", "returnable"
+           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight", "min_order_quantity", "returnable", "returns_discretionary"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
   `
   for (const r of childRows) childById.set(r.id, r)
@@ -799,6 +840,8 @@ export async function upsertVariantForCombination(
     // Whether the shop takes this combination back. null clears it, which means
     // "as the listing says" rather than "yes".
     returnable?: boolean | null
+    // And whether that return is ours to refuse. null clears it the same way.
+    returnsDiscretionary?: boolean | null
     weight?: number | null
   },
   ctx?: VariantUpsertContext,
@@ -868,6 +911,7 @@ export async function upsertVariantForCombination(
       || (fields.stockCount !== undefined && currentChild.stockCount !== fields.stockCount)
       || (fields.minOrderQuantity !== undefined && (currentChild.minOrderQuantity ?? null) !== (fields.minOrderQuantity ?? null))
       || (fields.returnable !== undefined && (currentChild.returnable ?? null) !== (fields.returnable ?? null))
+      || (fields.returnsDiscretionary !== undefined && (currentChild.returnsDiscretionary ?? null) !== (fields.returnsDiscretionary ?? null))
       || (fields.weight !== undefined && (currentChild.weight == null ? null : Number(currentChild.weight)) !== fields.weight)
   }
 
@@ -885,6 +929,7 @@ export async function upsertVariantForCombination(
       ...(fields.stockCount !== undefined ? { stockCount: fields.stockCount, trackInventory: fields.stockCount != null } : {}),
       ...(fields.minOrderQuantity !== undefined ? { minOrderQuantity: fields.minOrderQuantity } : {}),
       ...(fields.returnable !== undefined ? { returnable: fields.returnable } : {}),
+      ...(fields.returnsDiscretionary !== undefined ? { returnsDiscretionary: fields.returnsDiscretionary } : {}),
       ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
     }
     // Batch caller: bank the write for a concurrent flush. Everyone else writes

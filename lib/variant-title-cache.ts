@@ -14,7 +14,7 @@ import { cache } from 'react'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { CartLineMinOrder, CartLineTitle } from '@/modules/shop/lib/line-meta'
 import { resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
-import { resolveReturnable } from '@/modules/shop/lib/returnable'
+import { resolveDiscretionary, resolveReturnable } from '@/modules/shop/lib/returnable'
 import { getProductById, getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getVariantByChildProductId, getVariantParentsByChild } from '@/modules/shop-variations/lib/db/variants'
 
@@ -26,9 +26,12 @@ type TitleStore = {
   // getVariantMinOrder.
   parentByProduct: Map<string, string>
   parentMinByProduct: Map<string, number | null>
-  // The listing's own returns flag, keyed by CHILD id like the rest. Same
-  // batched pass, same reason: a child's own flag is very nearly always blank.
+  // The listing's own returns flag AND its wording, keyed by CHILD id like the
+  // rest. Same batched pass, same reason: a child's own flag is very nearly
+  // always blank, and a child NEVER carries the wording at all.
   parentReturnableByProduct: Map<string, boolean | null>
+  parentReturnNoteByProduct: Map<string, string | null>
+  parentReturnDiscretionByProduct: Map<string, boolean | null>
   prefetched: boolean
 }
 
@@ -38,6 +41,8 @@ const requestStore = cache((): TitleStore => ({
   parentByProduct: new Map(),
   parentMinByProduct: new Map(),
   parentReturnableByProduct: new Map(),
+  parentReturnNoteByProduct: new Map(),
+  parentReturnDiscretionByProduct: new Map(),
   prefetched: false,
 }))
 
@@ -71,6 +76,8 @@ export async function prefetchVariantTitles(products: ShpProduct[]): Promise<voi
         store.titleByProduct.set(child.id, splitTitle(child.name, parent.name))
         store.parentMinByProduct.set(child.id, parent.minOrderQuantity)
         store.parentReturnableByProduct.set(child.id, parent.returnable)
+        store.parentReturnNoteByProduct.set(child.id, parent.nonReturnableNote)
+        store.parentReturnDiscretionByProduct.set(child.id, parent.returnsDiscretionary)
       }
     }
   }
@@ -126,33 +133,53 @@ export async function getVariantMinOrder(product: ShpProduct): Promise<CartLineM
 }
 
 /**
- * Whether this line may be sent back, for a variation child: its own flag where
- * it carries one, otherwise the listing's. Null for anything that is not a
+ * What the returns policy says about this line, for a variation child: its own
+ * flag where it carries one, otherwise the listing's - and the listing's wording
+ * either way, because a child never carries one. Null for anything that is not a
  * variation, which then stands on its own product row exactly as an ordinary
  * product does.
  *
  * The same shape of problem getVariantMinOrder solves, and it exists for the
  * same reason: a child's own `returnable` is very nearly always NULL, because
- * the owner marks the LISTING bespoke and expects every combination of it to
- * follow. Shop reading the child row alone resolved every variation of a
- * made-to-order desk to "returnable" and offered a return button on all of them.
+ * the owner marks the LISTING made-to-order and expects every combination of it
+ * to follow. Shop reading the child row alone resolved every variation of a
+ * bespoke desk to "returnable" and offered a return button on all of them.
  *
  * A child that DOES carry a flag wins, in both directions - the one stock finish
  * on a bespoke range, or the one made-to-order finish on a stock one.
  *
+ * The NOTE is the half that is easy to forget, and it is why this returns a pair
+ * rather than a boolean. The owner writes their reason on the listing (a reason
+ * per colour is nobody's idea of a good time), so a line refused because of the
+ * listing has to carry the listing's words with it - otherwise the customer is
+ * handed the stock sentence and the owner's own wording is quietly lost.
+ *
  * Served from the same request batch as the titles; falls back to the direct
  * lookups when shop did not prefetch, exactly as buildVariantTitle does.
  */
-export async function getVariantReturnable(product: ShpProduct): Promise<boolean | null> {
+export async function getVariantReturns(
+  product: ShpProduct,
+): Promise<{ returnable: boolean; note: string | null; discretionary: boolean } | null> {
   if (!product.catalogueHidden) return null
   const store = requestStore()
   if (store.prefetched) {
     if (!store.parentByProduct.has(product.id)) return null
-    return resolveReturnable(product.returnable, store.parentReturnableByProduct.get(product.id) ?? null)
+    return {
+      returnable: resolveReturnable(product.returnable, store.parentReturnableByProduct.get(product.id) ?? null),
+      note: store.parentReturnNoteByProduct.get(product.id) ?? null,
+      discretionary: resolveDiscretionary(
+        product.returnsDiscretionary,
+        store.parentReturnDiscretionByProduct.get(product.id) ?? null,
+      ),
+    }
   }
 
   const variant = await getVariantByChildProductId(product.id)
   if (!variant) return null
   const parent = await getProductById(variant.productId)
-  return resolveReturnable(product.returnable, parent?.returnable ?? null)
+  return {
+    returnable: resolveReturnable(product.returnable, parent?.returnable ?? null),
+    note: parent?.nonReturnableNote ?? null,
+    discretionary: resolveDiscretionary(product.returnsDiscretionary, parent?.returnsDiscretionary ?? null),
+  }
 }

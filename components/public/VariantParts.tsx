@@ -8,6 +8,7 @@ import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/a
 import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
+import { RETURNS_POLICY_LABEL, type ReturnsPolicy } from '@/modules/shop/lib/returnable'
 import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
 
@@ -522,6 +523,61 @@ export function AdminSkuNote({ sel }: { sel: ReturnType<typeof useVariationSelec
     >
       {sku && <strong style={{ fontWeight: 700 }}>SKU: {sku}</strong>}
       {saleSku && <strong style={{ fontWeight: 700 }}>Sale SKU: {saleSku}</strong>}
+      <span>staff only</span>
+    </p>
+  )
+}
+
+
+// What the returns policy says about the combination in hand, for staff, sat
+// under the stock figure and the codes. Same withholding as those two: the
+// answer is absent from a shopper's payload entirely (shop's
+// lib/admin-returns.ts), so this needs no permission check of its own and there
+// is nothing in the network tab either.
+//
+// Shown BEFORE a combination is settled, unlike the codes, and that is
+// deliberate. The listing's own answer is the answer for very nearly every row -
+// an owner marks a made-to-order range once on the product - so holding it back
+// would mean building a chair to find out something that was true of the whole
+// range all along. Once a combination IS settled its own answer takes over, and
+// where the two differ the pill says so rather than quietly changing its mind.
+export function AdminReturnsNote({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+  const payload = sel.payload
+  if (!payload?.showReturns) return null
+  const base = payload.baseReturns
+  if (!base) return null
+  // The chosen combination's own answer where there is one; the listing's until
+  // then. `undefined` on a variant is "not known" (an older cached payload), not
+  // "returnable", so it falls through to the listing rather than inventing a yes.
+  const settled = sel.hasOptions && sel.variant?.returnable != null
+  const chosen: ReturnsPolicy | null = settled
+    ? (sel.variant?.returnable === false
+        ? 'NONE'
+        : sel.variant?.returnsDiscretionary === true ? 'DISCRETIONARY' : 'ALLOWED')
+    : null
+  const policy = chosen ?? base.policy
+  // Worth saying only when this row genuinely parts company with its listing -
+  // the single stock finish on a bespoke range, or the other way about. Silent
+  // on the hundreds of rows that simply follow.
+  const overrides = chosen != null && chosen !== base.policy
+  return (
+    <p
+      style={{
+        margin: '10px 0 0', display: 'inline-flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0.5rem',
+        maxWidth: '100%',
+        padding: '5px 10px', borderRadius: 8,
+        border: '1px dashed var(--color-border)', background: 'var(--color-surface)',
+        color: 'var(--color-text-muted)', fontSize: '0.8125rem', lineHeight: 1.35,
+      }}
+    >
+      {/* Said either way round, never only when the answer is no: a pill that
+          appears and disappears reads as something that failed to load, and
+          "yes" is the answer somebody on the telephone actually wants. */}
+      <strong style={{ fontWeight: 700 }}>{RETURNS_POLICY_LABEL[policy]}</strong>
+      {/* The customer's own wording, not a summary of it - knowing what they
+          will be told is the point of putting it on the page. */}
+      {policy !== 'ALLOWED' && <span>{base.note}</span>}
+      {overrides && <span>this option only</span>}
       <span>staff only</span>
     </p>
   )
@@ -1535,6 +1591,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
       )}
       <AdminStockNote sel={sel} />
       <AdminSkuNote sel={sel} />
+      <AdminReturnsNote sel={sel} />
     </div>
   )
 }

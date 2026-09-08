@@ -5,6 +5,7 @@ import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerMod
 import { useAlert, usePrompt } from '@/modules/shop/components/admin/dialogs'
 import { uploadOneFile } from '@/lib/media/upload-client'
 import { preflightUploadError } from '@/lib/media/limits'
+import type { ReturnsPolicy } from '@/modules/shop/lib/returnable'
 import {
   useProductEditorCurrency, useProductEditorSave, useProductEditorTabBadge,
   useSetProductEditorPriceManaged,
@@ -38,9 +39,22 @@ type VariantRow = {
   // Whether the shop takes this combination back. Tri-state: null follows the
   // listing, which is what all but a handful of rows do.
   returnable: boolean | null
+  // And whether that return is ours to refuse, on the same nullable terms. Read
+  // with the flag above as one answer by the grid's single Returns control.
+  returnsDiscretionary: boolean | null
 }
+
+// What a blank cell in the Returns column actually means, said in the option
+// itself. An owner looking at three hundred blank rows should not have to open
+// the product to find out what they all say.
+const RETURNS_AS_PRODUCT: Record<ReturnsPolicy, string> = {
+  ALLOWED: 'returnable',
+  DISCRETIONARY: 'only if we agree',
+  NONE: 'no returns',
+}
+
 type Payload = {
-  product: { id: string; name: string; price: number; minOrderQuantity?: number; returnable?: boolean }
+  product: { id: string; name: string; price: number; minOrderQuantity?: number; returnsPolicy: ReturnsPolicy }
   options: Option[]
   variants: VariantRow[]
   addons: SvrAddon[]
@@ -48,7 +62,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -1171,17 +1185,28 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                               who ticks a row by accident can never put it back
                               to following the listing. */}
                           <select
-                            style={{ ...input, width: 130 }}
+                            style={{ ...input, width: 150 }}
                             aria-label={`Returns for ${v.label}`}
-                            value={valueOf(v, 'returnable') == null ? '' : String(valueOf(v, 'returnable'))}
+                            value={
+                              valueOf(v, 'returnable') === false ? 'false'
+                              : valueOf(v, 'returnsDiscretionary') === true ? 'discretion'
+                              : valueOf(v, 'returnable') === true ? 'true'
+                              : ''
+                            }
                             onChange={(e) =>
+                              // Two columns, one control. Both are written every
+                              // time so a row cannot be left holding a stale
+                              // discretion under a fresh "no returns" - the pair
+                              // is one answer and it is set as one.
                               editVariant(v.variantId, {
-                                returnable: e.target.value === '' ? null : e.target.value === 'true',
+                                returnable: e.target.value === '' ? null : e.target.value !== 'false',
+                                returnsDiscretionary: e.target.value === 'discretion' ? true : null,
                               })
                             }
                           >
-                            <option value="">As product ({data.product.returnable === false ? 'no returns' : 'returnable'})</option>
+                            <option value="">As product ({RETURNS_AS_PRODUCT[data.product.returnsPolicy]})</option>
                             <option value="true">Returnable</option>
+                            <option value="discretion">Only if we agree</option>
                             <option value="false">No returns</option>
                           </select>
                         </td>

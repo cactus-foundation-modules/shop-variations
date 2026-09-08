@@ -51,14 +51,16 @@ export type ChildProductFields = {
   // Whether the shop takes this combination back, null where it simply follows
   // the listing. Carried for the same change-detection reason as the rest.
   returnable: boolean | null
+  // And whether that return is ours to refuse, on the same nullable terms.
+  returnsDiscretionary: boolean | null
   weight: number | null
 }
 
 export async function getChildProductFields(childProductIds: string[]): Promise<Map<string, ChildProductFields>> {
   const map = new Map<string, ChildProductFields>()
   if (childProductIds.length === 0) return map
-  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; sale_sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; min_order_quantity: number | null; returnable: boolean | null; weight: unknown }[]>`
-    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "sale_sku", "barcode", "supplier", "stock_count", "min_order_quantity", "returnable", "weight"
+  const rows = await prisma.$queryRaw<{ id: string; price: unknown; sale_price: unknown; retail_price: unknown; trade_price: unknown; cost_price: unknown; sku: string | null; sale_sku: string | null; barcode: string | null; supplier: string | null; stock_count: number | null; min_order_quantity: number | null; returnable: boolean | null; returns_discretionary: boolean | null; weight: unknown }[]>`
+    SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price", "sku", "sale_sku", "barcode", "supplier", "stock_count", "min_order_quantity", "returnable", "returns_discretionary", "weight"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childProductIds)})
   `
   for (const r of rows) {
@@ -75,6 +77,7 @@ export async function getChildProductFields(childProductIds: string[]): Promise<
       stockCount: r.stock_count == null ? null : Number(r.stock_count),
       minOrderQuantity: r.min_order_quantity == null ? null : Number(r.min_order_quantity),
       returnable: r.returnable ?? null,
+      returnsDiscretionary: r.returns_discretionary ?? null,
       weight: r.weight == null ? null : Number(r.weight),
     })
   }

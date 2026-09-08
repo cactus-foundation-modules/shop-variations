@@ -2,6 +2,8 @@
 // migrations/001_initial.sql are the source of truth; these describe the
 // camelCase shape callers see.
 
+import type { ReturnsPolicy } from '@/modules/shop/lib/returnable'
+
 export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL' | 'IMAGE'
 
 // Cap on the swatch column at the API edge. Roomy because an IMAGE swatch stores
@@ -193,6 +195,15 @@ export type VariantSelectorVariant = {
   // own, which is why `tracksStock` is carried separately: the two nulls mean
   // different things and only one of them is worth writing on the page.
   stockCount: number | null
+  // Whether THIS combination can be sent back, already resolved against its
+  // listing (a child's own flag is very nearly always blank) - staff only.
+  // Undefined for every shopper, and on a payload serialised before this
+  // shipped, both of which read as "not known" and print nothing.
+  returnable?: boolean
+  // And whether the return, where there is one, is the shop's to refuse -
+  // resolved against the listing the same way, staff only, and only meaningful
+  // where `returnable` above is true.
+  returnsDiscretionary?: boolean
   // Whether this combination counts its stock at all. Not gated: it says nothing
   // about quantity, and the shopper-facing `inStock` already implies it.
   // Optional because this payload crosses to the browser as JSON - one
@@ -293,6 +304,18 @@ export type VariantSelectorPayload = {
   // unused, so a supplier's clearance code is never sat in a public page's
   // payload. Optional for the same reason as `priceSuffix`.
   showCodes?: boolean
+  // Whether the person this payload was built for may be told what the returns
+  // policy says - shop's canSeeReturnsPolicy. False for every shopper, in which
+  // case each variant's `returnable` above and `baseReturns` below are withheld
+  // rather than merely unused, so nothing about it sits in a public page's
+  // payload. Optional for the same reason as `priceSuffix`.
+  showReturns?: boolean
+  // The PARENT listing's own answer, and the owner's wording for it. Two jobs:
+  // it is what stands before the shopper has settled on a combination, and the
+  // NOTE is the only copy there is - a reason is written on the listing, never
+  // per combination, so a variation that refuses returns borrows this sentence.
+  // Null for shoppers, and absent on a payload serialised before this shipped.
+  baseReturns?: { policy: ReturnsPolicy; note: string } | null
   // The PARENT's own smallest order: what the buy row uses before a combination
   // has resolved, and on a product claimed for its add-ons alone where the
   // parent is the thing being bought. Optional for the same reason as

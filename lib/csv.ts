@@ -159,7 +159,9 @@ export async function exportVariationsCsv(columns?: readonly string[]): Promise<
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
         v.stockCount != null ? String(v.stockCount) : '',
         v.minOrderQuantity != null ? String(v.minOrderQuantity) : '',
-        v.returnable == null ? '' : (v.returnable ? 'Yes' : 'No'),
+        // One column, three answers - the same control the grid shows. Blank
+        // still means "as the listing says", which is what nearly every row is.
+        v.returnable === false ? 'No' : v.returnsDiscretionary === true ? 'Discretion' : v.returnable === true ? 'Yes' : '',
         v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         v.childProductId,
         ...fieldCells,
@@ -666,7 +668,7 @@ export async function importVariationsCsv(
           minOrderQuantity: minQtyCol >= 0
             ? (() => { const n = num(gr.cols[minQtyCol]); return n != null && n > 1 ? Math.floor(n) : null })()
             : undefined,
-          // Tri-state, and the blank is the meaningful one: an empty cell puts
+          // Four-state, and the blank is the meaningful one: an empty cell puts
           // the row back to following the listing, which is where all but a
           // handful of rows belong. Only a plain no refuses; anything readable
           // as a yes stores an explicit yes, which is how one stock finish on a
@@ -676,7 +678,18 @@ export async function importVariationsCsv(
               const v = (gr.cols[returnsCol] ?? '').trim().toLowerCase()
               if (v === 'no' || v === 'false' || v === 'n' || v === '0') return false
               if (v === 'yes' || v === 'true' || v === 'y' || v === '1') return true
+              if (v.startsWith('discretion') || v === 'maybe' || v === 'ask') return true
               return null
+            })()
+            : undefined,
+          // Written from the same cell, and always written when the column is
+          // present: the pair is one answer, so a row edited from "Discretion"
+          // to "Yes" has to lose the discretion rather than keep it under a new
+          // flag.
+          returnsDiscretionary: returnsCol >= 0
+            ? (() => {
+              const v = (gr.cols[returnsCol] ?? '').trim().toLowerCase()
+              return v.startsWith('discretion') || v === 'maybe' || v === 'ask' ? true : null
             })()
             : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,

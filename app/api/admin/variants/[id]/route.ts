@@ -28,6 +28,7 @@ const Body = z.object({
   // Whether the shop takes this combination back. Null clears it, which means
   // "follow the listing" rather than "yes" - the same tri-state the column is.
   returnable: z.boolean().nullable().optional(),
+  returnsDiscretionary: z.boolean().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
   // Whether this variation's first picture, and separately its 3D model, are
@@ -76,6 +77,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // the cell back to "as the listing says", which is a different thing from
   // ticking it returnable and has to survive the round trip.
   if (data.returnable !== undefined) productFields.returnable = data.returnable
+  if (data.returnsDiscretionary !== undefined) productFields.returnsDiscretionary = data.returnsDiscretionary
   if (Object.keys(productFields).length > 0) await updateProduct(variant.childProductId, productFields)
 
   if (data.imageUrls !== undefined) {
