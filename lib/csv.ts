@@ -114,7 +114,11 @@ export async function exportVariationsCsv(columns?: readonly string[]): Promise<
   // Min Qty sits after Stock: it is a counting column and belongs with the other
   // one, and appending it there keeps every column a sheet already knows in
   // place except Barcode onwards, which the Pull aligns by header anyway.
-  const header = ['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder]
+  // Returns sits after Min Qty, next to the other per-combination rule. Blank
+  // means "as the listing says", which is what all but a handful of rows are -
+  // so a Pull of an untouched catalogue writes an empty column and a Push of it
+  // back changes nothing.
+  const header = ['Parent Slug', 'Parent Name', ...optionCols, 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Returns', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', ...fieldHeaderOrder]
 
   // What each column is selectable AS, position by position. Built alongside the
   // header rather than matched against it by label, so a provider column that
@@ -123,7 +127,7 @@ export async function exportVariationsCsv(columns?: readonly string[]): Promise<
     'Parent Slug', 'Parent Name',
     ...optionCols.map(() => VARIATIONS_OPTION_GROUP),
     'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS,
-    'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID',
+    'Stock', 'Min Qty', 'Returns', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID',
     ...fieldHeaderOrder.map(() => VARIATIONS_EXTRA_GROUP),
   ]
   const wanted = columns && columns.length > 0 ? new Set(columns) : null
@@ -155,6 +159,7 @@ export async function exportVariationsCsv(columns?: readonly string[]): Promise<
         money(v.salePrice), money(v.retailPrice), money(v.tradePrice), money(v.costPrice),
         v.stockCount != null ? String(v.stockCount) : '',
         v.minOrderQuantity != null ? String(v.minOrderQuantity) : '',
+        v.returnable == null ? '' : (v.returnable ? 'Yes' : 'No'),
         v.barcode ?? '', v.supplier ?? '', v.weight != null ? String(v.weight) : '', serialiseVariantImages(v.imageUrls),
         v.childProductId,
         ...fieldCells,
@@ -239,6 +244,7 @@ export async function importVariationsCsv(
   // The smallest order. Absent from every sheet written before it existed, which
   // leaves the field alone rather than blanking it.
   const minQtyCol = idx('Min Qty')
+  const returnsCol = idx('Returns')
   const salePriceCol = idx('Sale Price'), rrpCol = idx('RRP'), tradePriceCol = idx('Trade Price'), costPriceCol = idx('Cost Price')
 
   const optionPairs: Array<{ nameCol: number; valueCol: number }> = []
@@ -659,6 +665,19 @@ export async function importVariationsCsv(
           // read past everywhere a minimum is resolved.
           minOrderQuantity: minQtyCol >= 0
             ? (() => { const n = num(gr.cols[minQtyCol]); return n != null && n > 1 ? Math.floor(n) : null })()
+            : undefined,
+          // Tri-state, and the blank is the meaningful one: an empty cell puts
+          // the row back to following the listing, which is where all but a
+          // handful of rows belong. Only a plain no refuses; anything readable
+          // as a yes stores an explicit yes, which is how one stock finish on a
+          // bespoke range overrules its listing.
+          returnable: returnsCol >= 0
+            ? (() => {
+              const v = (gr.cols[returnsCol] ?? '').trim().toLowerCase()
+              if (v === 'no' || v === 'false' || v === 'n' || v === '0') return false
+              if (v === 'yes' || v === 'true' || v === 'y' || v === '1') return true
+              return null
+            })()
             : undefined,
           weight: weightCol >= 0 ? (num(gr.cols[weightCol]) ?? null) : undefined,
         }, upsertCtx)

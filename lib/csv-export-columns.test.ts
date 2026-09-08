@@ -82,7 +82,7 @@ describe('variations export column picker', () => {
 
   it('writes the whole grid when no columns are asked for', async () => {
     const grid = parseCsv(await exportVariationsCsv())
-    expect(grid[0]).toEqual(['Parent Slug', 'Parent Name', 'Option 1', 'Value 1', 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', 'Finish detail'])
+    expect(grid[0]).toEqual(['Parent Slug', 'Parent Name', 'Option 1', 'Value 1', 'Variant SKU', 'Sale SKU', 'Price', ...PRICE_TYPE_COLUMNS, 'Stock', 'Min Qty', 'Returns', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID', 'Finish detail'])
     expect(grid[1]![grid[0]!.indexOf('Variant SKU')]).toBe('IMP-OAK')
   })
 

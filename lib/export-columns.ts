@@ -21,7 +21,7 @@ export const VARIATIONS_EXTRA_GROUP = '__extras__'
 export const VARIATIONS_FIXED_COLUMNS = [
   'Parent Slug', 'Parent Name', 'Variant SKU', 'Sale SKU', 'Price',
   'Sale Price', 'RRP', 'Trade Price', 'Cost Price',
-  'Stock', 'Min Qty', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID',
+  'Stock', 'Min Qty', 'Returns', 'Barcode', 'Supplier', 'Weight', 'Image', 'Variant ID',
 ] as const
 
 // `Variant ID` is what the importer (and the Google-Sheet Pull) matches a row
@@ -64,6 +64,7 @@ export const VARIATIONS_EXPORT_GROUPS: readonly VariationsExportGroup[] = [
     columns: [
       { key: 'Stock', label: 'Stock count' },
       { key: 'Min Qty', label: 'Minimum order quantity' },
+      { key: 'Returns', label: 'Returns', hint: 'Blank follows the product; Yes or No overrules it for this one combination' },
       { key: 'Barcode', label: 'Barcode' },
       { key: 'Supplier', label: 'Supplier' },
     ],

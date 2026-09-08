@@ -14,6 +14,7 @@ import { cache } from 'react'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { CartLineMinOrder, CartLineTitle } from '@/modules/shop/lib/line-meta'
 import { resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
+import { resolveReturnable } from '@/modules/shop/lib/returnable'
 import { getProductById, getProductsByIds } from '@/modules/shop/lib/db/products'
 import { getVariantByChildProductId, getVariantParentsByChild } from '@/modules/shop-variations/lib/db/variants'
 
@@ -25,6 +26,9 @@ type TitleStore = {
   // getVariantMinOrder.
   parentByProduct: Map<string, string>
   parentMinByProduct: Map<string, number | null>
+  // The listing's own returns flag, keyed by CHILD id like the rest. Same
+  // batched pass, same reason: a child's own flag is very nearly always blank.
+  parentReturnableByProduct: Map<string, boolean | null>
   prefetched: boolean
 }
 
@@ -33,6 +37,7 @@ const requestStore = cache((): TitleStore => ({
   titleByProduct: new Map(),
   parentByProduct: new Map(),
   parentMinByProduct: new Map(),
+  parentReturnableByProduct: new Map(),
   prefetched: false,
 }))
 
@@ -65,6 +70,7 @@ export async function prefetchVariantTitles(products: ShpProduct[]): Promise<voi
       if (parent) {
         store.titleByProduct.set(child.id, splitTitle(child.name, parent.name))
         store.parentMinByProduct.set(child.id, parent.minOrderQuantity)
+        store.parentReturnableByProduct.set(child.id, parent.returnable)
       }
     }
   }
@@ -117,4 +123,36 @@ export async function getVariantMinOrder(product: ShpProduct): Promise<CartLineM
     key: variant.productId,
     quantity: resolveMinOrderQuantity(product.minOrderQuantity, parent?.minOrderQuantity ?? null),
   }
+}
+
+/**
+ * Whether this line may be sent back, for a variation child: its own flag where
+ * it carries one, otherwise the listing's. Null for anything that is not a
+ * variation, which then stands on its own product row exactly as an ordinary
+ * product does.
+ *
+ * The same shape of problem getVariantMinOrder solves, and it exists for the
+ * same reason: a child's own `returnable` is very nearly always NULL, because
+ * the owner marks the LISTING bespoke and expects every combination of it to
+ * follow. Shop reading the child row alone resolved every variation of a
+ * made-to-order desk to "returnable" and offered a return button on all of them.
+ *
+ * A child that DOES carry a flag wins, in both directions - the one stock finish
+ * on a bespoke range, or the one made-to-order finish on a stock one.
+ *
+ * Served from the same request batch as the titles; falls back to the direct
+ * lookups when shop did not prefetch, exactly as buildVariantTitle does.
+ */
+export async function getVariantReturnable(product: ShpProduct): Promise<boolean | null> {
+  if (!product.catalogueHidden) return null
+  const store = requestStore()
+  if (store.prefetched) {
+    if (!store.parentByProduct.has(product.id)) return null
+    return resolveReturnable(product.returnable, store.parentReturnableByProduct.get(product.id) ?? null)
+  }
+
+  const variant = await getVariantByChildProductId(product.id)
+  if (!variant) return null
+  const parent = await getProductById(variant.productId)
+  return resolveReturnable(product.returnable, parent?.returnable ?? null)
 }

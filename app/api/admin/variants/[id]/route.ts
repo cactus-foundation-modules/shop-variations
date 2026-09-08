@@ -25,6 +25,9 @@ const Body = z.object({
   // The fewest of this combination sold in one go. Null clears it, which means
   // "follow the product's own figure" rather than "one at a time".
   minOrderQuantity: z.number().int().min(1).nullable().optional(),
+  // Whether the shop takes this combination back. Null clears it, which means
+  // "follow the listing" rather than "yes" - the same tri-state the column is.
+  returnable: z.boolean().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
   // Whether this variation's first picture, and separately its 3D model, are
@@ -69,6 +72,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // normalisation the product editor does, so the two cannot disagree.
   if (data.minOrderQuantity !== undefined) productFields.minOrderQuantity = data.minOrderQuantity != null && data.minOrderQuantity > 1 ? data.minOrderQuantity : null
   if (data.weight !== undefined) productFields.weight = data.weight
+  // Passed through as given, blank included: a null here is the owner clearing
+  // the cell back to "as the listing says", which is a different thing from
+  // ticking it returnable and has to survive the round trip.
+  if (data.returnable !== undefined) productFields.returnable = data.returnable
   if (Object.keys(productFields).length > 0) await updateProduct(variant.childProductId, productFields)
 
   if (data.imageUrls !== undefined) {

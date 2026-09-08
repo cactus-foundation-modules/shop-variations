@@ -35,9 +35,12 @@ type VariantRow = {
   // The fewest of this combination sold in one go. Null follows the product's
   // own figure, which the grid shows as the placeholder.
   minOrderQuantity: number | null
+  // Whether the shop takes this combination back. Tri-state: null follows the
+  // listing, which is what all but a handful of rows do.
+  returnable: boolean | null
 }
 type Payload = {
-  product: { id: string; name: string; price: number; minOrderQuantity?: number }
+  product: { id: string; name: string; price: number; minOrderQuantity?: number; returnable?: boolean }
   options: Option[]
   variants: VariantRow[]
   addons: SvrAddon[]
@@ -45,7 +48,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -1045,6 +1048,9 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <th style={{ padding: '0.5rem' }} title="The fewest of this product a shopper may buy in one go, counted across every combination in their basket - four of one colour and four in a mix both count as four. A floor, not a batch size: they can still order five. Leave it empty to follow whatever the product itself says.">
                       Min qty
                     </th>
+                    <th style={{ padding: '0.5rem' }} title="Whether this combination can be sent back. Leave it on 'As product' and it follows whatever the product itself says, which is what nearly every row wants - set the product bespoke once instead of three hundred times. Change it only where one combination differs, such as the single made-to-order finish on an otherwise stock range.">
+                      Returns
+                    </th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
                     {/* Two independent switches: a variation worth showing off for
@@ -1157,6 +1163,27 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             value={valueOf(v, 'minOrderQuantity') ?? ''}
                             onChange={(e) => editVariant(v.variantId, { minOrderQuantity: e.target.value === '' ? null : Number(e.target.value) })}
                           />
+                        </td>
+                        <td style={{ padding: '0.5rem' }}>
+                          {/* A select, not a checkbox: the cell has THREE states
+                              and a checkbox can only offer two. Blank is the
+                              common one and has to stay reachable, or an owner
+                              who ticks a row by accident can never put it back
+                              to following the listing. */}
+                          <select
+                            style={{ ...input, width: 130 }}
+                            aria-label={`Returns for ${v.label}`}
+                            value={valueOf(v, 'returnable') == null ? '' : String(valueOf(v, 'returnable'))}
+                            onChange={(e) =>
+                              editVariant(v.variantId, {
+                                returnable: e.target.value === '' ? null : e.target.value === 'true',
+                              })
+                            }
+                          >
+                            <option value="">As product ({data.product.returnable === false ? 'no returns' : 'returnable'})</option>
+                            <option value="true">Returnable</option>
+                            <option value="false">No returns</option>
+                          </select>
                         </td>
                         {weightBasedShippingEnabled && (
                           <td style={{ padding: '0.5rem' }}>

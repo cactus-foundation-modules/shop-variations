@@ -6,7 +6,7 @@
 // Server-safe: runs inside shop's lib/checkout.ts. Precedent for a server-function
 // extension point: contact-form.thread-messages -> getCaughtReplyThreadMessages.
 import { getAddonsForLine, prefetchAddons } from '@/modules/shop-variations/lib/addon-cache'
-import { buildVariantTitle, getVariantMinOrder, prefetchVariantTitles } from '@/modules/shop-variations/lib/variant-title-cache'
+import { buildVariantTitle, getVariantMinOrder, getVariantReturnable, prefetchVariantTitles } from '@/modules/shop-variations/lib/variant-title-cache'
 import { getUploadByToken } from '@/modules/shop-variations/lib/db/uploads'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import type { CartLineResolution } from '@/modules/shop/lib/line-meta'
@@ -30,12 +30,18 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
   // ordinary product does.
   const minOrder = await getVariantMinOrder(product)
 
+  // Whether the shop takes this combination back. Same reason as the minimum
+  // above: a child's own flag is very nearly always blank because the owner
+  // marks the LISTING made-to-order, and only this module can see the listing.
+  // Null for anything that is not a variation, which leaves shop on its own row.
+  const returnable = await getVariantReturnable(product)
+
   // Add-ons live on the parent product. If this line is a variant child, its
   // owner is the parent; otherwise the product owns its own add-ons directly.
   // getAddonsForLine serves this from the request batch cache when shop
   // prefetched the whole cart, and falls back to the per-line lookups otherwise.
   const addons = await getAddonsForLine(product)
-  if (addons.length === 0) return { ...NOOP, displayTitle, minOrder }
+  if (addons.length === 0) return { ...NOOP, displayTitle, minOrder, returnable }
 
   const rawAddons = (meta && typeof meta.addons === 'object' && meta.addons) ? (meta.addons as Record<string, unknown>) : {}
 
@@ -63,6 +69,7 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
     reason: pricing.reason,
     displayTitle,
     minOrder,
+    returnable,
   }
 }
 
