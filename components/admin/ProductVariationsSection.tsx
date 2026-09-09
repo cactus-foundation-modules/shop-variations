@@ -116,6 +116,7 @@ export async function ProductVariationsSection({ productId }: { productId: strin
       columns={[...staticColumns, ...fieldColumns]}
       enabledPriceTypes={config.enabledPriceTypes}
       weightBasedShippingEnabled={config.weightBasedShippingEnabled}
+      orderSizeDeductionEnabled={config.orderSizeDeductionEnabled}
       supplierField={
         config.supplierFieldEnabled && config.supplierFieldScope === 'PRODUCTS_AND_VARIATIONS'
           ? { label: resolveSupplierLabel(config) }

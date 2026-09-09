@@ -618,6 +618,11 @@ export type VariantEditorRow = {
   // the two are read as one answer by the grid's single Returns control.
   returnsDiscretionary: boolean | null
   weight: number | null
+  // Money already inside THIS combination's price that comes back off once the
+  // basket holds enough of its supplier's goods. Per variation rather than per
+  // listing because that is what the basket charges against: a listing where
+  // only some colourways are on offer carries an amount on those rows alone.
+  orderSizeDeduction: number | null
   // Every image on this variant's hidden child product, primary first.
   imageUrls: string[]
 }
@@ -650,6 +655,7 @@ type ChildEditRow = ChildRow & {
   retail_price: unknown
   trade_price: unknown
   cost_price: unknown
+  order_size_deduction: unknown
 }
 
 type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string; minOrderQuantity?: number | null; returnable?: boolean | null; returnsDiscretionary?: boolean | null }
@@ -697,6 +703,7 @@ function buildEditorPayload(
       returnable: child?.returnable ?? null,
       returnsDiscretionary: child?.returns_discretionary ?? null,
       weight: child?.weight != null ? Number(child.weight) : null,
+      orderSizeDeduction: optionalPrice(child?.order_size_deduction),
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
     }
   })
@@ -724,7 +731,7 @@ async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: 
   if (childIds.length === 0) return { childById, imagesByChild }
   const childRows = await prisma.$queryRaw<ChildEditRow[]>`
     SELECT "id", "price", "sale_price", "retail_price", "trade_price", "cost_price",
-           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight", "min_order_quantity", "returnable", "returns_discretionary"
+           "sku", "sale_sku", "barcode", "supplier", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "weight", "min_order_quantity", "returnable", "returns_discretionary", "order_size_deduction"
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
   `
   for (const r of childRows) childById.set(r.id, r)
@@ -843,6 +850,10 @@ export async function upsertVariantForCombination(
     // And whether that return is ours to refuse. null clears it the same way.
     returnsDiscretionary?: boolean | null
     weight?: number | null
+    // The order-size deduction on this combination. null clears it, which means
+    // "this one carries nothing" - it is never inherited from the listing, since
+    // the basket charges the variation's own row and reads the amount off that.
+    orderSizeDeduction?: number | null
   },
   ctx?: VariantUpsertContext,
 ): Promise<{ variantId: string; childProductId: string; created: boolean; changed: boolean }> {
@@ -913,6 +924,7 @@ export async function upsertVariantForCombination(
       || (fields.returnable !== undefined && (currentChild.returnable ?? null) !== (fields.returnable ?? null))
       || (fields.returnsDiscretionary !== undefined && (currentChild.returnsDiscretionary ?? null) !== (fields.returnsDiscretionary ?? null))
       || (fields.weight !== undefined && (currentChild.weight == null ? null : Number(currentChild.weight)) !== fields.weight)
+      || (fields.orderSizeDeduction !== undefined && curPrice(currentChild.orderSizeDeduction) !== fields.orderSizeDeduction)
   }
 
   if (changed) {
@@ -931,6 +943,7 @@ export async function upsertVariantForCombination(
       ...(fields.returnable !== undefined ? { returnable: fields.returnable } : {}),
       ...(fields.returnsDiscretionary !== undefined ? { returnsDiscretionary: fields.returnsDiscretionary } : {}),
       ...(fields.weight !== undefined ? { weight: fields.weight } : {}),
+      ...(fields.orderSizeDeduction !== undefined ? { orderSizeDeduction: fields.orderSizeDeduction } : {}),
     }
     // Batch caller: bank the write for a concurrent flush. Everyone else writes
     // inline, exactly as before. A freshly created child is never deferred - its

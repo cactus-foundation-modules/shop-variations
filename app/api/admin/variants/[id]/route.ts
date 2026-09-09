@@ -30,6 +30,11 @@ const Body = z.object({
   returnable: z.boolean().nullable().optional(),
   returnsDiscretionary: z.boolean().nullable().optional(),
   weight: z.number().nonnegative().nullable().optional(),
+  // Money already inside this combination's price that comes back off once the
+  // basket holds enough of its supplier's goods. Null clears it - "this one
+  // carries nothing" - and it is never inherited from the listing, because the
+  // basket charges the variation's own row and reads the amount off that.
+  orderSizeDeduction: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
   // Whether this variation's first picture, and separately its 3D model, are
   // promoted onto the parent's gallery before the shopper has chosen anything.
@@ -73,6 +78,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // normalisation the product editor does, so the two cannot disagree.
   if (data.minOrderQuantity !== undefined) productFields.minOrderQuantity = data.minOrderQuantity != null && data.minOrderQuantity > 1 ? data.minOrderQuantity : null
   if (data.weight !== undefined) productFields.weight = data.weight
+  // Zero is not a deduction, and a stored 0 reads as "decided on nothing" where
+  // a blank reads as "not stamped". Normalised to null so the two cannot drift,
+  // matching how the rule module reads them (both mean no amount).
+  if (data.orderSizeDeduction !== undefined) productFields.orderSizeDeduction = data.orderSizeDeduction != null && data.orderSizeDeduction > 0 ? data.orderSizeDeduction : null
   // Passed through as given, blank included: a null here is the owner clearing
   // the cell back to "as the listing says", which is a different thing from
   // ticking it returnable and has to survive the round trip.

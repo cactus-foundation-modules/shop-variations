@@ -42,6 +42,11 @@ type VariantRow = {
   // And whether that return is ours to refuse, on the same nullable terms. Read
   // with the flag above as one answer by the grid's single Returns control.
   returnsDiscretionary: boolean | null
+  // Money already inside this combination's price that comes back off once the
+  // basket holds enough of its supplier's goods. Per variation, because that is
+  // the row the basket charges against - a listing with three colourways on
+  // offer out of a hundred carries an amount on those three alone.
+  orderSizeDeduction: number | null
 }
 
 // What a blank cell in the Returns column actually means, said in the option
@@ -62,7 +67,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'orderSizeDeduction' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
 >>
 
 /**
@@ -131,7 +136,7 @@ function normaliseHex(raw: string): string | null {
  * fields, so they are held locally and written by the product editor's own Save
  * button alongside everything else.
  */
-export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [], weightBasedShippingEnabled = true, supplierField = null }: {
+export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [], weightBasedShippingEnabled = true, supplierField = null, orderSizeDeductionEnabled = false }: {
   productId: string
   columns?: VariantColumn[]
   /** Which optional price types this shop has switched on, from Shop settings. */
@@ -144,6 +149,12 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
    * drops the column; suppliers already saved against a variation are left
    * untouched, so switching it back on gets them back. */
   supplierField?: { label: string } | null
+  /** Whether the shop runs the order-size deduction, from Shop settings. Off
+   * drops the column; amounts already stamped on a variation are left alone, so
+   * switching it back on gets them back. Defaults off, matching the shop
+   * config's own default, so a shop that never asked for it never sees the
+   * column flicker in. */
+  orderSizeDeductionEnabled?: boolean
 }) {
   const currency = useProductEditorCurrency()
   const [promptText, promptNode] = usePrompt()
@@ -1057,6 +1068,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                         Sale SKU
                       </th>
                     )}
+                    {orderSizeDeductionEnabled && (
+                      <th style={{ padding: '0.5rem' }} title="Money already inside this combination's price that comes back off once the basket holds enough of this supplier's goods. Per item, not per order, and it only ever comes off while the combination is on offer. How big the basket has to be is set on the supplier, under Shop then Suppliers. Leave it empty where a combination carries nothing.">
+                        Deduction
+                      </th>
+                    )}
                     {supplierField && <th style={{ padding: '0.5rem' }}>{supplierField.label}</th>}
                     <th style={{ padding: '0.5rem' }}>Stock</th>
                     <th style={{ padding: '0.5rem' }} title="The fewest of this product a shopper may buy in one go, counted across every combination in their basket - four of one colour and four in a mix both count as four. A floor, not a batch size: they can still order five. Leave it empty to follow whatever the product itself says.">
@@ -1148,6 +1164,20 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                               aria-label={`Sale SKU for ${v.label}`}
                               value={valueOf(v, 'saleSku') ?? ''}
                               onChange={(e) => editVariant(v.variantId, { saleSku: e.target.value || null })}
+                            />
+                          </td>
+                        )}
+                        {orderSizeDeductionEnabled && (
+                          <td style={{ padding: '0.5rem' }}>
+                            <input
+                              type="number" min={0} step="0.01" style={numInput} placeholder="—"
+                              aria-label={`Order-size deduction for ${v.label}`}
+                              value={valueOf(v, 'orderSizeDeduction') ?? ''}
+                              // Blank clears it: a variation carrying nothing is
+                              // an empty cell, never a stored zero. The two read
+                              // the same to the rule, and keeping only one of
+                              // them saves an owner wondering which they meant.
+                              onChange={(e) => editVariant(v.variantId, { orderSizeDeduction: e.target.value === '' ? null : Number(e.target.value) })}
                             />
                           </td>
                         )}
