@@ -69,7 +69,16 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
         // shop fills a blank alt on whichever picture ends up leading. `sourceId`
         // is the variation's child product id, so the card's 3D overlay can show
         // this variation's own model/material when its photo is on screen.
-        const image: PartImage = { url: primary.url, alt: primary.altText ?? '', sourceId: v.childProductId }
+        // The 300px copy where the library has one, same as the product's own
+        // pictures get in shop's card builder - a card that shrank the parent's
+        // photographs and then pulled full-size variation ones through the arrows
+        // would have saved nothing on the range that has the most pictures.
+        const image: PartImage = {
+          url: primary.thumbUrl ?? primary.url,
+          fullUrl: primary.url,
+          alt: primary.altText ?? '',
+          sourceId: v.childProductId,
+        }
         if (v.showImageInGallery) promotedImages.push({ ...image, promoted: true, position: v.galleryPosition })
         else plainImages.push(image)
       }

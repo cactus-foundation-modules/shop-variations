@@ -213,6 +213,11 @@ export type VariantSelectorVariant = {
   // may carry a whole set of pictures, not one: the first is what the main stage
   // snaps to when the combination is chosen, the rest join the thumbnail strip.
   imageUrls: string[]
+  // The 300px copy of each of those, same order and the same length, for the
+  // thumbnail strip - a 64px square has no use for a full-size studio photograph.
+  // Optional, and an entry may be an empty string where a picture has no copy on
+  // file; both cases fall back to the url above, which is heavier but never wrong.
+  imageThumbUrls?: string[]
   // Each of those pictures' own descriptions, same order as `imageUrls` and the
   // same length. Written on the Images tab where the variation is promoted, so
   // its photo carries a description in the gallery rather than borrowing the
@@ -275,7 +280,9 @@ export type VariantSelectorPayload = {
   baseRetailPrice?: number | null
   // The parent product's own gallery images, shown until a variant with its own
   // image is chosen (the variant-aware gallery).
-  baseImages: Array<{ url: string; alt: string }>
+  // `thumbUrl` is the 300px copy, for the thumbnail strip; the stage keeps the
+  // original. Absent where the library has no copy to hand.
+  baseImages: Array<{ url: string; alt: string; thumbUrl?: string }>
   options: SvrOptionWithValues[]
   variants: VariantSelectorVariant[]
   addons: SvrAddon[]

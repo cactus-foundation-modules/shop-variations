@@ -334,6 +334,11 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // An empty list means the variant brought none of its own, so the parent's
   // gallery stands as it is.
   const variantImages = variant?.imageUrls ?? []
+  // The 300px copies of those, index-aligned, for the thumbnail strip. An empty
+  // string means "no copy on file for that one" and the strip falls back to the
+  // full picture; an older cached payload carries no list at all and every
+  // thumbnail falls back, which is exactly what it did before this existed.
+  const variantImageThumbs = variant?.imageThumbUrls ?? []
   // The variations the owner has promoted onto the parent's gallery, while they
   // are still worth showing: in matrix order, switched-on ones only. Images and
   // models are promoted independently of one another - a variation worth
@@ -363,7 +368,10 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     if (!v.showImageInGallery) return []
     const url = v.imageUrls[0]
     if (!url) return []
-    return [{ galleryPosition: v.galleryPosition ?? null, item: { url, alt: v.imageAlts?.[0] || '' } }]
+    return [{
+      galleryPosition: v.galleryPosition ?? null,
+      item: { url, alt: v.imageAlts?.[0] || '', thumbUrl: v.imageThumbUrls?.[0] || undefined },
+    }]
   })
   // The gallery the shopper opens on: the product's own photographs with the
   // promoted variations folded in at the slots the owner dragged them to on the
@@ -371,7 +379,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
   // lib/gallery-order.ts, which the server-rendered views share so a strip drawn
   // without this hook comes out in the same order.
   const galleryImages = mergeGalleryItems(
-    payload?.baseImages.map((i) => ({ url: i.url, alt: i.alt })) ?? [],
+    payload?.baseImages.map((i) => ({ url: i.url, alt: i.alt, thumbUrl: i.thumbUrl })) ?? [],
     featuredImages,
   )
   // What the main stage shows: the chosen variant's own first picture, else
@@ -497,6 +505,7 @@ export function useVariationSelection(slug: string | null, initial?: VariationBo
     basePrice,
     image,
     variantImages,
+    variantImageThumbs,
     // The product's own photographs and the promoted variations' in one list, in
     // the order the owner arranged them on the Images tab. The promoted ones drop
     // out the moment a whole combination resolves, so this is the parent's own

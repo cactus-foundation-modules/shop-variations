@@ -44,10 +44,16 @@ export const shopVariationsCardPrices: ShopCardPriceProvider = {
       let dearest: number | null = null
       let cheapestRrp: number | null = null
       let reduced = false
+      // How many choices are actually on offer. Counted rather than taken from
+      // `variants.length`: a switched-off variation, or one whose child row has
+      // gone, is not something a shopper can buy, and offerCount is read as a
+      // count of buyable offers.
+      let offerCount = 0
       for (const v of variants) {
         if (!v.enabled) continue
         const child = fields.get(v.childProductId)
         if (!child) continue
+        offerCount += 1
         const price = effectivePrice(child, enabledPriceTypes)
         if (cheapest == null || price < cheapest) cheapest = price
         if (dearest == null || price > dearest) dearest = price
@@ -75,6 +81,12 @@ export const shopVariationsCardPrices: ShopCardPriceProvider = {
           varies: (dearest ?? cheapest) - cheapest > 0.005,
           onSale: reduced,
           rrp: cheapestRrp != null ? cheapestRrp.toFixed(2) : null,
+          // The top of the range, for the product page's AggregateOffer. Null
+          // where every choice costs the same, so a listing with one price never
+          // publishes a highPrice equal to its lowPrice - which would claim a
+          // range and then describe a single figure.
+          highPrice: dearest != null && dearest - cheapest > 0.005 ? dearest.toFixed(2) : null,
+          offerCount,
         }
       }
     }

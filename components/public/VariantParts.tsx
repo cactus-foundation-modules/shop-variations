@@ -1644,9 +1644,12 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   // with "Image up front", in the single order the owner dragged them into on the
   // Images tab (see sel.galleryImages). The promoted ones stay in it until a whole
   // combination resolves, and drop out from then on.
+  // `url` is what the stage shows when the thumbnail is clicked and is what the
+  // strip keys on, so it stays the full picture. `thumb` is only what the 56px
+  // button draws.
   const thumbs = [
-    ...variantImages.map((url) => ({ url, alt: 'Selected variant' })),
-    ...sel.galleryImages.map((i) => ({ url: i.url, alt: i.alt || 'Another finish' })),
+    ...variantImages.map((url, i) => ({ url, thumb: sel.variantImageThumbs?.[i] || undefined, alt: 'Selected variant' })),
+    ...sel.galleryImages.map((i) => ({ url: i.url, thumb: i.thumbUrl || undefined, alt: i.alt || 'Another finish' })),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // An override the strip no longer offers is dropped rather than left on the
   // stage: a promoted variation's picture stops being on offer the moment their
@@ -1720,7 +1723,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
           {thumbs.map((t) => (
             <button key={t.url} type="button" onClick={() => { setOverride(t.url); setPicked(null) }} style={{ padding: 0, border: `2px solid ${main === t.url && !picked ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 8, cursor: 'pointer', background: 'none' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={t.url} alt={t.alt} style={{ width: 'var(--svr-thumb, 56px)', height: 'var(--svr-thumb, 56px)', objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+              <img src={t.thumb ?? t.url} alt={t.alt} loading="lazy" decoding="async" style={{ width: 'var(--svr-thumb, 56px)', height: 'var(--svr-thumb, 56px)', objectFit: 'cover', borderRadius: 6, display: 'block' }} />
             </button>
           ))}
         </div>

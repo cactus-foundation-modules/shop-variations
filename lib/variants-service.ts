@@ -362,14 +362,16 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
   // promoted variation's photo carries what the owner typed on the Images tab
   // rather than the parent's name.
   const altsByChild = new Map<string, string[]>()
+  // And each picture's 300px copy, same order again, for the thumbnail strip.
+  const thumbsByChild = new Map<string, string[]>()
   if (childIds.length > 0) {
     const childRows = await prisma.$queryRaw<ChildRow[]>`
       SELECT "id", "price", "sale_price", "retail_price", "track_inventory", "stock_count", "out_of_stock_behaviour", "is_pre_order", "sku", "sale_sku", "supplier", "min_order_quantity", "returnable", "returns_discretionary"
       FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
     `
     for (const r of childRows) childById.set(r.id, r)
-    const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string; alt_text: string | null }[]>`
-      SELECT "product_id", "url", "alt_text"
+    const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string; thumb_url: string | null; alt_text: string | null }[]>`
+      SELECT "product_id", "url", "thumb_url", "alt_text"
       FROM "shp_product_media"
       WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
       ORDER BY "product_id", "is_primary" DESC, "position" ASC
@@ -381,6 +383,11 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       const alts = altsByChild.get(r.product_id)
       if (alts) alts.push(r.alt_text ?? '')
       else altsByChild.set(r.product_id, [r.alt_text ?? ''])
+      // Empty string rather than a hole, so the three lists stay index-aligned
+      // and a reader can take the nth of each without checking lengths.
+      const thumbs = thumbsByChild.get(r.product_id)
+      if (thumbs) thumbs.push(r.thumb_url ?? '')
+      else thumbsByChild.set(r.product_id, [r.thumb_url ?? ''])
     }
   }
 
@@ -416,6 +423,7 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       stockCount: exposeStock && tracks ? stockCount : null,
       tracksStock: tracks,
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
+      imageThumbUrls: thumbsByChild.get(v.childProductId) ?? [],
       imageAlts: altsByChild.get(v.childProductId) ?? [],
       showImageInGallery: v.showImageInGallery,
       showModelInGallery: v.showModelInGallery,
@@ -458,7 +466,9 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     // thing being bought). Null on the great majority: a product whose money
     // lives on its variations keeps no retail price of its own.
     baseRetailPrice: showRetail && parent.retailPrice != null ? shown(Number(parent.retailPrice)) : null,
-    baseImages: baseMedia.filter((m) => m.type === 'IMAGE').map((m) => ({ url: m.url, alt: m.altText ?? parent.name })),
+    baseImages: baseMedia
+      .filter((m) => m.type === 'IMAGE')
+      .map((m) => ({ url: m.url, alt: m.altText ?? parent.name, ...(m.thumbUrl ? { thumbUrl: m.thumbUrl } : {}) })),
     options,
     variants: selectorVariants,
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,

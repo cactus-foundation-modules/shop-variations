@@ -150,9 +150,12 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // Shop's own server-rendered set stands in until the payload lands, so the
   // strip is drawn on the first paint rather than appearing a moment later.
   const gallery = sel.payload ? sel.galleryImages : images
+  // `url` is what the stage shows when the thumbnail is clicked and is what the
+  // whole strip keys on, so it stays the full picture. `thumb` is only what the
+  // 64px button draws.
   const thumbs = [
-    ...variantImages.map((url) => ({ url, alt: productName })),
-    ...gallery.map((i) => ({ url: i.url, alt: i.alt || productName })),
+    ...variantImages.map((url, i) => ({ url, thumb: sel.variantImageThumbs?.[i] || undefined, alt: productName })),
+    ...gallery.map((i) => ({ url: i.url, thumb: i.thumbUrl || undefined, alt: i.alt || productName })),
   ].filter((t, i, arr) => arr.findIndex((x) => x.url === t.url) === i)
   // A thumbnail the shopper clicked that the strip no longer offers is dropped
   // rather than left on the stage. A promoted variation's picture stops being on
@@ -290,7 +293,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               aria-label={`Show ${t.alt}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- as above */}
-              <img src={t.url} alt={t.alt} />
+              <img src={t.thumb ?? t.url} alt={t.alt} loading="lazy" decoding="async" />
             </button>
           ))}
         </GalleryThumbStrip>
