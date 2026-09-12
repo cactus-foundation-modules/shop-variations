@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import { getInstalledManifests } from '@/lib/modules/live-status'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
-import { modulePublicExtensionPointComponents as moduleExtensionPointComponents } from '@/lib/modules/extension-points.public'
 
 // A generic, attribute-agnostic way for another module to hang extra per-variant
 // fields on this module. Unlike `shop-variations.variant-columns` - which is a
@@ -126,6 +125,17 @@ export async function resolveVariantFieldProviders(
   user?: Awaited<ReturnType<typeof getSessionFromCookie>>,
 ): Promise<Array<{ id: string; provider: VariantFieldProvider }>> {
   const modules = await getInstalledManifests()
+  // The COMPLETE map, not the public one every other lib here reads. A field
+  // provider's whole job is to hand back an admin `Cell`, so every provider
+  // reaches a components/admin/ file - which is exactly what core withholds from
+  // the public map. Reading the public map found no components at all and
+  // silently dropped every provider, taking the 3D and attribute columns off the
+  // Variations tab. Dynamic because a static edge from here back to the
+  // generated registry closes a cycle (the registry imports this module's own
+  // ProductVariationsSection, which imports this file), and because a dynamic
+  // import is a chunk boundary, so the admin components stay out of any public
+  // bundle - the reason the public map exists.
+  const { moduleExtensionPointComponents } = await import('@/lib/modules/extension-points')
   const components = moduleExtensionPointComponents[POINT] ?? {}
   const out: Array<{ id: string; provider: VariantFieldProvider }> = []
   const seen = new Set<string>()
