@@ -34,15 +34,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-options'
 import { OptionRow, type FitState, type ValueInteraction } from '@/modules/shop-variations/components/public/card-option-rows'
+import type { ImageResizing } from '@/lib/media/resize-url'
 
 export function FitOptionRow({
   option,
   optionIndex,
   interactive,
+  resizing,
 }: {
   option: CardOptionSummary
   optionIndex: number
   interactive?: ValueInteraction
+  resizing?: ImageResizing
 }) {
   const rowRef = useRef<HTMLSpanElement>(null)
   // null = measuring: everything rendered, clamped, marker invisible. Also the
@@ -147,5 +150,5 @@ export function FitOptionRow({
     // ever need to print, so the width read off it is a ceiling, not a guess.
     moreCount: shown == null ? total : total - shown,
   }
-  return <OptionRow option={option} optionIndex={optionIndex} interactive={interactive} fit={fit} />
+  return <OptionRow option={option} optionIndex={optionIndex} interactive={interactive} resizing={resizing} fit={fit} />
 }

@@ -29,6 +29,7 @@
 // turning that one figure down (shop's two-up mobile grid halves it).
 import type { CSSProperties, Ref } from 'react'
 import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-options'
+import { resizedImageSrc, type ImageResizing } from '@/lib/media/resize-url'
 
 // What the preview island knows about one value, and how it wants to be told the
 // shopper is pointing at it. Null (or absent) for every value on a card with the
@@ -85,6 +86,13 @@ const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)', m
 const swatchItemStyle: CSSProperties = { display: 'inline-block', verticalAlign: 'middle', marginRight: '0.333em' }
 const textItemStyle: CSSProperties = { display: 'inline' }
 const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
+// The chip's drawn size, in CSS pixels at the card's own font size. Named here
+// because the SOURCE asked for is worked out from it: measured on the live
+// homepage, these were being handed 128px pictures to fill a box Lighthouse
+// measured at 16px, four of them coming to 21 KB for about 1 KB of visible
+// chip. Doubled for a retina screen and no more.
+const CHIP_PX = 24
+
 const thumbStyle: CSSProperties = { width: '1.5em', height: '1.5em', borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
 const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 'tabular-nums' }
 
@@ -110,7 +118,7 @@ const activeTextStyle: CSSProperties = { color: 'var(--color-primary)', fontWeig
 // A swatch or image value with nothing to show falls back to its label, the same
 // bargain the product page's control strikes - a colour nobody picked a hex for is
 // still a colour worth naming.
-function SwatchValue({ value, kind }: { value: CardOptionSummary['values'][number]; kind: CardOptionSummary['kind'] }) {
+function SwatchValue({ value, kind, resizing }: { value: CardOptionSummary['values'][number]; kind: CardOptionSummary['kind']; resizing?: ImageResizing }) {
   if (!value.swatch) return <span>{value.label}</span>
   if (kind === 'image') {
     // Lazy, and not optional. A chip is 18px and weighs nothing on its own, but
@@ -120,7 +128,7 @@ function SwatchValue({ value, kind }: { value: CardOptionSummary['values'][numbe
     // included, which is how a colour swatch ends up being why a favicon is
     // missing.
     // eslint-disable-next-line @next/next/no-img-element -- a swatch is a fixed 18px chip, and next/image would add a loader round-trip per colour per card
-    return <img src={value.swatch} alt={value.label} title={value.label} style={thumbStyle} loading="lazy" decoding="async" />
+    return <img src={resizedImageSrc(value.swatch, CHIP_PX * 2, resizing)} alt={value.label} title={value.label} style={thumbStyle} loading="lazy" decoding="async" />
   }
   return <span role="img" aria-label={value.label} title={value.label} style={{ ...dotStyle, background: value.swatch }} />
 }
@@ -128,6 +136,7 @@ function SwatchValue({ value, kind }: { value: CardOptionSummary['values'][numbe
 // One value, wrapped in a button when it can be pointed at and left as bare markup
 // when it cannot.
 function Value({
+  resizing,
   option,
   valueIndex,
   interaction,
@@ -137,9 +146,10 @@ function Value({
   valueIndex: number
   interaction: InteractiveValue | null
   showsSwatches: boolean
+  resizing?: ImageResizing
 }) {
   const value = option.values[valueIndex]!
-  const body = showsSwatches ? <SwatchValue value={value} kind={option.kind} /> : <span>{value.label}</span>
+  const body = showsSwatches ? <SwatchValue value={value} kind={option.kind} resizing={resizing} /> : <span>{value.label}</span>
   if (!interaction) return body
   const chosen = interaction.active
   if (showsSwatches) {
@@ -180,11 +190,16 @@ function Value({
 export function OptionRow({
   option,
   optionIndex,
+  resizing,
   interactive,
   fit,
 }: {
   option: CardOptionSummary
   optionIndex: number
+  /** The owner's "send pictures at the size they are shown" setting, so a 24px
+   *  chip can ask for a 48px source instead of whatever the swatch was uploaded
+   *  at. See CHIP_PX above. */
+  resizing?: ImageResizing
   interactive?: ValueInteraction
   fit?: FitState
 }) {
@@ -215,7 +230,7 @@ export function OptionRow({
             }}
             {...(fit != null ? { 'data-fit-item': '' } : {})}
           >
-            <Value option={option} valueIndex={i} showsSwatches={showsSwatches} interaction={interactive?.(optionIndex, i) ?? null} />
+            <Value option={option} valueIndex={i} showsSwatches={showsSwatches} resizing={resizing} interaction={interactive?.(optionIndex, i) ?? null} />
             {/* A list reads as a list: the comma rides INSIDE the value's span so
                 a line never opens with one, but outside the trigger, so hovering
                 "140cm" does not underline a comma along with it. The trailing

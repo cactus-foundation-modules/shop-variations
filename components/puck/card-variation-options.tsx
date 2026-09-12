@@ -27,12 +27,21 @@ import { CARD_OPTIONS_FACT_ID, type CardOptionSummary, type CardOptionsFacts } f
 import { OptionRow, cardOptionsRootStyle } from '@/modules/shop-variations/components/public/card-option-rows'
 import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
 import { CardOptionPreview } from '@/modules/shop-variations/components/public/CardOptionPreview'
+import type { ImageResizing } from '@/lib/media/resize-url'
 
 // Puck attaches the drag handle to a part's own root element. Shop's card parts
 // explain why at length (components/puck/parts/card-parts.tsx): a wrapper div
 // between `.shop-card` and the part breaks the card's child-based layout rules,
 // so the ref goes on the root here too and the block is declared `inline`.
-type PuckPart = { puck?: { dragRef?: ((element: Element | null) => void) | null } }
+type PuckPart = {
+  puck?: {
+    dragRef?: ((element: Element | null) => void) | null
+    // Puck's channel for site-wide values a block cannot fetch itself. Read for
+    // `imageResizing`, so a 24px swatch chip asks for a 48px source rather than
+    // whatever the colour was uploaded at.
+    metadata?: { imageResizing?: ImageResizing }
+  }
+}
 
 type Props = PuckPart & { _ctx?: CardPartContext; preview?: string }
 
@@ -69,6 +78,7 @@ export function ShopCardVariationOptions(props: Props) {
   const fact = ctx?.facts?.find((f) => f.id === CARD_OPTIONS_FACT_ID)?.payload as CardOptionsFacts | undefined
   const options = ctx ? (fact?.options ?? []) : SAMPLE
   if (options.length === 0) return null
+  const resizing = props.puck?.metadata?.imageResizing
 
   // Absent on every layout saved before this setting existed, which is the reason
   // the plain summary is what "no answer" means: an owner who never asked for the
@@ -81,6 +91,7 @@ export function ShopCardVariationOptions(props: Props) {
     return (
       <CardOptionPreview
         options={options}
+        resizing={resizing}
         preview={ctx ? undefined : SAMPLE_PREVIEW}
         previewHref={productId ? `/api/m/shop-variations/public/card-preview?product=${encodeURIComponent(productId)}` : undefined}
         dragRef={dragRefOf(props)}
@@ -95,8 +106,8 @@ export function ShopCardVariationOptions(props: Props) {
           the setting) stay exactly the server-rendered markup they always were. */}
       {options.map((option, i) => (
         option.fit != null
-          ? <FitOptionRow key={option.id} option={option} optionIndex={i} />
-          : <OptionRow key={option.id} option={option} optionIndex={i} />
+          ? <FitOptionRow key={option.id} option={option} optionIndex={i} resizing={resizing} />
+          : <OptionRow key={option.id} option={option} optionIndex={i} resizing={resizing} />
       ))}
     </div>
   )

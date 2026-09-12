@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { resolvePreviewSource, type CardOptionSummary, type CardOptionsPreview } from '@/modules/shop-variations/lib/card-options'
 import { OptionRow, cardOptionsRootStyle, type InteractiveValue } from '@/modules/shop-variations/components/public/card-option-rows'
 import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
+import type { ImageResizing } from '@/lib/media/resize-url'
 
 const CARD_SELECTOR = '.shop-card'
 const SOURCES_ATTR = 'data-shop-media-sources'
@@ -53,6 +54,7 @@ export function CardOptionPreview({
   options,
   preview,
   previewHref,
+  resizing,
   dragRef,
 }: {
   options: CardOptionSummary[]
@@ -72,6 +74,9 @@ export function CardOptionPreview({
    *  interactive (see `interactive` below), which is exactly the right state for
    *  the moment before the answer arrives. */
   previewHref?: string
+  /** Passed through to the option rows so a swatch chip asks for a chip-sized
+   *  source. See CHIP_PX in card-option-rows. */
+  resizing?: ImageResizing
   // Puck's drag handle, on the part's own root element - see the block for why it
   // must not be wrapped in a div of its own.
   dragRef?: (element: Element | null) => void
@@ -235,8 +240,8 @@ export function CardOptionPreview({
           hovered, exactly like values trimmed by a fixed limit. */}
       {options.map((option, i) => (
         option.fit != null
-          ? <FitOptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} />
-          : <OptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} />
+          ? <FitOptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} resizing={resizing} />
+          : <OptionRow key={option.id} option={option} optionIndex={i} interactive={interactive} resizing={resizing} />
       ))}
     </div>
   )
