@@ -20,6 +20,7 @@ import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPoin
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { OPTIONS_AREA_CLASS, STICKY_GALLERY_CLASS, useStickyMobileGallery } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { GalleryThumbStrip } from '@/modules/shop/components/public/GalleryThumbStrip'
+import { responsiveImg, HALF_WIDTH_LADDER, type ImageResizing } from '@/lib/media/resize-url'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import type {
@@ -95,7 +96,10 @@ const stickyGalleryCss = `
 // deliberately doesn't hand over. Those classes carry two declarations between
 // them (the cursor, and touch-action while magnified), so they go on inline
 // here instead and the fix stays inside this module.
-export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [], thumbPosition }: Seeded<ShopDetailGallerySlotProps>) {
+// `resizing` is spelled out alongside shop's contract deliberately: the build
+// gate composes this module against the shop version core currently pins, which
+// may predate the field. Same optional prop, not a second one.
+export function VariantSlotGalleryClient({ slug, productName, images, zoom, classNames, initial, extras = [], thumbPosition, resizing }: Seeded<ShopDetailGallerySlotProps> & { resizing?: ImageResizing }) {
   const sel = useVariationSelection(slug, initial)
   // Only a product with options earns the pinned mobile strip: the options list
   // is what makes the buy column long enough to scroll the gallery away.
@@ -236,7 +240,16 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
           // eslint-disable-next-line @next/next/no-img-element -- mirrors shop's own gallery, which serves already-sized media URLs
           <img
             className={classNames.image}
-            src={main}
+            // The stage is about 630px on a desktop and these originals are
+            // routinely 1,920px. THE MAGNIFIER IS THE CATCH, same as in shop's
+            // own gallery: zooming scales this element by ZOOM_SCALE, and srcset
+            // cannot know about a CSS transform that has not happened yet - so
+            // the original is served WHILE magnified and the responsive set the
+            // rest of the time. The shopper who zooms pays one fetch, which is
+            // what everybody used to pay on arrival.
+            {...(magnified
+              ? { src: main }
+              : responsiveImg(main, '(max-width: 900px) 100vw, 640px', HALF_WIDTH_LADDER, resizing))}
             alt={productName}
             draggable={false}
             // Origin stays put while zoomed out, so releasing settles back into
