@@ -74,8 +74,18 @@ export function ShopCardVariationOptions(props: Props) {
   // the plain summary is what "no answer" means: an owner who never asked for the
   // preview gets exactly the tile they designed, and no client bundle with it.
   if (props.preview === 'yes') {
-    const preview = ctx ? fact?.preview : SAMPLE_PREVIEW
-    return <CardOptionPreview options={options} preview={preview} dragRef={dragRefOf(props)} />
+    // The editor draws a sample, with no route to ask; a real card is handed the
+    // address of its own product's matrix and asks on the first sign of interest.
+    // See CardOptionPreview for the 255 KB of flight payload that buys.
+    const productId = ctx?.product?.id
+    return (
+      <CardOptionPreview
+        options={options}
+        preview={ctx ? undefined : SAMPLE_PREVIEW}
+        previewHref={productId ? `/api/m/shop-variations/public/card-preview?product=${encodeURIComponent(productId)}` : undefined}
+        dragRef={dragRefOf(props)}
+      />
+    )
   }
 
   return (

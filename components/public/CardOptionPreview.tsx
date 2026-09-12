@@ -52,15 +52,57 @@ const islandStyle: CSSProperties = { ...cardOptionsRootStyle, position: 'relativ
 export function CardOptionPreview({
   options,
   preview,
+  previewHref,
   dragRef,
 }: {
   options: CardOptionSummary[]
+  /** Handed in directly only by the Puck editor, which has a sample to draw and
+   *  no route to fetch from. On a real page this arrives via `previewHref`. */
   preview?: CardOptionsPreview
+  /** Where to fetch the variation matrix from, on the first sign of interest.
+   *
+   *  WHY IT IS NOT A PROP ANY MORE. The matrix answers "which photo is THIS
+   *  combination?" and is needed only once somebody points at a swatch - but it
+   *  was serialised into every card on every grid. Measured on the live
+   *  homepage: 4,170 variant entries across 31 cards, 255 KB of flight payload,
+   *  on a page where most visitors never hover a swatch at all.
+   *
+   *  The rows themselves are unaffected: they are server-rendered markup either
+   *  way, and a value with no matrix behind it already renders plain rather than
+   *  interactive (see `interactive` below), which is exactly the right state for
+   *  the moment before the answer arrives. */
+  previewHref?: string
   // Puck's drag handle, on the part's own root element - see the block for why it
   // must not be wrapped in a div of its own.
   dragRef?: (element: Element | null) => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  // The matrix, once asked for. `preview` wins when present so the editor's
+  // sample still draws without a request.
+  const [fetched, setFetched] = useState<CardOptionsPreview | undefined>(undefined)
+  const askedRef = useRef(false)
+  const live = preview ?? fetched
+
+  // Asked for on the first sign of interest in this card rather than on load: a
+  // grid of thirty cards would otherwise make thirty requests for data most of
+  // them never need. Pointer-enter fires on the TILE, so by the time a shopper
+  // has crossed it to reach a swatch the answer has usually landed; a card
+  // reached by keyboard or touch asks at the same moment for the same reason.
+  //
+  // One request per card, ever - `askedRef` is never cleared, and a failure is
+  // left alone. The row stays plain in that case, which is the same card an
+  // owner who never switched the preview on has always had.
+  const wantPreview = !preview && Boolean(previewHref)
+  const askForPreview = useCallback(() => {
+    if (!wantPreview || askedRef.current || !previewHref) return
+    askedRef.current = true
+    fetch(previewHref, { headers: { accept: 'application/json' } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: CardOptionsPreview | null) => {
+        if (json && Array.isArray(json.variants)) setFetched(json)
+      })
+      .catch(() => {})
+  }, [wantPreview, previewHref])
   // What the card's photos were constrained to before this block touched anything
   // (a filter's doing, or nothing at all). Restored whenever the preview clears.
   const baseRef = useRef<string | null>(null)
@@ -84,7 +126,7 @@ export function CardOptionPreview({
   // already dressed the card with before this island hydrated.
   const touchedRef = useRef(false)
 
-  const source = resolvePreviewSource(preview, picks)
+  const source = resolvePreviewSource(live, picks)
 
   // Remember what was on the card when we arrived, keep that memory current when
   // somebody else writes, and put it back on the way out. Declared BEFORE the
@@ -159,7 +201,7 @@ export function CardOptionPreview({
       const vi = options[optionIndex]?.values[valueIndex]?.vi
       // A value no variation answers to cannot be previewed, so it stays the plain
       // label it always was rather than offering a button that does nothing.
-      if (vi === undefined || !preview) return null
+      if (vi === undefined || !live) return null
       return {
         pinned: pinned[optionIndex] === vi,
         active: picks[optionIndex] === vi,
@@ -174,7 +216,7 @@ export function CardOptionPreview({
         },
       }
     },
-    [options, preview, pinned, picks, point, pin],
+    [options, live, pinned, picks, point, pin],
   )
 
   return (
@@ -184,6 +226,9 @@ export function CardOptionPreview({
         rootRef.current = element
         dragRef?.(element)
       }}
+      onPointerEnter={askForPreview}
+      onFocusCapture={askForPreview}
+      onTouchStart={askForPreview}
     >
       {/* Same split as the plain path: a "fit N lines" option measures itself,
           everything else renders straight through. Hidden values cannot be

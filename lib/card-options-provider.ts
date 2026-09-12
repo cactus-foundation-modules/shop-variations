@@ -25,9 +25,7 @@
 // block that renders it is also an editor component.
 import type { ShopCardMediaProvider, ShopCardMediaPayload } from '@/modules/shop/lib/card-media'
 import { getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
-import { getVariantsForProducts, getVariantValueMapForProducts } from '@/modules/shop-variations/lib/db/variants'
-import { buildCardOptionsFacts, type CardPreviewVariantInput } from '@/modules/shop-variations/lib/card-options'
-import type { SvrVariant } from '@/modules/shop-variations/lib/types'
+import { buildCardOptionsFacts } from '@/modules/shop-variations/lib/card-options'
 
 export const shopVariationsCardOptions: ShopCardMediaProvider = {
   async load(productIds) {
@@ -37,26 +35,23 @@ export const shopVariationsCardOptions: ShopCardMediaProvider = {
     const optionsByProduct = await getOptionsWithValuesForProducts(productIds)
     if (optionsByProduct.size === 0) return out
 
-    // Which variation each option value belongs to, so the card can show the photo
-    // for the combination a shopper is hovering (the block's "Preview the photo"
-    // setting). Two set-wide queries, and only for the products that actually put
-    // an option on their card - a shop that has never ticked one runs neither.
-    const previewIds = [...optionsByProduct]
-      .filter(([, options]) => options.some((o) => o.cardDisplay))
-      .map(([productId]) => productId)
-    const variantsByProduct: Map<string, SvrVariant[]> = previewIds.length > 0 ? await getVariantsForProducts(previewIds) : new Map()
-    const valuesByProduct: Map<string, Record<string, string[]>> = previewIds.length > 0 ? await getVariantValueMapForProducts(previewIds) : new Map()
+    // The variation matrix is NOT built here any more.
+    //
+    // It answers "which photo is this combination?" and is only wanted once a
+    // shopper points at a swatch, but building it here put it in every card of
+    // every grid: 255 KB of flight payload on the live homepage, plus two
+    // set-wide queries on every grid render, for something most visitors never
+    // use. The card island asks for its own product's matrix on the first sign
+    // of interest instead - app/api/public/card-preview, which serves it from a
+    // shared cache and calls the same builder, so the seat numbering agrees by
+    // construction.
+    //
+    // So the summaries below are built with no variants, which is exactly what
+    // buildCardOptionsFacts does with an empty list: the option rows unchanged,
+    // and no preview attached.
 
     for (const [productId, options] of optionsByProduct) {
-      // A switched-off variation is not on sale, so it is not something to preview -
-      // the same rule the sibling media provider applies to its photos, and it keeps
-      // the two lists agreeing about which variations a card knows about.
-      const valuesByVariant = valuesByProduct.get(productId) ?? {}
-      const variants: CardPreviewVariantInput[] = (variantsByProduct.get(productId) ?? [])
-        .filter((v) => v.enabled)
-        .map((v) => ({ childProductId: v.childProductId, valueIds: valuesByVariant[v.id] ?? [] }))
-
-      const facts = buildCardOptionsFacts(options, variants)
+      const facts = buildCardOptionsFacts(options, [])
       // A product where nothing was ticked contributes nothing at all, so its card
       // carries no payload and the block renders nothing on it.
       if (facts) out.set(productId, { facts })
