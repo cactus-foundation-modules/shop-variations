@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db/prisma'
 import { toCsvRow, parseCsv } from '@/modules/shop/lib/csv'
 import { getProductBySlug, setProductMedia, updateProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
+import { VARIATIONS_FOLDER } from '@/modules/shop-variations/lib/media-folder'
 import { getEditorPayload, upsertVariantForCombination, syncVariantChildNames, type VariantUpsertContext } from '@/modules/shop-variations/lib/variants-service'
 import { getProductIdsWithVariations, getVariants, getVariantValueMap, getChildProductFields, setVariantValues } from '@/modules/shop-variations/lib/db/variants'
 import { getOptionsWithValues, createOption, createOptionValue, updateOptionValue, ensureUniqueOptionValueSlug, deleteOptionValue } from '@/modules/shop-variations/lib/db/options'
@@ -737,8 +738,8 @@ export async function importVariationsCsv(
             imageChanged = true
           } else {
             await setProductMedia(childProductId, urls.map((url, i) => ({ type: 'IMAGE' as const, url, isPrimary: i === 0 })))
-            // File them in the parent's media-library folder, as the edit endpoint does.
-            await reorganiseProductMedia(childProductId, { folderProductId: parent.id })
+            // File them in the parent's `variations` folder, as the edit endpoint does.
+            await reorganiseProductMedia(childProductId, { folderProductId: parent.id, subfolder: VARIATIONS_FOLDER })
             currentImagesByChild.set(childProductId, urls)
             imageChanged = true
           }

@@ -249,14 +249,19 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // range built from these, and a figure set on the parent would never be seen.
   useSetProductEditorPriceManaged(data != null && data.variants.length > 0)
 
-  // Where a freshly uploaded variation or swatch image is filed: the product's
-  // own library folder (Shop / <category> / <product>), resolved at the moment
-  // of upload so the picture lands there straight away instead of in the library
-  // root and waiting on the save to move it - the same up-front filing the main
-  // product gallery does. A picture that only ever reaches the root depends
-  // entirely on the save-time re-file, and if that one move hiccups the picture
-  // is stranded in the root with nothing to retry it. Null on failure, in which
-  // case the upload still works and falls back to the root as it always did.
+  // Where a freshly uploaded swatch image is filed: the product's own library
+  // folder (Shop / <category> / <product>), resolved at the moment of upload so
+  // the picture lands there straight away instead of in the library root and
+  // waiting on the save to move it - the same up-front filing the main product
+  // gallery does. A picture that only ever reaches the root depends entirely on
+  // the save-time re-file, and if that one move hiccups the picture is stranded
+  // in the root with nothing to retry it. Null on failure, in which case the
+  // upload still works and falls back to the root as it always did.
+  //
+  // A swatch's final home is the product's `colours` folder and a variant
+  // picture's is `variations` (see the pair below); both are moved there on save
+  // whatever is uploaded into, so the only thing these resolvers change is how
+  // far from home the picture starts.
   const resolveUploadFolderId = useCallback(async (): Promise<string | null> => {
     try {
       const res = await fetch(`/api/m/shop/admin/products/${productId}/media-folder`, { method: 'POST' })
@@ -273,6 +278,31 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const resolveBrowseFolderId = useCallback(async (): Promise<string | null> => {
     try {
       const res = await fetch(`/api/m/shop/admin/products/${productId}/media-folder`)
+      if (!res.ok) return null
+      return (await res.json()).folderId ?? null
+    } catch {
+      return null
+    }
+  }, [productId])
+
+  // The same pair for a VARIANT's own pictures, which are filed one level down in
+  // the product's `variations` folder. A range of any size puts a hundred variant
+  // photographs against the three the listing itself uses, and mixed together the
+  // product's folder cannot be read by eye - so they are uploaded into, and
+  // browsed from, their own folder rather than the parent's.
+  const resolveVariationUploadFolderId = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/media-folder`, { method: 'POST' })
+      if (!res.ok) return null
+      return (await res.json()).folderId ?? null
+    } catch {
+      return null
+    }
+  }, [productId])
+
+  const resolveVariationBrowseFolderId = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/m/shop-variations/admin/products/${productId}/media-folder`)
       if (!res.ok) return null
       return (await res.json()).folderId ?? null
     } catch {
@@ -1115,7 +1145,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                           </span>
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <ImageCell urls={valueOf(v, 'imageUrls')} onSet={(urls) => editVariant(v.variantId, { imageUrls: urls })} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
+                          <ImageCell urls={valueOf(v, 'imageUrls')} onSet={(urls) => editVariant(v.variantId, { imageUrls: urls })} resolveUploadFolderId={resolveVariationUploadFolderId} resolveBrowseFolderId={resolveVariationBrowseFolderId} />
                         </td>
                         {columns.map(({ id, Cell, columnKey }) => (
                           <td key={id} style={{ padding: '0.5rem' }}>

@@ -1,7 +1,18 @@
 import { prisma } from '@/lib/db/prisma'
 import { getOrCreateFolderByPath, resolveFolderPath, moveOrRenameMedia } from '@/lib/media/organise'
-import { getProductMediaFolderId } from '@/modules/shop/lib/media/product-media'
+import { findProductMediaFolderId, getProductMediaFolderId } from '@/modules/shop/lib/media/product-media'
 import { updateOptionValue } from '@/modules/shop-variations/lib/db/options'
+
+/**
+ * The subfolder a variant's own pictures are filed in, inside the parent
+ * product's folder: shop / <master category> / <product> / variations.
+ *
+ * A range of any size puts a hundred variant photographs against the three the
+ * listing itself uses, and filed together the product's folder cannot be read by
+ * eye at all. One level down is the same arrangement the 3D models, the downloads
+ * and the colour swatches already use.
+ */
+export const VARIATIONS_FOLDER = 'variations'
 
 /**
  * The library folder an image-swatch's pictures belong in: shop / <master
@@ -66,4 +77,22 @@ export async function fileSwatchImage(productId: string, valueId: string, swatch
     // save - the value keeps its current url and can be re-filed next time.
     console.warn(`[shop-variations] could not file swatch image ${swatchUrl} for product ${productId}:`, err)
   }
+}
+
+/**
+ * The folder a variant's pictures belong in, created if it is not there yet.
+ * Null when the parent product has no folder of its own - the picture simply
+ * stays where it is, which is untidy rather than broken.
+ */
+export async function resolveVariationsFolderId(productId: string): Promise<string | null> {
+  return getProductMediaFolderId(productId, { subfolder: VARIATIONS_FOLDER })
+}
+
+/**
+ * The same walk, looking only. Returns the deepest folder that already exists, so
+ * opening the picker on a range with no variant pictures yet leaves no empty
+ * folder behind - the very litter the create-on-upload split exists to avoid.
+ */
+export async function findVariationsFolderId(productId: string): Promise<string | null> {
+  return findProductMediaFolderId(productId, { subfolder: VARIATIONS_FOLDER })
 }

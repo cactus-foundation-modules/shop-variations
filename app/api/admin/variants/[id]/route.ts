@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateProduct, setProductMedia, deleteProduct } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
+import { VARIATIONS_FOLDER } from '@/modules/shop-variations/lib/media-folder'
 import { getVariantById, setVariantEnabled, setVariantShowImageInGallery, setVariantShowModelInGallery } from '@/modules/shop-variations/lib/db/variants'
 
 const Body = z.object({
@@ -94,13 +95,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // hand us one if the admin adds the same library item in two goes.
     const urls = data.imageUrls.filter((u, i, arr) => arr.indexOf(u) === i)
     await setProductMedia(variant.childProductId, urls.map((url, i) => ({ type: 'IMAGE' as const, url, isPrimary: i === 0 })))
-    // File the variant's images in the parent product's media-library folder, so
-    // every image for a product - its own and its variants' - sits together.
+    // File the variant's images under the parent product, in its `variations`
+    // subfolder, so every image for a product - its own and its variants' - sits
+    // in one place without the variants' hundred burying the listing's three.
     // The child is a hidden product with no categories of its own, so left to
     // itself it would land under "Uncategorised"; passing the parent as the
     // folder owner keeps the name (from the child's unique slug) but borrows the
     // parent's folder.
-    if (urls.length > 0) await reorganiseProductMedia(variant.childProductId, { folderProductId: variant.productId })
+    if (urls.length > 0) {
+      await reorganiseProductMedia(variant.childProductId, {
+        folderProductId: variant.productId,
+        subfolder: VARIATIONS_FOLDER,
+      })
+    }
   }
 
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)
