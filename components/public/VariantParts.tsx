@@ -9,16 +9,18 @@ import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import { RETURNS_POLICY_LABEL, type ReturnsPolicy } from '@/modules/shop/lib/returnable'
-import type { SvrAddon, SvrOptionWithValues, VariationBootstrap } from '@/modules/shop-variations/lib/types'
+import type { SvrAddon, SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
+import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
 
 // On the live page each part is handed the slug and the payload its RSC half
-// already resolved, so the controls are in the server's HTML from the off.
+// already resolved (packed for the trip - the store unpacks it), so the controls
+// are in the server's HTML from the off.
 // Failing that (a layout we can't identify the product from server-side) a part
 // still resolves the slug from the URL after mount and fetches, so one dropped
 // somewhere unexpected keeps working - all parts on a page land on the same slug
 // and therefore share one selection store entry either way.
-type PartProps = { preview?: boolean; slug?: string | null; initial?: VariationBootstrap | null }
+type PartProps = { preview?: boolean; slug?: string | null; initial?: PackedVariationBootstrap | null }
 
 // Where an option's name sits relative to its choices. 'above' is the long-standing
 // look and stays the default everywhere; 'beside' is opt-in per block, for narrow

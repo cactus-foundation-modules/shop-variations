@@ -15,7 +15,9 @@
 // the page was rendering. It seeds the shared store on the first render, so the
 // options and the chosen combination's price are in the page's HTML rather than
 // a fetch behind it. Its absence is survivable, not fatal - the store falls back
-// to fetching, which is what these islands used to do unconditionally.
+// to fetching, which is what these islands used to do unconditionally. It
+// arrives packed (lib/variation-bootstrap-pack.ts) and the store unpacks it, so
+// nothing in this file ever sees the packed shape.
 import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { OPTIONS_AREA_CLASS, STICKY_GALLERY_CLASS, useStickyMobileGallery } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
@@ -29,10 +31,10 @@ import type {
   ShopDetailPurchaseSlotProps,
   ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
-import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
+import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import { AddonControl, AdminReturnsNote, AdminSkuNote, AdminStockNote, FitLabel, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
-type Seeded<P> = P & { initial: VariationBootstrap | null }
+type Seeded<P> = P & { initial: PackedVariationBootstrap | null }
 
 const money = (n: number, symbol: string) => `${symbol}${n.toFixed(2)}`
 
@@ -251,6 +253,15 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               ? { src: main }
               : responsiveImg(main, '(max-width: 900px) 100vw, 640px', HALF_WIDTH_LADDER, resizing))}
             alt={productName}
+            // The one urgent picture on the page, as it is in shop's own gallery,
+            // which hands this stage over to us on a product with options. It is
+            // the page's largest paint nearly every time, and without a priority a
+            // browser starts it as low as every other picture until layout shows
+            // it is on screen - React's preload hint for it copies what this tag
+            // says, so it went out low too. Not loading="eager": that is already
+            // what an <img> without the attribute does, and the stage never was
+            // lazy. Everything else here (the thumbnails) stays lazy and unhurried.
+            fetchPriority="high"
             draggable={false}
             // Origin stays put while zoomed out, so releasing settles back into
             // the spot the shopper was looking at rather than snapping to centre.

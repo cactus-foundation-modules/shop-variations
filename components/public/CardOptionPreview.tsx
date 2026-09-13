@@ -33,7 +33,8 @@
 // each; in the canvas there is no `.shop-card` ancestor and every handler simply
 // finds nothing to talk to.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { resolvePreviewSource, type CardOptionSummary, type CardOptionsPreview } from '@/modules/shop-variations/lib/card-options'
+import { resolvePreviewSource, type CardOptionsPreview } from '@/modules/shop-variations/lib/card-options'
+import { unpackCardOptions, type PackedCardOptions } from '@/modules/shop-variations/lib/card-options-pack'
 import { OptionRow, cardOptionsRootStyle, type InteractiveValue } from '@/modules/shop-variations/components/public/card-option-rows'
 import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
 import type { ImageResizing } from '@/lib/media/resize-url'
@@ -51,13 +52,16 @@ const SOURCES_EVENT = 'shop:card-media-sources'
 const islandStyle: CSSProperties = { ...cardOptionsRootStyle, position: 'relative', zIndex: 2, pointerEvents: 'none' }
 
 export function CardOptionPreview({
-  options,
+  options: packedOptions,
   preview,
   previewHref,
   resizing,
   dragRef,
 }: {
-  options: CardOptionSummary[]
+  /** The card's summaries, folded for the trip - see lib/card-options-pack.ts.
+   *  Unfolded once below, and every line after that works on the list it
+   *  always did. */
+  options: PackedCardOptions
   /** Handed in directly only by the Puck editor, which has a sample to draw and
    *  no route to fetch from. On a real page this arrives via `previewHref`. */
   preview?: CardOptionsPreview
@@ -70,9 +74,8 @@ export function CardOptionPreview({
    *  on a page where most visitors never hover a swatch at all.
    *
    *  The rows themselves are unaffected: they are server-rendered markup either
-   *  way, and a value with no matrix behind it already renders plain rather than
-   *  interactive (see `interactive` below), which is exactly the right state for
-   *  the moment before the answer arrives. */
+   *  way, their values buttons from the start, and a choice made in the moment
+   *  before the answer arrives simply waits for it (see `valuesInteractive`). */
   previewHref?: string
   /** Passed through to the option rows so a swatch chip asks for a chip-sized
    *  source. See CHIP_PX in card-option-rows. */
@@ -81,22 +84,29 @@ export function CardOptionPreview({
   // must not be wrapped in a div of its own.
   dragRef?: (element: Element | null) => void
 }) {
+  // The same list for the same packed object, every render - the picks below
+  // are keyed on its identity and would reset on a fresh copy.
+  const options = unpackCardOptions(packedOptions)
   const rootRef = useRef<HTMLDivElement>(null)
   // The matrix, once asked for. `preview` wins when present so the editor's
   // sample still draws without a request.
   const [fetched, setFetched] = useState<CardOptionsPreview | undefined>(undefined)
+  // Set when the request failed or came back with nothing to preview, which puts
+  // the values back to the plain labels they would be with the setting off.
+  const [previewUnavailable, setPreviewUnavailable] = useState(false)
   const askedRef = useRef(false)
   const live = preview ?? fetched
 
   // Asked for on the first sign of interest in this card rather than on load: a
   // grid of thirty cards would otherwise make thirty requests for data most of
-  // them never need. Pointer-enter fires on the TILE, so by the time a shopper
-  // has crossed it to reach a swatch the answer has usually landed; a card
-  // reached by keyboard or touch asks at the same moment for the same reason.
+  // them never need. A mouse asks as it enters the TILE (see the effect below),
+  // so by the time a shopper has crossed it to reach a swatch the answer has
+  // usually landed; a card reached by keyboard or touch asks when a value is
+  // focused or touched.
   //
-  // One request per card, ever - `askedRef` is never cleared, and a failure is
-  // left alone. The row stays plain in that case, which is the same card an
-  // owner who never switched the preview on has always had.
+  // One request per card, ever - `askedRef` is never cleared. A failure, or a
+  // product with nothing to preview, puts the row back to plain labels, which is
+  // the same card an owner who never switched the preview on has always had.
   const wantPreview = !preview && Boolean(previewHref)
   const askForPreview = useCallback(() => {
     if (!wantPreview || askedRef.current || !previewHref) return
@@ -104,10 +114,38 @@ export function CardOptionPreview({
     fetch(previewHref, { headers: { accept: 'application/json' } })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: CardOptionsPreview | null) => {
-        if (json && Array.isArray(json.variants)) setFetched(json)
+        if (json && Array.isArray(json.variants) && json.variants.length > 0) setFetched(json)
+        else setPreviewUnavailable(true)
       })
-      .catch(() => {})
+      .catch(() => setPreviewUnavailable(true))
   }, [wantPreview, previewHref])
+
+  // The values are buttons from the first paint, answer or no answer - exactly
+  // what they were while the matrix still rode in the page. They have to be:
+  // this block's root takes no pointer events (see islandStyle), so the only
+  // things in it a pointer, a finger or the Tab key can ever reach are the
+  // buttons, and a row left as plain labels until the answer arrived could never
+  // be touched to ask for it - which is how the lazy request first shipped, with
+  // the server-rendered rows holding nothing a pointer could land on. A choice
+  // made before the answer lands is kept, and the photo follows the moment it
+  // does.
+  const valuesInteractive = Boolean(live) || (wantPreview && !previewUnavailable)
+
+  // The tile-wide head start: the block's own root hears nothing until the
+  // pointer is already on a value, so the card itself is listened to. Not for a
+  // finger - one crossing a card is nearly always a scroll, and asking for every
+  // card a thumb brushes past is the request per card this is built to avoid. A
+  // tap on a value asks through the root's own handlers below.
+  useEffect(() => {
+    if (!wantPreview) return
+    const card = rootRef.current?.closest<HTMLElement>(CARD_SELECTOR)
+    if (!card) return
+    const onCardEnter = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') askForPreview()
+    }
+    card.addEventListener('pointerenter', onCardEnter)
+    return () => card.removeEventListener('pointerenter', onCardEnter)
+  }, [wantPreview, askForPreview])
   // What the card's photos were constrained to before this block touched anything
   // (a filter's doing, or nothing at all). Restored whenever the preview clears.
   const baseRef = useRef<string | null>(null)
@@ -206,7 +244,7 @@ export function CardOptionPreview({
       const vi = options[optionIndex]?.values[valueIndex]?.vi
       // A value no variation answers to cannot be previewed, so it stays the plain
       // label it always was rather than offering a button that does nothing.
-      if (vi === undefined || !live) return null
+      if (vi === undefined || !valuesInteractive) return null
       return {
         pinned: pinned[optionIndex] === vi,
         active: picks[optionIndex] === vi,
@@ -221,7 +259,7 @@ export function CardOptionPreview({
         },
       }
     },
-    [options, live, pinned, picks, point, pin],
+    [options, valuesInteractive, pinned, picks, point, pin],
   )
 
   return (

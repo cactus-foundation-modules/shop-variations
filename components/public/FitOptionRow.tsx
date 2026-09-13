@@ -33,6 +33,7 @@
 // no marker.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-options'
+import { unpackCardOptions, type PackedCardOptions } from '@/modules/shop-variations/lib/card-options-pack'
 import { OptionRow, type FitState, type ValueInteraction } from '@/modules/shop-variations/components/public/card-option-rows'
 import type { ImageResizing } from '@/lib/media/resize-url'
 
@@ -151,4 +152,25 @@ export function FitOptionRow({
     moreCount: shown == null ? total : total - shown,
   }
   return <OptionRow option={option} optionIndex={optionIndex} interactive={interactive} resizing={resizing} fit={fit} />
+}
+
+// The same row, for a card block rendering it straight from the server rather
+// than from inside the preview island: handed the card's summaries packed (see
+// lib/card-options-pack.ts) and the index of its own option among them. Every fit
+// row on one card is handed the same packed object, so the flight payload writes
+// it once, and unpacking it gives back the same list each time - which matters,
+// because the row above starts measuring again whenever its option is a
+// different object.
+export function PackedFitOptionRow({
+  options,
+  optionIndex,
+  resizing,
+}: {
+  options: PackedCardOptions
+  optionIndex: number
+  resizing?: ImageResizing
+}) {
+  const option = unpackCardOptions(options)[optionIndex]
+  if (!option) return null
+  return <FitOptionRow option={option} optionIndex={optionIndex} resizing={resizing} />
 }

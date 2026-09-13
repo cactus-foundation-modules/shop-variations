@@ -1,7 +1,7 @@
 import {
   VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart, VariantGalleryPart,
 } from '@/modules/shop-variations/components/public/VariantParts'
-import { bootstrapForCurrentProduct, currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
+import { currentProductSlug, packedBootstrapForCurrentProduct } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { resolveShopGalleryExtras } from '@/modules/shop/lib/gallery-media'
 import { getResponsiveBreakpoints } from '@/lib/puck/responsiveValue'
 import {
@@ -31,8 +31,10 @@ import {
 // resolves it, so by the time any of these render it is already there. When it
 // isn't, `initial` is null and the island fetches after mount exactly as before.
 
-async function bootstrapProps(): Promise<{ slug: string | null; initial: Awaited<ReturnType<typeof bootstrapForCurrentProduct>> }> {
-  return { slug: currentProductSlug(), initial: await bootstrapForCurrentProduct() }
+// `initial` travels packed (lib/variation-bootstrap-pack.ts) and the island
+// unpacks it on the way into its store.
+async function bootstrapProps(): Promise<{ slug: string | null; initial: Awaited<ReturnType<typeof packedBootstrapForCurrentProduct>> }> {
+  return { slug: currentProductSlug(), initial: await packedBootstrapForCurrentProduct() }
 }
 
 // --- Options ---

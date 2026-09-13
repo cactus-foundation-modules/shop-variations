@@ -25,7 +25,8 @@
 import type { CardPartContext } from '@/modules/shop/components/puck/parts/part-context'
 import { CARD_OPTIONS_FACT_ID, type CardOptionSummary, type CardOptionsFacts } from '@/modules/shop-variations/lib/card-options'
 import { OptionRow, cardOptionsRootStyle } from '@/modules/shop-variations/components/public/card-option-rows'
-import { FitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
+import { PackedFitOptionRow } from '@/modules/shop-variations/components/public/FitOptionRow'
+import { packCardOptions } from '@/modules/shop-variations/lib/card-options-pack'
 import { CardOptionPreview } from '@/modules/shop-variations/components/public/CardOptionPreview'
 import type { ImageResizing } from '@/lib/media/resize-url'
 
@@ -90,7 +91,8 @@ export function ShopCardVariationOptions(props: Props) {
     const productId = ctx?.product?.id
     return (
       <CardOptionPreview
-        options={options}
+        // Folded for the trip to the browser; see lib/card-options-pack.ts.
+        options={packCardOptions(options)}
         resizing={resizing}
         preview={ctx ? undefined : SAMPLE_PREVIEW}
         previewHref={productId ? `/api/m/shop-variations/public/card-preview?product=${encodeURIComponent(productId)}` : undefined}
@@ -103,10 +105,13 @@ export function ShopCardVariationOptions(props: Props) {
     <div style={cardOptionsRootStyle} ref={dragRefOf(props)}>
       {/* An option set to "as many as fit" measures itself in the browser, so that
           one row is a small client island; its neighbours (and every card without
-          the setting) stay exactly the server-rendered markup they always were. */}
+          the setting) stay exactly the server-rendered markup they always were.
+          The measuring rows are handed the card's summaries folded for the trip,
+          every one of them the same object, so the page carries it once (see
+          lib/card-options-pack.ts). */}
       {options.map((option, i) => (
         option.fit != null
-          ? <FitOptionRow key={option.id} option={option} optionIndex={i} resizing={resizing} />
+          ? <PackedFitOptionRow key={option.id} options={packCardOptions(options)} optionIndex={i} resizing={resizing} />
           : <OptionRow key={option.id} option={option} optionIndex={i} resizing={resizing} />
       ))}
     </div>

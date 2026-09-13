@@ -8,10 +8,12 @@
 //
 // The payload arrives one of two ways. Normally an RSC block half resolves it
 // while the page renders and passes it in as `initial`, and the controls are in
-// the HTML the shopper's browser receives. Where the server couldn't work out
-// which product it is, the hook falls back to fetching it after mount, which is
-// what it used to do in every case - and what made the options turn up a beat
-// after everything else.
+// the HTML the shopper's browser receives. That prop travels packed (see
+// variation-bootstrap-pack.ts) and is unpacked here, on its way into the store,
+// so the store and everything reading it only ever see VariantSelectorPayload.
+// Where the server couldn't work out which product it is, the hook falls back to
+// fetching it after mount, which is what it used to do in every case - and what
+// made the options turn up a beat after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
@@ -21,6 +23,7 @@ import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
 import { mergeGalleryItems } from '@/modules/shop-variations/lib/gallery-order'
+import { unpackVariationBootstrap, type PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 type Entry = {
@@ -137,9 +140,14 @@ async function ensureLoaded(entry: Entry): Promise<void> {
 // after paint, which is the pause this whole exercise is about. Safe to call on
 // every render - the first seed for a slug wins, so a re-render can never
 // discard a selection the shopper has since made.
-function seedVariationSelection(slug: string, bootstrap: VariationBootstrap): void {
+//
+// Takes the packed prop and unpacks it only once it is actually going in: every
+// island on the page hands its copy over, and all but the first find the slug
+// already seeded and never pay for the unpacking at all.
+function seedVariationSelection(slug: string, packed: PackedVariationBootstrap): void {
   const existing = store.get(slug)
   if (existing && (existing.loaded || existing.fetching)) return
+  const bootstrap = unpackVariationBootstrap(packed)
   const entry = seededEntry(slug, bootstrap)
   // Carry over anything an unseeded island already collected for this slug.
   if (existing) {
@@ -239,21 +247,23 @@ function stableKey(childId: string, values: Record<string, unknown>): string {
 
 export type VariationSelection = ReturnType<typeof useVariationSelection>
 
-// `initial` is the server-resolved payload, passed down by an RSC block half.
-// Given one, this hook never fetches and never renders an empty state: the
-// options are in the entry before the first read below. Without one (a layout
-// that renders our blocks somewhere the server couldn't identify the product)
-// it behaves exactly as it always has, fetching after mount.
-export function useVariationSelection(slug: string | null, initial?: VariationBootstrap | null) {
+// `initial` is the server-resolved payload, passed down by an RSC block half in
+// its packed wire shape. Given one, this hook never fetches and never renders an
+// empty state: the options are in the entry before the first read below. Without
+// one (a layout that renders our blocks somewhere the server couldn't identify
+// the product) it behaves exactly as it always has, fetching after mount.
+export function useVariationSelection(slug: string | null, initial?: PackedVariationBootstrap | null) {
   const [, force] = useState(0)
 
   // Server: a throwaway entry, so the HTML is rendered from this request's own
-  // payload and the shared store is left untouched (see `isServer` above).
+  // payload and the shared store is left untouched (see `isServer` above). The
+  // unpacked copy is remembered against the packed object, so the several islands
+  // of one page render unpack it once between them.
   // Browser: seed the shared store, so every island on the page reads the same
   // selection and stays in step as the shopper changes it.
   let entry: Entry | undefined
   if (slug && isServer) {
-    entry = initial ? seededEntry(slug, initial) : undefined
+    entry = initial ? seededEntry(slug, unpackVariationBootstrap(initial)) : undefined
   } else if (slug) {
     if (initial) seedVariationSelection(slug, initial)
     entry = store.get(slug)

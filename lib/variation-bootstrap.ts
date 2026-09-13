@@ -17,6 +17,7 @@ import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { currentProductPageSearchParams } from '@/modules/shop/lib/product-page-params'
 import { getVariantSelectorPayloadBySlug } from '@/modules/shop-variations/lib/variants-service'
 import { selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
+import { packVariationBootstrap, type PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
 // Request-scoped slot holding the product being rendered. `cache` hands back the
@@ -87,6 +88,20 @@ export const getVariationBootstrap = cache(async (slug: string): Promise<Variati
   }
 })
 
+// The same payload in the shape it crosses to the browser in - see
+// variation-bootstrap-pack.ts for that shape and the megabyte it exists to save.
+// This is what an island is handed; everything server-side keeps reading
+// getVariationBootstrap above.
+//
+// Cached per request like the payload itself, and for a reason beyond saving the
+// work: the flight payload writes an object once and points every later prop at
+// that first copy only when it is the SAME object. Four islands on one product
+// page each packing their own would ship the packed payload four times over.
+export const getPackedVariationBootstrap = cache(async (slug: string): Promise<PackedVariationBootstrap | null> => {
+  const bootstrap = await getVariationBootstrap(slug)
+  return bootstrap ? packVariationBootstrap(bootstrap) : null
+})
+
 // What every RSC block half calls. A null here is not a failure: it means we
 // could not tell server-side which product this is (a layout that renders our
 // blocks outside shop's product detail, say), and the island falls back to the
@@ -95,4 +110,11 @@ export async function bootstrapForCurrentProduct(): Promise<VariationBootstrap |
   const slug = currentProductSlug()
   if (!slug) return null
   return getVariationBootstrap(slug)
+}
+
+// The packed twin of the above, for handing to an island as its `initial` prop.
+export async function packedBootstrapForCurrentProduct(): Promise<PackedVariationBootstrap | null> {
+  const slug = currentProductSlug()
+  if (!slug) return null
+  return getPackedVariationBootstrap(slug)
 }

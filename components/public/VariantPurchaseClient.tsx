@@ -3,7 +3,7 @@
 import {
   VariantGalleryPart, VariantOptionsPart, VariantPersonalisationPart, VariantPricePart, VariantAddToCartPart,
 } from '@/modules/shop-variations/components/public/VariantParts'
-import type { VariationBootstrap } from '@/modules/shop-variations/lib/types'
+import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 
 // The all-in-one storefront block: gallery + options + personalisation + live
 // price + variant-aware add-to-cart, sharing one selection. The RSC half passes
@@ -18,7 +18,7 @@ export function VariantPurchaseClient({
   heading?: string
   addToCartLabel?: string
   slug?: string | null
-  initial?: VariationBootstrap | null
+  initial?: PackedVariationBootstrap | null
 }) {
   const shared = { preview, slug, initial }
   return (

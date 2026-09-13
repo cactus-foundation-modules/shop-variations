@@ -1,5 +1,5 @@
 import { VariantPurchaseClient } from '@/modules/shop-variations/components/public/VariantPurchaseClient'
-import { bootstrapForCurrentProduct, currentProductSlug } from '@/modules/shop-variations/lib/variation-bootstrap'
+import { currentProductSlug, packedBootstrapForCurrentProduct } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { shopVariantPurchasePuckComponent, type ShopVariantPurchaseProps } from './ShopVariantPurchase'
 
 // Live (RSC) half of the composite block. In its own file for the same reason as
@@ -12,7 +12,7 @@ import { shopVariantPurchasePuckComponent, type ShopVariantPurchaseProps } from 
 // the URL and a fetch, which is what they did unconditionally before.
 
 export async function ShopVariantPurchaseRsc(props: ShopVariantPurchaseProps) {
-  const initial = await bootstrapForCurrentProduct()
+  const initial = await packedBootstrapForCurrentProduct()
   return (
     <VariantPurchaseClient
       showGallery={props.showGallery !== 'no'}

@@ -7,14 +7,16 @@
 // DetailSlotPartsClient.tsx as a plain prop. That is the whole fix for the
 // out-of-the-box path: the option controls, the chosen combination's price and
 // the buy row all arrive in the page's first HTML instead of a fetch or two
-// later. `getVariationBootstrap` is request-cached, so the three wrappers below
-// share a single query between them.
+// later. `getPackedVariationBootstrap` is request-cached, so the wrappers below
+// share a single query between them - and a single packed object, which the
+// flight payload then writes once however many islands are handed it (see
+// lib/variation-bootstrap-pack.ts for the shape it travels in).
 //
 // These are async server components by design, which is what lets them await the
 // payload. Shop's slot contract types them as plain components and only ever
 // renders them from its own RSC halves (ShopDetail*Rsc), so awaiting here is
 // within the contract - see modules/shop/lib/detail-slot.ts.
-import { getVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap'
+import { getPackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap'
 import {
   VariantSlotGalleryClient,
   VariantSlotPriceClient,
@@ -29,21 +31,21 @@ import type {
 } from '@/modules/shop/lib/detail-slot'
 
 export async function VariantSlotGallery(props: ShopDetailGallerySlotProps) {
-  const initial = await getVariationBootstrap(props.slug)
+  const initial = await getPackedVariationBootstrap(props.slug)
   return <VariantSlotGalleryClient {...props} initial={initial} />
 }
 
 export async function VariantSlotPrice(props: ShopDetailPriceSlotProps) {
-  const initial = await getVariationBootstrap(props.slug)
+  const initial = await getPackedVariationBootstrap(props.slug)
   return <VariantSlotPriceClient {...props} initial={initial} />
 }
 
 export async function VariantSlotPurchase(props: ShopDetailPurchaseSlotProps) {
-  const initial = await getVariationBootstrap(props.slug)
+  const initial = await getPackedVariationBootstrap(props.slug)
   return <VariantSlotPurchaseClient {...props} initial={initial} />
 }
 
 export async function VariantSlotSupplierValue(props: ShopDetailSupplierValueSlotProps) {
-  const initial = await getVariationBootstrap(props.slug)
+  const initial = await getPackedVariationBootstrap(props.slug)
   return <VariantSlotSupplierValueClient {...props} initial={initial} />
 }
