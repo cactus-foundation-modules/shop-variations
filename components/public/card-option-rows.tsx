@@ -22,14 +22,20 @@
 // and the interactive form is a span with role="button" rather than a <button>,
 // because a button is an atomic box by specification and can never wrap.
 //
-// Inline styles rather than a stylesheet, matching the rest of this module - a card
-// part cannot rely on shop having emitted CSS it knows nothing about, and a <style>
-// tag per part would be repeated once per card in the grid. Sized in em, never rem:
+// Mostly inline styles, matching the rest of this module - a card part cannot rely
+// on shop having emitted CSS it knows nothing about. The exception is the swatch
+// chip, which a grid repeats hundreds of times: its fixed styles live in one small
+// sheet (CHIP_CSS below) emitted through core's SharedStyle, which React hoists and
+// writes once per page however many rows ask for it. Written inline, those same
+// declarations came to about 100 KB of markup on a collection page once every chip
+// became a button (September 2026). Only what differs per chip - a dot's colour,
+// the active ring, a hidden value - stays inline. Sized in em, never rem:
 // the card sets its own font-size, and a surface may shrink the whole text block by
 // turning that one figure down (shop's two-up mobile grid halves it).
 import type { CSSProperties, Ref } from 'react'
 import type { CardOptionSummary } from '@/modules/shop-variations/lib/card-options'
 import { resizedImageSrc, type ImageResizing } from '@/lib/media/resize-url'
+import { SharedStyle } from '@/components/SharedStyle'
 
 // What the preview island knows about one value, and how it wants to be told the
 // shopper is pointing at it. Null (or absent) for every value on a card with the
@@ -83,9 +89,7 @@ const labelStyle: CSSProperties = { fontWeight: 600, color: 'var(--color-fg)', m
 // flex gap); text values are plain inline content whose words wrap like prose,
 // separated by an ordinary trailing space inside each one - a space is a break
 // opportunity, a margin is not.
-const swatchItemStyle: CSSProperties = { display: 'inline-block', verticalAlign: 'middle', marginRight: '0.333em' }
 const textItemStyle: CSSProperties = { display: 'inline' }
-const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRadius: 999, border: '1px solid var(--color-border)', display: 'block' }
 // The chip's drawn size, in CSS pixels at the card's own font size. Named here
 // because the SOURCE asked for is worked out from it: measured on the live
 // homepage, these were being handed 128px pictures to fill a box Lighthouse
@@ -93,7 +97,6 @@ const dotStyle: CSSProperties = { width: '1.167em', height: '1.167em', borderRad
 // chip. Doubled for a retina screen and no more.
 const CHIP_PX = 24
 
-const thumbStyle: CSSProperties = { width: '1.5em', height: '1.5em', borderRadius: 4, objectFit: 'cover', border: '1px solid var(--color-border)', display: 'block' }
 const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 'tabular-nums' }
 
 // A value the shopper can point at. The reset is a button's whole appearance: it
@@ -104,11 +107,25 @@ const moreStyle: CSSProperties = { display: 'inline-block', fontVariantNumeric: 
 // (atomic, exactly like its dot), a text trigger is an inline span carrying
 // role="button", because a <button> is an unbreakable box by specification and a
 // multi-word value inside one could never wrap beside the label.
-const triggerStyle: CSSProperties = {
-  appearance: 'none', background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
-  lineHeight: 'inherit', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', pointerEvents: 'auto',
-}
 const textTriggerStyle: CSSProperties = { display: 'inline', cursor: 'pointer', pointerEvents: 'auto' }
+
+// The swatch chip's fixed styles, once per page. Same declarations the inline
+// versions carried, byte for byte in effect: the item is an atomic inline-block
+// spaced by a margin (see the note at the top on why a row is inline flow), the
+// dot and the picture are fixed em boxes, and the trigger is a button stripped of
+// every trace of being a form control, with `pointer-events: auto` undoing the
+// island root's `none` for exactly these.
+const CHIP_CLASS = {
+  item: 'svr-card-chip',
+  dot: 'svr-card-chip-dot',
+  thumb: 'svr-card-chip-thumb',
+  trigger: 'svr-card-chip-trigger',
+} as const
+const CHIP_CSS =
+  `.${CHIP_CLASS.item}{display:inline-block;vertical-align:middle;margin-right:0.333em}` +
+  `.${CHIP_CLASS.dot}{width:1.167em;height:1.167em;border-radius:999px;border:1px solid var(--color-border);display:block}` +
+  `.${CHIP_CLASS.thumb}{width:1.5em;height:1.5em;border-radius:4px;object-fit:cover;border:1px solid var(--color-border);display:block}` +
+  `.${CHIP_CLASS.trigger}{appearance:none;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;line-height:inherit;display:inline-flex;align-items:center;cursor:pointer;pointer-events:auto}`
 // Chosen: a ring round a swatch, the shop's own colour on a word. Drawn for the
 // value the picture is currently showing, so what the shopper is looking at and
 // what they are pointing at never disagree.
@@ -128,9 +145,9 @@ function SwatchValue({ value, kind, resizing }: { value: CardOptionSummary['valu
     // included, which is how a colour swatch ends up being why a favicon is
     // missing.
     // eslint-disable-next-line @next/next/no-img-element -- a swatch is a fixed 18px chip, and next/image would add a loader round-trip per colour per card
-    return <img src={resizedImageSrc(value.swatch, CHIP_PX * 2, resizing)} alt={value.label} title={value.label} style={thumbStyle} loading="lazy" decoding="async" />
+    return <img src={resizedImageSrc(value.swatch, CHIP_PX * 2, resizing)} alt={value.label} title={value.label} className={CHIP_CLASS.thumb} loading="lazy" decoding="async" />
   }
-  return <span role="img" aria-label={value.label} title={value.label} style={{ ...dotStyle, background: value.swatch }} />
+  return <span role="img" aria-label={value.label} title={value.label} className={CHIP_CLASS.dot} style={{ background: value.swatch }} />
 }
 
 // One value, wrapped in a button when it can be pointed at and left as bare markup
@@ -156,7 +173,8 @@ function Value({
     return (
       <button
         type="button"
-        style={{ ...triggerStyle, ...(chosen ? activeSwatchStyle : null) }}
+        className={CHIP_CLASS.trigger}
+        style={chosen ? activeSwatchStyle : undefined}
         aria-pressed={interaction.pinned}
         aria-label={`Show ${value.label}`}
         onMouseEnter={interaction.onMouseEnter}
@@ -219,13 +237,15 @@ export function OptionRow({
   const showMarker = fit != null ? measuring || fit.moreCount > 0 : option.more > 0
   return (
     <span style={{ ...rowStyle, lineHeight, ...clamp }} ref={fit?.rowRef}>
+      {showsSwatches && <SharedStyle id="svr-card-chips" css={CHIP_CSS} />}
       <span style={labelStyle}>{option.label}</span>
       <span>
         {option.values.map((v, i) => (
           <span
             key={`${option.id}-${i}`}
+            className={showsSwatches ? CHIP_CLASS.item : undefined}
             style={{
-              ...(showsSwatches ? swatchItemStyle : textItemStyle),
+              ...(showsSwatches ? null : textItemStyle),
               ...(fit?.shown != null && i >= fit.shown ? { display: 'none' } : null),
             }}
             {...(fit != null ? { 'data-fit-item': '' } : {})}
