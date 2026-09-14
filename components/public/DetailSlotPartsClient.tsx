@@ -68,7 +68,11 @@ function pct(offset: number, size: number): string {
 // same top edge, so the media strip deliberately paints above it while pinned.
 export const stickyGalleryCss = `
 .spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
+.spd-stage-col.${STICKY_GALLERY_CLASS}.spd-stage-col--mobile-immersive{grid-template-columns:1fr}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-stage{width:100%;min-width:0}
+.spd-stage-col.${STICKY_GALLERY_CLASS}.spd-stage-col--mobile-immersive .spd-thumbs-wrap{display:none}
+.spd-stage-col.${STICKY_GALLERY_CLASS}.spd-stage-col--mobile-immersive .spd-thumbs{display:none}
+.spd-stage-col.${STICKY_GALLERY_CLASS}.spd-stage-col--mobile-immersive .mcf-stage-caption{display:none}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-wrap{display:contents}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/2;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumb{width:100%;height:100%}
@@ -176,6 +180,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // clicked back to belongs to the catalogue, not to them, so it earns no pill.
   const showingChoice = sel.hasOptions && sel.allOptionsChosen
     && (activeExtra !== null || (main !== null && variantImages.includes(main)))
+  const galleryClass = `${classNames.col}${activeExtra?.mobileStage === 'immersive' ? ' spd-stage-col--mobile-immersive' : ''}`
 
   function track(e: ReactPointerEvent<HTMLDivElement>) {
     const box = e.currentTarget.getBoundingClientRect()
@@ -223,7 +228,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: stickyGalleryCss }} />
-      <div ref={stickyColRef} className={classNames.col}>
+      <div ref={stickyColRef} className={galleryClass}>
       <div className={classNames.stage} style={stageStyle} {...zoomHandlers}>
         {/* Shop's stage is a positioned box, so the pill sits in its corner and is
             clipped to its rounded edge - over the photograph or over a contributed
