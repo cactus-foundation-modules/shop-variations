@@ -64,22 +64,15 @@ function pct(offset: number, size: number): string {
 // and fades make no sense on a grid, so they go.
 // `left` and `width` arrive inline from the hook, sized to the slot the gallery
 // vacated; top tracks the measured live header height, so a shrink-on-scroll
-// header keeps the strip tucked under itself.
-//
-// While the strip is pinned the hook marks the page root with
-// `svr-gallery-pinned`. Shop's sticky tab bar pins to the same spot under the
-// header, so the strip tucks itself BELOW the bar instead of under the header
-// alone: the bar publishes its measured height as --spd-tabnav-h (0 when the
-// author didn't make it sticky), and the strip's top adds it on. The pinned
-// root class keeps the bar painted above the strip while the two hand over.
-const stickyGalleryCss = `
-.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:calc(var(--spd-header-h,96px) + var(--spd-tabnav-h,0px));margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
+// header keeps the strip tucked under itself. The product tab strip pins to the
+// same top edge, so the media strip deliberately paints above it while pinned.
+export const stickyGalleryCss = `
+.spd-stage-col.${STICKY_GALLERY_CLASS}{position:fixed;z-index:30;top:var(--spd-header-h,96px);margin:0;display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:start;background:var(--color-page-bg,var(--color-bg));padding:8px 0;border-bottom:1px solid var(--color-border)}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-stage{width:100%;min-width:0}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-wrap{display:contents}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs{position:static;display:grid;grid-template-columns:1fr;grid-auto-rows:calc(50% - 4px);gap:8px;aspect-ratio:1/2;min-width:0;overflow-y:auto;overflow-x:hidden;contain:none}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumb{width:100%;height:100%}
 .spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-arrow,.spd-stage-col.${STICKY_GALLERY_CLASS} .spd-thumbs-fade{display:none}
-.svr-gallery-pinned .spd-tab-nav.sticky{z-index:31}
 `
 
 // ---- Gallery -------------------------------------------------------------

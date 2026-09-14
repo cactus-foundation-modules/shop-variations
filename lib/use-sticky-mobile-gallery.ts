@@ -87,15 +87,6 @@ export function useStickyMobileGallery(enabled: boolean): {
       return Number.isFinite(v) ? v : 96
     }
 
-    // Shop's sticky tab bar publishes its measured height here (see
-    // ProductSectionTabs); the pinned strip sits below the bar, so every
-    // threshold that reasons about where the strip rests must add it on.
-    // 0 when the author didn't make the bar sticky.
-    const tabNavH = (): number => {
-      const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spd-tabnav-h'))
-      return Number.isFinite(v) ? v : 0
-    }
-
     const unpin = () => {
       pinned = false
       col.classList.remove(STICKY_GALLERY_CLASS)
@@ -138,7 +129,7 @@ export function useStickyMobileGallery(enabled: boolean): {
         if (pinned) unpin()
         return
       }
-      const h = headerH() + tabNavH()
+      const h = headerH()
       const stripH = compactH > 0 ? compactH : flow.width / 2 + 16
       // Pin while the gallery has scrolled up past where the compact strip sits,
       // and the last thing being configured hasn't yet.
