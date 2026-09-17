@@ -9,7 +9,7 @@ import { ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { syncVariantChildIdentity, variantChildName, variantChildSlug } from '@/modules/shop-variations/lib/child-identity'
 import { getShopConfigCached } from '@/modules/shop/lib/config'
 import { effectivePrice, isOnSale, isPriceTypeEnabled } from '@/modules/shop/lib/pricing'
-import { makeDisplayAdjuster, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
+import { makeDisplayAdjuster, productTaxView, resolveTaxDisplay } from '@/modules/shop/lib/tax-display'
 import { canSeeStockLevels } from '@/modules/shop/lib/admin-stock'
 import { canSeeProductCodes } from '@/modules/shop/lib/admin-codes'
 import { minOrderQuantity, resolveMinOrderQuantity } from '@/modules/shop/lib/min-order'
@@ -473,6 +473,8 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
     variants: selectorVariants,
     addons: adjust ? addons.map((a) => ({ ...a, config: adjustAddonPrices(a.config, shown) })) : addons,
     priceSuffix: taxDisplay.display.suffix,
+    // At the PARENT's rate, for the same reason the figures are converted at it.
+    taxView: productTaxView(taxDisplay, parent.taxClassId),
     showStockCounts: exposeStock,
     showCodes: exposeCodes,
     showReturns: exposeReturns,

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
@@ -9,6 +9,10 @@ import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
 import { minOrderSentence } from '@/modules/shop/lib/min-order'
 import { RETURNS_POLICY_LABEL, type ReturnsPolicy } from '@/modules/shop/lib/returnable'
+import { TaxViewMoney, TaxViewNote } from '@/modules/shop/components/public/TaxViewText'
+import { TaxViewToggle } from '@/modules/shop/components/public/TaxViewToggle'
+import { useTaxViewSide } from '@/modules/shop/lib/tax-view-client'
+import { taxViewAmount, type ProductTaxView, type TaxViewSide } from '@/modules/shop/lib/tax-view-shared'
 import type { SvrAddon, SvrOptionWithValues } from '@/modules/shop-variations/lib/types'
 import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import { normalizeResponsiveValue, pickResponsive, type Device, type ResponsiveValue } from '@/lib/puck/responsiveValue'
@@ -164,11 +168,29 @@ const moneyShort = (n: number, symbol: string) => {
 // Deliberately does NOT ask whether the option moves the money: that answer is the
 // same for every value in the option, and asking it here would walk the whole
 // option's variants once PER VALUE. Callers hoist it (`showPrices`) and gate on it.
-function valuePriceHint(sel: ReturnType<typeof useVariationSelection>, optionId: string, valueId: string): string | null {
+//
+// Two spellings of the same hint. The pill controls print it as markup, both
+// sides of tax at once where the shopper's VAT switch is on, so it is right from
+// the first paint; a native <option> takes text alone, so the dropdown asks for
+// the side the shopper is on and follows the switch once the page is running.
+function valuePriceHint(sel: ReturnType<typeof useVariationSelection>, optionId: string, valueId: string): ReactNode | null {
   const range = sel.valuePrice(optionId, valueId)
   if (!range) return null
   const varies = range.max - range.min > 0.005
-  return `${varies ? 'from ' : ''}${moneyShort(range.min, sel.currencySymbol)}`
+  return <>{varies ? 'from ' : ''}<TaxViewMoney amount={range.min} view={sel.taxView} format={(n) => moneyShort(n, sel.currencySymbol)} /></>
+}
+
+function valuePriceHintText(sel: ReturnType<typeof useVariationSelection>, optionId: string, valueId: string, side: TaxViewSide): string | null {
+  const range = sel.valuePrice(optionId, valueId)
+  if (!range) return null
+  const varies = range.max - range.min > 0.005
+  return `${varies ? 'from ' : ''}${moneyShort(onTaxSide(range.min, sel.taxView, side), sel.currencySymbol)}`
+}
+
+// A figure on the side of tax the shopper is looking at, for text that cannot
+// carry both. Unchanged where the shop has the switch off.
+function onTaxSide(amount: number, view: ProductTaxView | null, side: TaxViewSide): number {
+  return view ? taxViewAmount(amount, view, side) : amount
 }
 
 // "Choose Width and Storage first" - the options the shopper still owes us, named,
@@ -996,6 +1018,9 @@ export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationS
 // inside shop's own detail chrome - one control, two hosts.
 export function OptionControl({ option, sel, index, labelPlacement = 'above', hideLabel = false, swatchDisplay = 'pill', swatchPreview = PREVIEW_EVERYWHERE, unavailable = 'show', unavailableOrder = 'keep', onChoose }: { option: SvrOptionWithValues; sel: ReturnType<typeof useVariationSelection>; index?: number; labelPlacement?: OptionLabelPlacement; hideLabel?: boolean; swatchDisplay?: SwatchDisplay; swatchPreview?: SwatchPreviewShown; unavailable?: UnavailableDisplay; unavailableOrder?: UnavailableOrder; onChoose?: () => void }) {
   const chosen = sel.optionValues[option.id]
+  // Only the dropdown needs it (see valuePriceHintText), but a hook cannot wait
+  // for the branch that uses it.
+  const taxSide = useTaxViewSide(sel.taxView?.defaultSide ?? 'ex')
   // A pick an upstream change has just made unreachable: shown struck through
   // and disabled rather than dropped, so the shopper sees it was there and why
   // it no longer fits. Null when the current pick still fits (or there isn't one).
@@ -1110,7 +1135,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
             const available = sel.isAvailable(option.id, v.id)
             // A native <option> takes text and nothing else, so the price hint the
             // pill controls put on a second line rides the label here instead.
-            const hint = available && showPrices ? valuePriceHint(sel, option.id, v.id) : null
+            const hint = available && showPrices ? valuePriceHintText(sel, option.id, v.id, taxSide) : null
             const note = available ? '' : availabilityNote(v)
             // A native <option> takes no badge either, so the sale mark rides the
             // label as a word - the same place the price hint had to go.
@@ -1367,16 +1392,22 @@ export function VariantPersonalisationPart({ preview, slug: explicitSlug, initia
           has always drawn - the fields carry their own labels. */}
       {heading?.trim() && <h3 style={{ margin: 0, fontSize: '1.0625rem' }}>{heading.trim()}</h3>}
       {sel.payload.addons.map((addon) => (
-        <AddonControl key={addon.id} addon={addon} value={sel.addonValues[addon.id]} onChange={(v) => sel.setAddon(addon.id, v)} currency={sel.currencySymbol} slug={slug} />
+        <AddonControl key={addon.id} addon={addon} value={sel.addonValues[addon.id]} onChange={(v) => sel.setAddon(addon.id, v)} currency={sel.currencySymbol} slug={slug} taxView={sel.taxView} />
       ))}
     </div>
   )
 }
 
 // Exported alongside OptionControl for the same reason.
-export function AddonControl({ addon, value, onChange, currency, slug }: { addon: SvrAddon; value: AddonValue; onChange: (v: AddonValue) => void; currency: string; slug: string }) {
-  const priceHint = addon.config.flatPrice ? ` (+${money(addon.config.flatPrice, currency)})`
-    : addon.config.pricePerChar ? ` (+${money(addon.config.pricePerChar, currency)}/character)` : ''
+//
+// `taxView` is the listing's VAT switch, where the shop has one on: the surcharge
+// beside the label follows it as markup, the dropdown's choices as text.
+// Optional, so a host written before the switch still compiles.
+export function AddonControl({ addon, value, onChange, currency, slug, taxView = null }: { addon: SvrAddon; value: AddonValue; onChange: (v: AddonValue) => void; currency: string; slug: string; taxView?: ProductTaxView | null }) {
+  const taxSide = useTaxViewSide(taxView?.defaultSide ?? 'ex')
+  const surcharge = (amount: number) => <TaxViewMoney amount={amount} view={taxView} format={(n) => money(n, currency)} />
+  const priceHint: ReactNode = addon.config.flatPrice ? <> (+{surcharge(addon.config.flatPrice)})</>
+    : addon.config.pricePerChar ? <> (+{surcharge(addon.config.pricePerChar)}/character)</> : null
   const labelEl = (
     <span style={{ fontWeight: 600, fontSize: '0.875rem', display: 'block', marginBottom: '0.375rem' }}>
       {addon.label}{addon.required && <span style={{ color: 'var(--color-danger)' }}> *</span>}
@@ -1403,7 +1434,7 @@ export function AddonControl({ addon, value, onChange, currency, slug }: { addon
         <select value={str} onChange={(e) => onChange(e.target.value)} style={field}>
           <option value="">Choose…</option>
           {addon.config.choices?.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}{c.price ? ` (+${money(c.price, currency)})` : ''}</option>
+            <option key={c.value} value={c.value}>{c.label}{c.price ? ` (+${money(onTaxSide(c.price, taxView, taxSide), currency)})` : ''}</option>
           ))}
         </select>
       )}
@@ -1462,12 +1493,15 @@ function FileUpload({ addon, value, onChange, slug }: { addon: SvrAddon; value: 
 // the module's own, on its own class names, and every colour is a token.
 const variantPriceCss = `
 .svr-price-block{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+/* Whole items wrap, never the words inside one - see the same rule on shop's
+   own price block. */
+.svr-price-block>*{white-space:nowrap}
 .svr-price-now{font-family:var(--display-family,Georgia,serif);font-weight:600;font-size:var(--spd-price-size,34px);color:var(--color-primary)}
 .svr-price-from{font-family:inherit;font-size:1rem;font-weight:400;color:var(--color-text-muted)}
 .svr-price-was{font-size:15px;color:var(--color-text-muted);text-decoration:line-through}
 .svr-price-save{background:var(--color-success-subtle);color:var(--color-success);font-size:12px;font-weight:600;border-radius:9999px;padding:4px 11px}
 .svr-price-rrp{font-size:13px;color:var(--color-text-muted)}
-.svr-price-note{font-size:13px;color:var(--color-text-muted)}
+.svr-price-note{font-size:13px;color:var(--color-text-muted);margin-left:-6px}
 .svr-price-oos{font-size:0.875rem;font-weight:400;color:var(--color-danger)}
 `
 
@@ -1497,29 +1531,32 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial, showCom
   // A range has no single RRP worth quoting either: the cheapest combination's
   // list price says nothing about the one the shopper ends up on.
   const rrp = !showFrom && showRrp !== 'no' ? sel.retailPrice : null
+  const figure = (amount: number) => <TaxViewMoney amount={amount} view={sel.taxView} format={(n) => money(n, sel.currencySymbol)} />
   return (
     <div className="svr-price-block" style={align === 'center' || align === 'right' ? { justifyContent: align === 'right' ? 'flex-end' : 'center', textAlign: align } : undefined}>
       <style dangerouslySetInnerHTML={{ __html: variantPriceCss }} />
       {showFrom
-        ? <span className="svr-price-now"><span className="svr-price-from">From </span>{money(sel.fromPrice, sel.currencySymbol)}</span>
-        : <span className="svr-price-now">{money(sel.price, sel.currencySymbol)}</span>}
+        ? <span className="svr-price-now"><span className="svr-price-from">From </span>{figure(sel.fromPrice)}</span>
+        : <span className="svr-price-now">{figure(sel.price)}</span>}
+      {/* Which side of tax the figure sits on, straight after it, with the
+          shopper's switch beside that where the shop has it on. The payload
+          arrives already converted to the side the page opens on. */}
+      <TaxViewNote view={sel.taxView} suffix={sel.priceSuffix} className="svr-price-note" />
+      <TaxViewToggle view={sel.taxView} />
       {/* The chosen combination's own normal price, struck through, when that
           combination is the one on offer. Not while showing a "From" range -
           there is no single figure to strike against. */}
       {showCompare !== 'no' && onOffer && sel.compareAtPrice != null && (
-        <span className="svr-price-was">{money(sel.compareAtPrice, sel.currencySymbol)}</span>
+        <span className="svr-price-was">{figure(sel.compareAtPrice)}</span>
       )}
       {showSave !== 'no' && savePct != null && savePct > 0 && <span className="svr-price-save">Save {savePct}%</span>}
       {/* The maker's list price, when the shop shows one and it sits above what
           is being charged. */}
-      {rrp != null && <span className="svr-price-rrp">RRP {money(rrp, sel.currencySymbol)}</span>}
+      {rrp != null && <span className="svr-price-rrp">RRP {figure(rrp)}</span>}
       {/* Only once there's a combination to be out of stock. Nothing chosen is
           not the same as nothing available, and saying so over the parent's
           price would turn every options product into a sold-out one. */}
       {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span className="svr-price-oos">Out of stock</span>}
-      {/* Which side of tax the figure beside it sits on, where the shop has set
-          the wording. The payload arrives already converted to match. */}
-      {sel.priceSuffix && <span className="svr-price-note">{sel.priceSuffix}</span>}
       <ResetOptionsLink sel={sel} />
     </div>
   )

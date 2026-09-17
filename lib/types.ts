@@ -3,6 +3,7 @@
 // camelCase shape callers see.
 
 import type { ReturnsPolicy } from '@/modules/shop/lib/returnable'
+import type { ProductTaxView } from '@/modules/shop/lib/tax-view-shared'
 
 export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL' | 'IMAGE'
 
@@ -293,6 +294,12 @@ export type VariantSelectorPayload = {
   // it is handed and does no tax arithmetic of its own. Optional so an island
   // rendering a payload from an older cached bundle still compiles.
   priceSuffix?: string
+  // The shopper's with/without VAT switch for the parent product, or null where
+  // the shop has it off (shop's lib/tax-view-shared.ts). The figures above stay
+  // on the side the page opens on; a price that follows the switch prints both
+  // sides through shop's TaxViewMoney at this rate. Optional for the same reason
+  // as `priceSuffix`.
+  taxView?: ProductTaxView | null
   // Whether the person this payload was built for may be shown stock figures -
   // shop's canSeeStockLevels. False for every shopper, in which case each
   // variant's `stockCount` above is withheld (null) rather than merely unused,

@@ -32,6 +32,8 @@ import type {
   ShopDetailSupplierValueSlotProps,
 } from '@/modules/shop/lib/detail-slot'
 import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
+import { TaxViewMoney, TaxViewNote } from '@/modules/shop/components/public/TaxViewText'
+import { TaxViewToggle } from '@/modules/shop/components/public/TaxViewToggle'
 import { AddonControl, AdminReturnsNote, AdminSkuNote, AdminStockNote, FitLabel, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: PackedVariationBootstrap | null }
@@ -355,7 +357,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
 }
 
 // ---- Price ---------------------------------------------------------------
-export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePct, currencySymbol, classNames, priceSuffix, initial }: Seeded<ShopDetailPriceSlotProps>) {
+export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePct, currencySymbol, classNames, priceSuffix, taxView, initial }: Seeded<ShopDetailPriceSlotProps>) {
   const sel = useVariationSelection(slug, initial)
   const base = Number(basePrice)
   // Shop's own price until the selection resolves, so the figure never blanks.
@@ -373,21 +375,28 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
   // Shop's wording until the payload lands, the payload's after - they are the
   // same string, so the note never flickers or arrives late.
   const suffix = (sel.loaded && sel.payload ? sel.priceSuffix : priceSuffix) ?? ''
+  // The shopper's VAT switch, on the same terms as the wording: shop's until the
+  // payload lands, the payload's after, and they are the same switch.
+  const view = (sel.loaded && sel.payload ? sel.taxView : taxView) ?? null
+  const figure = (amount: number) => <TaxViewMoney amount={amount} view={view} format={(n) => money(n, symbol)} />
 
   return (
     <div className={classNames.block}>
-      <span className={classNames.now}>{money(live, symbol)}</span>
-      {atBase && compareAtPrice && <span className={classNames.was}>{money(Number(compareAtPrice), symbol)}</span>}
+      <span className={classNames.now}>{figure(live)}</span>
+      {/* The tax wording belongs beside the figure charged, with the shopper's
+          switch straight after it. */}
+      <TaxViewNote view={view} suffix={suffix} className="spd-price-taxnote" />
+      <TaxViewToggle view={view} />
+      {atBase && compareAtPrice && <span className={classNames.was}>{figure(Number(compareAtPrice))}</span>}
       {atBase && savePct != null && savePct > 0 && <span className={classNames.save}>Save {savePct}%</span>}
-      {!atBase && variantWas != null && <span className={classNames.was}>{money(variantWas, symbol)}</span>}
+      {!atBase && variantWas != null && <span className={classNames.was}>{figure(variantWas)}</span>}
       {!atBase && variantSavePct != null && variantSavePct > 0 && <span className={classNames.save}>Save {variantSavePct}%</span>}
       {/* The RRP the chosen combination carries (the parent's while nothing is
           settled), on the same terms an ordinary product's is shown: only while
           it sits above what is being charged. The class is shop's own, and shop
           emits its CSS before handing this part the job, so the line reads the
           same as it does on a product without options. */}
-      {sel.retailPrice != null && <span className="spd-price-rrp">RRP {money(sel.retailPrice, symbol)}</span>}
-      {suffix && <span className="spd-price-taxnote">{suffix}</span>}
+      {sel.retailPrice != null && <span className="spd-price-rrp">RRP {figure(sel.retailPrice)}</span>}
       {/* The way back out of a chosen combination belongs with the price it moved,
           not buried under the last option. Shop's price block is a wrapping flex
           row, so on a narrow screen this drops to its own line rather than
@@ -503,6 +512,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
             <AddonControl
               key={addon.id} addon={addon} value={sel.addonValues[addon.id]}
               onChange={(v) => sel.setAddon(addon.id, v)} currency={sel.currencySymbol} slug={slug}
+              taxView={sel.taxView}
             />
           ))}
         </div>

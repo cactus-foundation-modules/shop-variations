@@ -548,6 +548,9 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
     // payload arrives converted (see getVariantSelectorPayload), so nothing here
     // does tax arithmetic.
     priceSuffix: payload?.priceSuffix ?? '',
+    // The shopper's with/without VAT switch, or null where the shop has it off.
+    // A price printed through shop's TaxViewMoney with this follows the switch.
+    taxView: payload?.taxView ?? null,
     setOption: (optionId: string, valueId: string) => slug && setOptionValue(slug, optionId, valueId),
     resetOptions: () => slug && resetOptionValues(slug),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),
