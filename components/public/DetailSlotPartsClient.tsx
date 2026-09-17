@@ -34,7 +34,7 @@ import type {
 import type { PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import { TaxViewMoney, TaxViewNote } from '@/modules/shop/components/public/TaxViewText'
 import { TaxViewToggle } from '@/modules/shop/components/public/TaxViewToggle'
-import { AddonControl, AdminReturnsNote, AdminSkuNote, AdminStockNote, FitLabel, OptionControl, ResetOptionsLink, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
+import { AddonControl, AdminReturnsNote, AdminSkuNote, AdminStockNote, FitLabel, OptionControl, SelectionSummary, YourChoicePill, missingOptionsSentence } from '@/modules/shop-variations/components/public/VariantParts'
 
 type Seeded<P> = P & { initial: PackedVariationBootstrap | null }
 
@@ -397,11 +397,9 @@ export function VariantSlotPriceClient({ slug, basePrice, compareAtPrice, savePc
           emits its CSS before handing this part the job, so the line reads the
           same as it does on a product without options. */}
       {sel.retailPrice != null && <span className="spd-price-rrp">RRP {figure(sel.retailPrice)}</span>}
-      {/* The way back out of a chosen combination belongs with the price it moved,
-          not buried under the last option. Shop's price block is a wrapping flex
-          row, so on a narrow screen this drops to its own line rather than
-          squeezing the figure. */}
-      <ResetOptionsLink sel={sel} />
+      {/* Reset options used to end this row, and pushed the figures onto a
+          second line once the VAT switch joined them. It lives with the "Ready
+          to add" read-back above the buy button now - see SelectionSummary. */}
     </div>
   )
 }

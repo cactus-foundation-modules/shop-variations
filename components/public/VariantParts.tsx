@@ -451,28 +451,45 @@ function ChosenTick() {
 // implied by which pills happen to be lit. Only shows once the configuration is
 // complete: a half-answered list would be a running commentary, and the pills
 // already say that better than a sentence can.
+//
+// It is also where Reset options lives. Undoing the choices belongs beside the
+// sentence that lists them, and at the far end of a box that is already there it
+// costs no row of its own - beside the price it pushed the figures onto a second
+// line. A long list of choices wraps it under the words, still right-aligned.
+// Before every option is answered there is no box yet, but a shopper who has
+// picked something is already owed the way back: the link then stands alone at
+// the right, straight above the (locked) button, where the box will appear.
 export function SelectionSummary({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
-  if (!sel.hasOptions || !sel.allOptionsChosen) return null
-  if (sel.chosenSummary.length === 0) return null
+  if (!sel.hasOptions || !sel.anyOptionChosen) return null
+  if (!sel.allOptionsChosen || sel.chosenSummary.length === 0) {
+    return (
+      <div style={{ display: 'flex', marginTop: '10px' }}>
+        <ResetOptionsLink sel={sel} />
+      </div>
+    )
+  }
   return (
     <div
-      // role="status" so a screen reader hears the configuration settle as the
-      // last option is picked, which is the moment the button unlocks.
-      role="status"
       style={{
-        display: 'flex', alignItems: 'center', gap: '0.5rem',
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem 0.75rem',
         marginTop: '18px', padding: '0.625rem 0.875rem',
         borderRadius: 10, border: '1px solid var(--color-success-border)',
         background: 'var(--color-success-bg)', color: 'var(--color-success)',
         fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.35,
       }}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: 'none' }}>
-        <path d="M20 6L9 17l-5-5" />
-      </svg>
-      <span>
-        Ready to add: {sel.chosenSummary.map((c) => c.valueLabel).join(' · ')}
+      {/* role="status" so a screen reader hears the configuration settle as the
+          last option is picked, which is the moment the button unlocks. On the
+          words alone, so the link is not read out as part of the announcement. */}
+      <span role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 auto', minWidth: 0 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: 'none' }}>
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+        <span>
+          Ready to add: {sel.chosenSummary.map((c) => c.valueLabel).join(' · ')}
+        </span>
       </span>
+      <ResetOptionsLink sel={sel} tone="inherit" />
     </div>
   )
 }
@@ -988,23 +1005,28 @@ function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
   return <span className="svr-peek-pv" aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
 
-// Sits alongside the live price, in both hosts (see DetailSlotPartsClient), and
-// puts the shopper back to an unchosen page. Both hosts lay their price out as a
-// baseline-aligned flex row, so the gap that holds it clear of the figure is the
-// control's own - one control, one look, wherever the price happens to be.
+// Puts the shopper back to an unchosen page. Rendered by SelectionSummary just
+// above the buy button, in both hosts (see DetailSlotPartsClient) - one control,
+// one look, wherever the buy row happens to be.
 // A button rather than an anchor: it goes nowhere, and a keyboard or screen
 // reader shopper should be told as much. It reads as a link though, and the
 // site's Styles > Buttons hover fill would otherwise paint a tan pill around a
 // piece of quiet text sitting beside the price - so it carries
 // `data-cactus-unstyled` and draws itself, which is what that opt-out is for.
-export function ResetOptionsLink({ sel }: { sel: ReturnType<typeof useVariationSelection> }) {
+//
+// `tone` is the colour it borrows: 'inherit' inside the green "Ready to add" box,
+// where the box's own text colour is the one already checked against that fill in
+// both themes; 'muted' anywhere it sits on the page's own background.
+// `margin-left: auto` pushes it to the far end of whichever flex row holds it.
+export function ResetOptionsLink({ sel, tone = 'muted' }: { sel: ReturnType<typeof useVariationSelection>; tone?: 'muted' | 'inherit' }) {
   if (!sel.anyOptionChosen) return null
   return (
     <button
       type="button" onClick={() => sel.resetOptions()} data-cactus-unstyled=""
       style={{
-        marginLeft: '2.5rem', padding: 0, background: 'none', border: 'none',
-        color: 'var(--color-text-muted)', fontFamily: 'inherit', fontSize: '0.8125rem',
+        marginLeft: 'auto', padding: 0, background: 'none', border: 'none',
+        color: tone === 'inherit' ? 'inherit' : 'var(--color-text-muted)',
+        fontFamily: 'inherit', fontSize: '0.8125rem',
         fontWeight: 400, whiteSpace: 'nowrap',
         textDecoration: 'underline', cursor: 'pointer',
       }}
@@ -1557,7 +1579,8 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial, showCom
           not the same as nothing available, and saying so over the parent's
           price would turn every options product into a sold-out one. */}
       {sel.hasOptions && sel.allOptionsChosen && !sel.inStock && <span className="svr-price-oos">Out of stock</span>}
-      <ResetOptionsLink sel={sel} />
+      {/* Reset options used to end this row. It lives with the "Ready to add"
+          read-back above the buy button now - see SelectionSummary. */}
     </div>
   )
 }
