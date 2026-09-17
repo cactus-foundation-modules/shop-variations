@@ -17,6 +17,7 @@ import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import { slugify, ensureUniqueProductSlug } from '@/modules/shop/lib/slug'
 import { getProductById } from '@/modules/shop/lib/db/products'
+import { recordProductSlugRedirects } from '@/modules/shop/lib/db/slug-redirects'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap } from '@/modules/shop-variations/lib/db/variants'
 
@@ -123,6 +124,11 @@ export async function syncVariantChildIdentity(parentId: string): Promise<{ rena
     await prisma.$transaction(async (tx) => { await parkOnPlaceholders(tx, changed) })
     await repairCollisions(changed)
   }
+
+  await recordProductSlugRedirects(changed.map((p) => {
+    const old = current.get(p.childId)?.slug
+    return { from: old ?? '', to: p.slug }
+  }).filter((p) => p.from && p.from !== p.to))
 
   return { renamed, reslugged }
 }
