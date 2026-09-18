@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
 import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
-import { optionParamEntries } from '@/modules/shop-variations/lib/url-selection'
+import { optionParamEntries, selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
@@ -83,6 +83,37 @@ function optionValuesFromValueIds(payload: VariantSelectorPayload, valueIds: str
   return selection
 }
 
+function searchParamsFromLocation(): Record<string, string | string[] | undefined> {
+  if (isServer) return {}
+  try {
+    const out: Record<string, string> = {}
+    new URL(window.location.href).searchParams.forEach((value, key) => {
+      out[key] = value
+    })
+    return out
+  } catch {
+    return {}
+  }
+}
+
+// The server resolves a shared link's picks into bootstrap.preselectOptionValueIds
+// while the page renders. A client island that fetched the payload first can win
+// the race and leave the store unchosen, which strands the delivery picker (and
+// anything else listening for a settled variation) on the listing rather than the
+// combination in the address bar. Apply bootstrap preselect or read the URL here
+// whenever the store is still empty and the payload is in hand.
+function applyOpeningSelection(entry: Entry, bootstrap?: VariationBootstrap): void {
+  if (Object.keys(entry.optionValues).length > 0 || !entry.payload) return
+  const known = new Set(entry.payload.options.flatMap((o) => o.values.map((v) => v.id)))
+  const fromBootstrap = bootstrap?.preselectOptionValueIds?.filter((id) => known.has(id))
+  const ids =
+    fromBootstrap && fromBootstrap.length > 0
+      ? fromBootstrap
+      : selectionValueIdsFromParams(entry.payload, searchParamsFromLocation())
+  if (ids.length === 0) return
+  entry.optionValues = optionValuesFromValueIds(entry.payload, ids)
+}
+
 // An entry that already holds everything the server resolved: no fetch to do and
 // no empty first render. The options normally open unchosen (see selection-logic),
 // so the controls arrive in the HTML with nothing picked in them - unless the
@@ -128,6 +159,7 @@ async function ensureLoaded(entry: Entry): Promise<void> {
   } finally {
     entry.fetching = false
     entry.loaded = true
+    applyOpeningSelection(entry)
     notify(entry)
   }
 }
@@ -145,9 +177,20 @@ async function ensureLoaded(entry: Entry): Promise<void> {
 // island on the page hands its copy over, and all but the first find the slug
 // already seeded and never pay for the unpacking at all.
 function seedVariationSelection(slug: string, packed: PackedVariationBootstrap): void {
-  const existing = store.get(slug)
-  if (existing && (existing.loaded || existing.fetching)) return
   const bootstrap = unpackVariationBootstrap(packed)
+  const existing = store.get(slug)
+  if (existing && (existing.loaded || existing.fetching)) {
+    if (!existing.payload) {
+      existing.payload = bootstrap.payload
+      existing.currencySymbol = bootstrap.currencySymbol
+      existing.loaded = true
+      existing.seeded = true
+      existing.fetching = false
+    }
+    applyOpeningSelection(existing, bootstrap)
+    if (Object.keys(existing.optionValues).length > 0) notify(existing)
+    return
+  }
   const entry = seededEntry(slug, bootstrap)
   // Carry over anything an unseeded island already collected for this slug.
   if (existing) {
