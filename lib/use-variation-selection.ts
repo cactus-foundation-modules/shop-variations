@@ -49,6 +49,10 @@ type Entry = {
   // provider records the slug on the way past). The URL sync below uses it to
   // tell "this IS the product's page" from a block rendered somewhere else.
   seeded: boolean
+  // Set once the opening picks (a shared link's, or the shopper's own first
+  // click or reset) are in. After that nothing may re-apply the link's picks,
+  // or a reset would be undone on the very next render.
+  openingSettled: boolean
   subs: Set<() => void>
 }
 
@@ -66,7 +70,7 @@ let currencyFetched = false
 const isServer = typeof window === 'undefined'
 
 function newEntry(slug: string): Entry {
-  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, seeded: false, subs: new Set() }
+  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, seeded: false, openingSettled: false, subs: new Set() }
 }
 
 // Turn a flat list of option-value ids (a deep-linked variant's combination)
@@ -102,16 +106,23 @@ function searchParamsFromLocation(): Record<string, string | string[] | undefine
 // anything else listening for a settled variation) on the listing rather than the
 // combination in the address bar. Apply bootstrap preselect or read the URL here
 // whenever the store is still empty and the payload is in hand.
-function applyOpeningSelection(entry: Entry, bootstrap?: VariationBootstrap): void {
-  if (Object.keys(entry.optionValues).length > 0 || !entry.payload) return
+// Returns whether it changed anything, so a caller only notifies on a real change.
+function applyOpeningSelection(entry: Entry, bootstrap?: VariationBootstrap): boolean {
+  if (entry.openingSettled || !entry.payload) return false
+  if (Object.keys(entry.optionValues).length > 0) {
+    entry.openingSettled = true
+    return false
+  }
   const known = new Set(entry.payload.options.flatMap((o) => o.values.map((v) => v.id)))
   const fromBootstrap = bootstrap?.preselectOptionValueIds?.filter((id) => known.has(id))
   const ids =
     fromBootstrap && fromBootstrap.length > 0
       ? fromBootstrap
       : selectionValueIdsFromParams(entry.payload, searchParamsFromLocation())
-  if (ids.length === 0) return
+  if (ids.length === 0) return false
   entry.optionValues = optionValuesFromValueIds(entry.payload, ids)
+  entry.openingSettled = true
+  return true
 }
 
 // An entry that already holds everything the server resolved: no fetch to do and
@@ -127,6 +138,7 @@ function seededEntry(slug: string, bootstrap: VariationBootstrap): Entry {
   entry.seeded = true
   if (bootstrap.preselectOptionValueIds && bootstrap.preselectOptionValueIds.length > 0) {
     entry.optionValues = optionValuesFromValueIds(bootstrap.payload, bootstrap.preselectOptionValueIds)
+    entry.openingSettled = true
   }
   return entry
 }
@@ -180,15 +192,20 @@ function seedVariationSelection(slug: string, packed: PackedVariationBootstrap):
   const bootstrap = unpackVariationBootstrap(packed)
   const existing = store.get(slug)
   if (existing && (existing.loaded || existing.fetching)) {
+    let changed = false
     if (!existing.payload) {
       existing.payload = bootstrap.payload
       existing.currencySymbol = bootstrap.currencySymbol
       existing.loaded = true
       existing.seeded = true
       existing.fetching = false
+      changed = true
     }
-    applyOpeningSelection(existing, bootstrap)
-    if (Object.keys(existing.optionValues).length > 0) notify(existing)
+    if (applyOpeningSelection(existing, bootstrap)) changed = true
+    // This runs during render on every island, every render: notifying here
+    // unconditionally re-renders every island, which seeds again, which notifies
+    // again - an endless loop. Notify only on a real change, and after render.
+    if (changed) queueMicrotask(() => notify(existing))
     return
   }
   const entry = seededEntry(slug, bootstrap)
@@ -255,6 +272,7 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
   // the stranded pick it is standing in for, or the shopper would lose sight of
   // the choice that no longer fits.
   entry.optionValues = { ...entry.optionValues, [optionId]: valueId }
+  entry.openingSettled = true
   notify(entry)
   syncSelectionToUrl(entry)
 }
@@ -267,6 +285,7 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
 export function resetOptionValues(slug: string): void {
   const entry = getEntry(slug)
   entry.optionValues = {}
+  entry.openingSettled = true
   entry.resetEpoch += 1
   notify(entry)
   syncSelectionToUrl(entry)
