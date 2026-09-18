@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash, randomUUID } from 'crypto'
 import { getActiveMediaProvider, isMediaProviderConfigured } from '@/lib/config/env'
-import { uploadMedia } from '@/lib/media/upload'
-import { checkInMemoryRateLimit, getClientIpFromRequest } from '@/modules/shop/lib/rate-limit'
+import { uploadMedia, validateUpload } from '@/lib/media/upload'
+import { checkInMemoryRateLimit } from '@/modules/shop/lib/rate-limit'
+import { getClientIp } from '@/lib/auth/rate-limit'
 import { getAddonById } from '@/modules/shop-variations/lib/db/addons'
 import { getSettings } from '@/modules/shop-variations/lib/db/settings'
 import { createUpload } from '@/modules/shop-variations/lib/db/uploads'
@@ -18,8 +19,30 @@ const EXT_BY_MIME: Record<string, string[]> = {
   'image/svg+xml': ['svg'], 'application/pdf': ['pdf'],
 }
 
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'])
+
+// The declared type and extension are both the uploader's say-so. Anyone can
+// post here, so the bytes are checked too, the same way the media library
+// checks its own uploads: images are decoded (a PNG has to actually be a PNG)
+// and SVGs are stripped of script before they are stored - an SVG opened
+// directly from the bucket runs whatever script it carries. A PDF must at
+// least start like one. Other types are only here because the owner listed
+// them for this field; there is no universal check for those.
+async function checkContent(buffer: Buffer, mimeType: string): Promise<{ ok: true; buffer: Buffer } | { ok: false; reason: string }> {
+  if (IMAGE_TYPES.has(mimeType)) {
+    // Size is this field's own policy (maxFileMb), already enforced by the
+    // caller - only the content check is wanted here, not the library's cap.
+    const result = await validateUpload(mimeType, 0, buffer)
+    return result.valid ? { ok: true, buffer: result.buffer } : { ok: false, reason: 'That file could not be read as the type it claims to be.' }
+  }
+  if (mimeType === 'application/pdf' && buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return { ok: false, reason: 'That file could not be read as a PDF.' }
+  }
+  return { ok: true, buffer }
+}
+
 export async function POST(request: NextRequest) {
-  const ip = getClientIpFromRequest(request)
+  const ip = await getClientIp()
   if (!checkInMemoryRateLimit(`svr-upload:${ip}`, 20, 15 * 60 * 1000)) {
     return NextResponse.json({ error: 'Too many uploads, please try again shortly.' }, { status: 429 })
   }
@@ -56,8 +79,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `File is too large (max ${maxMb} MB).` }, { status: 400 })
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const result = await uploadMedia(buffer, declaredType || 'application/octet-stream', provider, file.name, 'shop/personalisation')
+  const raw = Buffer.from(await file.arrayBuffer())
+  const checked = await checkContent(raw, declaredType)
+  if (!checked.ok) return NextResponse.json({ error: checked.reason }, { status: 400 })
+  const result = await uploadMedia(checked.buffer, declaredType || 'application/octet-stream', provider, file.name, 'shop/personalisation')
 
   const token = randomUUID()
   await createUpload({
