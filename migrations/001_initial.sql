@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS "svr_variants" (
     -- where a newly promoted one starts. Arranged from the product's Images tab;
     -- see 016.
     "gallery_position" INTEGER,
+    -- Which of a promoted variation's photographs go up front, by URL. NULL is
+    -- "the first photo". The chosen ones travel as one block at
+    -- gallery_position. See 018.
+    "gallery_image_urls" TEXT[],
     "position" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_variants_pkey" PRIMARY KEY ("id"),

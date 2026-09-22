@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { updateProduct, setProductMedia, deleteProduct } from '@/modules/shop/lib/db/products'
+import { updateProduct, setProductMedia, deleteProduct, getProductMedia } from '@/modules/shop/lib/db/products'
 import { reorganiseProductMedia } from '@/modules/shop/lib/media/product-media'
 import { VARIATIONS_FOLDER } from '@/modules/shop-variations/lib/media-folder'
-import { getVariantById, setVariantEnabled, setVariantShowImageInGallery, setVariantShowModelInGallery } from '@/modules/shop-variations/lib/db/variants'
+import { getVariantById, setVariantEnabled, setVariantShowImageInGallery, setVariantShowModelInGallery, setVariantGalleryImageUrls } from '@/modules/shop-variations/lib/db/variants'
 
 const Body = z.object({
   price: z.number().nonnegative().optional(),
@@ -45,6 +45,10 @@ const Body = z.object({
   // Every media URL for this variant, in the order they should appear, or an
   // empty array to clear them. The first is the variant's primary image.
   imageUrls: z.array(z.string().url()).optional(),
+  // Which of those go up front while "Image up front" is on, by URL. Empty is
+  // "the first photo". Anything not among the variant's images once this save
+  // is done is dropped rather than stored.
+  galleryImageUrls: z.array(z.string().url()).optional(),
 })
 
 // Per-variant edit. Scalar fields live on the hidden child product and go
@@ -113,6 +117,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (data.enabled !== undefined) await setVariantEnabled(id, data.enabled)
   if (data.showImageInGallery !== undefined) await setVariantShowImageInGallery(id, data.showImageInGallery)
   if (data.showModelInGallery !== undefined) await setVariantShowModelInGallery(id, data.showModelInGallery)
+  // Checked against the images the variant carries AFTER any imageUrls change
+  // above, so a photo removed in the same save cannot linger as a pick. Also
+  // re-checked when only the images changed, for the same reason.
+  if (data.galleryImageUrls !== undefined || data.imageUrls !== undefined) {
+    const current = (await getProductMedia(variant.childProductId)).filter((m) => m.type === 'IMAGE').map((m) => m.url)
+    const wanted = data.galleryImageUrls ?? variant.galleryImageUrls ?? []
+    await setVariantGalleryImageUrls(id, wanted.filter((url, i, arr) => current.includes(url) && arr.indexOf(url) === i))
+  }
 
   return NextResponse.json({ ok: true })
 }

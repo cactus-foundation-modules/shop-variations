@@ -49,3 +49,42 @@ export function mergeGalleryItems<T>(own: T[], promoted: Array<GalleryPromoted<T
   while (next < own.length) merged.push(own[next++]!)
   return merged
 }
+
+/**
+ * The same merge where each promoted variation brings a BLOCK of pictures - the
+ * photos its owner picked to go up front (migration 018) - rather than one.
+ *
+ * A block takes one slot, exactly as its single tile does on the Images tab
+ * where the slot was chosen, and its pictures follow one another from there. So
+ * picking a second photo for the oak desk never nudges the walnut one along: the
+ * slots the owner dragged are counted in tiles, and so is this.
+ */
+export function mergeGalleryBlocks<T>(own: T[], promoted: Array<GalleryPromoted<T[]>>): T[] {
+  return mergeGalleryItems(own.map((item) => [item]), promoted.filter((entry) => entry.item.length > 0)).flat()
+}
+
+/**
+ * Blocks turned into single pictures with slots of their own, for handing to a
+ * merge that counts pictures rather than tiles - shop's, in the /details strip
+ * and the card builder, which this module does not own. Each block's slot is
+ * pushed along by the extra pictures of the blocks before it, so shop's merge
+ * lands everything exactly where mergeGalleryBlocks would. A block with no slot
+ * keeps none, and its pictures stay together at the end.
+ */
+export function blocksAsPositionedItems<T>(blocks: Array<GalleryPromoted<T[]>>): Array<GalleryPromoted<T>> {
+  const sorted = blocks
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.item.length > 0)
+    .sort((a, b) => (
+      (a.entry.galleryPosition ?? Number.POSITIVE_INFINITY) - (b.entry.galleryPosition ?? Number.POSITIVE_INFINITY)
+      || a.index - b.index
+    ))
+  const out: Array<GalleryPromoted<T>> = []
+  let extra = 0
+  for (const { entry } of sorted) {
+    const start = entry.galleryPosition
+    entry.item.forEach((item, i) => out.push({ galleryPosition: start == null ? null : start + extra + i, item }))
+    extra += entry.item.length - 1
+  }
+  return out
+}

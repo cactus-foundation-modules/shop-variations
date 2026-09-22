@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
 import { useAlert, usePrompt } from '@/modules/shop/components/admin/dialogs'
 import { uploadOneFile } from '@/lib/media/upload-client'
@@ -15,6 +15,7 @@ import {
   OptionSourcePicker, type OptionSourceSelection, type PickerProvider,
 } from '@/modules/shop-variations/components/admin/OptionSourcePicker'
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
+import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
 
 type OptionValue = { id: string; label: string; slug: string; swatch: string | null; swatchSmall?: string | null; position: number; sourceRef: string | null }
 type Option = {
@@ -33,6 +34,10 @@ type VariantRow = {
   enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; saleSku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
+  // Which of imageUrls go up front while "Image up front" is on. Empty means the
+  // first photo - see lib/up-front-images.ts, which reads it the same way here as
+  // the storefront does.
+  galleryImageUrls: string[]
   // The fewest of this combination sold in one go. Null follows the product's
   // own figure, which the grid shows as the placeholder.
   minOrderQuantity: number | null
@@ -67,7 +72,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'orderSizeDeduction' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'orderSizeDeduction' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls' | 'galleryImageUrls'
 >>
 
 /**
@@ -108,6 +113,12 @@ export type VariantColumn = {
   columnKey?: string
   Cell: ComponentType<{ productId: string; variantId: string; childProductId: string; label: string; columnKey?: string }>
 }
+
+// The 3D views module's model column, which the "3D up front" tick sits beside -
+// the two are read together, so they belong together. Matched by the provider id
+// in its manifest; where that module is not installed the tick simply follows
+// the other modules' columns.
+const MODEL_COLUMN_PREFIX = 'product-3d-views-variant:'
 
 const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch' }
 // One order for both the add-an-option box and the per-option picker, so the list
@@ -176,6 +187,10 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // the grid reloads (see the effect below), so a delete or rebuild can't leave
   // a phantom id selected.
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  // Rows opened up to show every photo on the variation. Purely a view: nothing
+  // here is saved, and it survives a reload of the grid so saving does not snap
+  // every open row shut under the owner.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // One chosen value id per option, which is exactly the choice a shopper makes
   // on the product page - narrowing a 240-row matrix to the eight rows in Oak is
   // the same question either way, so it is asked with the same controls. An
@@ -625,6 +640,30 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     const edited = edits[v.variantId]?.[key]
     return (edited === undefined ? v[key] : edited) as VariantRow[K]
   }, [edits])
+
+  const toggleExpanded = useCallback((variantId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(variantId)) next.delete(variantId)
+      else next.add(variantId)
+      return next
+    })
+  }, [])
+
+  // A new set of photos for a variant, with its up-front picks pruned to the
+  // photos it still has - a removed photo cannot stay picked. The server prunes
+  // too; this keeps what the grid shows honest before the save.
+  const setVariantImages = useCallback((v: VariantRow, urls: string[]) => {
+    const chosen = (edits[v.variantId]?.galleryImageUrls ?? v.galleryImageUrls).filter((u) => urls.includes(u))
+    editVariant(v.variantId, { imageUrls: urls, galleryImageUrls: chosen })
+  }, [edits, editVariant])
+
+  // Where the extension columns go, and where "3D up front" sits among them:
+  // straight after the 3D model column, else after the lot.
+  const modelColumnIndex = columns.findIndex((c) => c.id.startsWith(MODEL_COLUMN_PREFIX))
+  const modelUpFrontAfter = modelColumnIndex >= 0 ? modelColumnIndex + 1 : columns.length
+  const columnsBeforeModelTick = columns.slice(0, modelUpFrontAfter)
+  const columnsAfterModelTick = columns.slice(modelUpFrontAfter)
 
   // --- Suppliers -----------------------------------------------------------
   // The directory is the shop's, not this module's, so both the list and the
@@ -1089,7 +1128,19 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                       </span>
                     </th>
                     <th style={{ padding: '0.5rem' }}>Image</th>
-                    {columns.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
+                    {/* Each "up front" tick sits beside the thing it promotes -
+                        the photo one after Image, the 3D one after the model
+                        column - so the pair are read together. Two independent
+                        switches: a variation worth showing off for its photo is
+                        not always the one worth leading with in 3D. */}
+                    <th style={{ padding: '0.5rem' }} title="Show this variation's photos on the product page before any option is chosen - its first photo, unless you open the row (the arrow by its name) and pick others. They drop out again once the shopper has chosen a whole combination. Where they sit among the product's own pictures is arranged on the Images tab.">
+                      Image up front
+                    </th>
+                    {columnsBeforeModelTick.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
+                    <th style={{ padding: '0.5rem' }} title="Show this variation's 3D model on the product page before any option is chosen (needs the 3D views module, and a model attached to this row). It drops out again once the shopper has chosen a whole combination.">
+                      3D up front
+                    </th>
+                    {columnsAfterModelTick.map((c) => <th key={c.id} style={{ padding: '0.5rem' }}>{c.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>Price</th>
                     {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
@@ -1113,16 +1164,6 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     </th>
                     {weightBasedShippingEnabled && <th style={{ padding: '0.5rem' }}>Weight</th>}
                     <th style={{ padding: '0.5rem' }}>On sale</th>
-                    {/* Two independent switches: a variation worth showing off for
-                        its photo is not always the one worth leading with in 3D.
-                        The headings are short because the row of columns is
-                        already wider than a laptop; the titles carry the rule. */}
-                    <th style={{ padding: '0.5rem' }} title="Show this variation's first photo on the product page before any option is chosen. It drops out again as soon as the shopper picks something. Where it sits among the product's own pictures is arranged on the Images tab.">
-                      Image up front
-                    </th>
-                    <th style={{ padding: '0.5rem' }} title="Show this variation's 3D model on the product page before any option is chosen (needs the 3D views module, and a model attached to this row). It drops out again as soon as the shopper picks something.">
-                      3D up front
-                    </th>
                     <th style={{ padding: '0.5rem' }} aria-label="Delete" />
                   </tr>
                 </thead>
@@ -1130,8 +1171,20 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   {visibleVariants.map((v) => {
                     const enabled = valueOf(v, 'enabled')
                     const changed = edits[v.variantId] != null
+                    const isOpen = expanded.has(v.variantId)
+                    const imageUrls = valueOf(v, 'imageUrls')
+                    const showImage = valueOf(v, 'showImageInGallery')
+                    // What actually goes up front right now, the same rule the
+                    // storefront reads - so a tick in the open row is a promise.
+                    const upFront = showImage ? upFrontImageIndexes(imageUrls, valueOf(v, 'galleryImageUrls')).map((i) => imageUrls[i]!) : []
+                    const renderColumn = ({ id, Cell, columnKey }: VariantColumn) => (
+                      <td key={id} style={{ padding: '0.5rem' }}>
+                        <Cell productId={productId} variantId={v.variantId} childProductId={v.childProductId} label={v.label} columnKey={columnKey} />
+                      </td>
+                    )
                     return (
-                      <tr key={v.variantId} style={{ borderBottom: '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
+                      <Fragment key={v.variantId}>
+                      <tr style={{ borderBottom: isOpen ? 'none' : '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
                         <td style={{ ...stickyCol, background: changed ? 'var(--color-warning-subtle)' : 'var(--color-surface)' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                             <input
@@ -1141,17 +1194,46 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                               disabled={busy}
                               onChange={() => toggleVariant(v.variantId)}
                             />
-                            {v.label || '—'}
+                            {/* The name opens the row as well as the arrow: it is
+                                the biggest target on the line, and the one an
+                                owner reaches for when they want "the oak one". */}
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(v.variantId)}
+                              aria-expanded={isOpen}
+                              aria-controls={`svr-photos-${v.variantId}`}
+                              title={isOpen ? 'Hide this variation\'s photos' : 'Show all this variation\'s photos and pick which go up front'}
+                              style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'inline-flex', alignItems: 'flex-start', gap: '0.375rem' }}
+                            >
+                              <span aria-hidden style={{ display: 'inline-block', width: '0.75rem', color: 'var(--color-text-secondary)', transition: 'transform 120ms', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                              <span>{v.label || '—'}</span>
+                            </button>
                           </span>
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <ImageCell urls={valueOf(v, 'imageUrls')} onSet={(urls) => editVariant(v.variantId, { imageUrls: urls })} resolveUploadFolderId={resolveVariationUploadFolderId} resolveBrowseFolderId={resolveVariationBrowseFolderId} />
+                          <ImageCell urls={imageUrls} onSet={(urls) => setVariantImages(v, urls)} resolveUploadFolderId={resolveVariationUploadFolderId} resolveBrowseFolderId={resolveVariationBrowseFolderId} />
                         </td>
-                        {columns.map(({ id, Cell, columnKey }) => (
-                          <td key={id} style={{ padding: '0.5rem' }}>
-                            <Cell productId={productId} variantId={v.variantId} childProductId={v.childProductId} label={v.label} columnKey={columnKey} />
-                          </td>
-                        ))}
+                        <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Show ${v.label}'s photos on the product page before any option is chosen`}
+                            checked={showImage}
+                            onChange={(e) => editVariant(v.variantId, { showImageInGallery: e.target.checked })}
+                          />
+                          {upFront.length > 1 && (
+                            <span style={{ marginLeft: '0.25rem', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }} title={`${upFront.length} photos go up front`}>×{upFront.length}</span>
+                          )}
+                        </td>
+                        {columnsBeforeModelTick.map(renderColumn)}
+                        <td style={{ padding: '0.5rem' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Show ${v.label}'s 3D model on the product page before any option is chosen`}
+                            checked={valueOf(v, 'showModelInGallery')}
+                            onChange={(e) => editVariant(v.variantId, { showModelInGallery: e.target.checked })}
+                          />
+                        </td>
+                        {columnsAfterModelTick.map(renderColumn)}
                         <td style={{ padding: '0.5rem' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                             {currency}
@@ -1288,22 +1370,6 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             onChange={(e) => editVariant(v.variantId, { enabled: e.target.checked })}
                           />
                         </td>
-                        <td style={{ padding: '0.5rem' }}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Show ${v.label}'s photo on the product page before any option is chosen`}
-                            checked={valueOf(v, 'showImageInGallery')}
-                            onChange={(e) => editVariant(v.variantId, { showImageInGallery: e.target.checked })}
-                          />
-                        </td>
-                        <td style={{ padding: '0.5rem' }}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Show ${v.label}'s 3D model on the product page before any option is chosen`}
-                            checked={valueOf(v, 'showModelInGallery')}
-                            onChange={(e) => editVariant(v.variantId, { showModelInGallery: e.target.checked })}
-                          />
-                        </td>
                         <td style={{ padding: '0.5rem', textAlign: 'right' }}>
                           <button
                             type="button" className="btn btn-secondary btn-sm"
@@ -1314,6 +1380,26 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                           </button>
                         </td>
                       </tr>
+                      {isOpen && (
+                        <tr id={`svr-photos-${v.variantId}`} style={{ borderBottom: '1px solid var(--color-border)', opacity: enabled ? 1 : 0.55, background: changed ? 'var(--color-warning-subtle)' : undefined }}>
+                          <td colSpan={99} style={{ padding: 0 }}>
+                            <VariantPhotosPanel
+                              label={v.label}
+                              urls={imageUrls}
+                              upFront={upFront}
+                              onSetUpFront={(picked) => editVariant(v.variantId, picked.length > 0
+                                // Picking a photo IS asking for it up front, so the
+                                // row's tick comes on with it; unpicking the last
+                                // one takes the tick off rather than silently
+                                // falling back to the first photo.
+                                ? { showImageInGallery: true, galleryImageUrls: picked }
+                                : { showImageInGallery: false, galleryImageUrls: [] })}
+                              onSetUrls={(urls) => setVariantImages(v, urls)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     )
                   })}
                   {visibleVariants.length === 0 && (
@@ -2062,6 +2148,103 @@ function isFileDrag(e: DragEvent): boolean {
 // created. The cell has one row's worth of space, so it shows the first image
 // with a "+N" badge for the rest rather than trying to draw them all; picking
 // again adds to the set, and the × clears the lot.
+/**
+ * A variation's row opened up: every photo on it, large enough to tell apart,
+ * with a tick against each for whether it goes up front on the product page.
+ *
+ * The ticks show what the storefront will actually do, not what is stored - so a
+ * promoted variation nobody has picked for shows its first photo ticked, because
+ * that is the one going up front. Picking and unpicking is held as an ordinary
+ * edit and written by the product editor's Save button with the rest of the row.
+ *
+ * Also the one place a single photo can come off a variation, or be made its
+ * main one, without clearing the lot from the Image cell and starting again.
+ */
+function VariantPhotosPanel({ label, urls, upFront, onSetUpFront, onSetUrls }: {
+  label: string
+  urls: string[]
+  upFront: string[]
+  onSetUpFront: (picked: string[]) => void
+  onSetUrls: (urls: string[]) => void
+}) {
+  const tile: CSSProperties = { width: 100, height: 100, objectFit: 'cover', borderRadius: 'var(--radius-md)', display: 'block' }
+
+  function toggle(url: string) {
+    const next = upFront.includes(url) ? upFront.filter((u) => u !== url) : [...upFront, url]
+    // Kept in the variation's own order, which is the order they go up front in.
+    onSetUpFront(urls.filter((u) => next.includes(u)))
+  }
+
+  return (
+    // Sticky, so an owner scrolled across to the Stock column still sees the
+    // photos they just opened rather than a row that looks empty.
+    <div style={{ position: 'sticky', left: 0, maxWidth: '52rem', padding: '0.75rem 0.75rem 1rem 2.25rem' }}>
+      {urls.length === 0 ? (
+        <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+          No photos on {label || 'this variation'} yet. Add some from its Image cell, then come back to pick which go up front.
+        </p>
+      ) : (
+        <>
+          <p style={{ margin: '0 0 0.625rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+            {urls.length === 1 ? 'The one photo' : `All ${urls.length} photos`} on {label || 'this variation'}. Tick the ones to show on the product page before a choice is made - they go up front together, in this order. The first is the variation&apos;s main photo.
+          </p>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {urls.map((url, i) => {
+              const picked = upFront.includes(url)
+              return (
+                <li key={url} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', width: 104 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(url)}
+                    aria-pressed={picked}
+                    aria-label={`${picked ? 'Take' : 'Put'} photo ${i + 1} of ${label} ${picked ? 'off' : 'up'} front`}
+                    style={{
+                      padding: 0, background: 'none', cursor: 'pointer', position: 'relative',
+                      borderRadius: 'var(--radius-md)',
+                      border: picked ? '2px solid var(--color-primary)' : '2px solid var(--color-border)',
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- media library URLs are arbitrary remote hosts, not a configured next/image loader */}
+                    <img src={url} alt="" style={tile} />
+                    {i === 0 && (
+                      <span style={{ position: 'absolute', left: 4, top: 4, background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: 999, padding: '0 0.375rem', fontSize: '0.625rem', lineHeight: '16px', fontWeight: 600 }}>Main</span>
+                    )}
+                  </button>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem' }}>
+                    <input type="checkbox" checked={picked} onChange={() => toggle(url)} />
+                    Up front
+                  </label>
+                  <span style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                    {i > 0 && (
+                      <button
+                        type="button" className="btn btn-secondary btn-sm"
+                        style={{ padding: '0 0.375rem', fontSize: '0.6875rem' }}
+                        title="Make this the variation's main photo"
+                        onClick={() => onSetUrls([url, ...urls.filter((u) => u !== url)])}
+                      >
+                        Make main
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="spe-icon-btn spe-icon-btn-danger"
+                      aria-label={`Remove photo ${i + 1} from ${label}`}
+                      title="Remove this photo from the variation. It stays in the media library."
+                      onClick={() => onSetUrls(urls.filter((u) => u !== url))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ImageCell({ urls, onSet, resolveUploadFolderId, resolveBrowseFolderId }: { urls: string[]; onSet: (urls: string[]) => void; resolveUploadFolderId: () => Promise<string | null>; resolveBrowseFolderId: () => Promise<string | null> }) {
   const [picking, setPicking] = useState(false)
   const [dragOver, setDragOver] = useState(false)

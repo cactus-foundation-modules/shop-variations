@@ -1,0 +1,23 @@
+-- Which of a promoted variation's photographs go on the parent's gallery.
+--
+-- "Image up front" (011) has always meant the variation's FIRST photo and
+-- nothing else. That suits a range with one shot per finish, but a variation
+-- carrying a studio shot, a detail and a lifestyle photo has no way to lead with
+-- the lifestyle one, or with all three, without reshuffling its own pictures.
+--
+-- So the owner now picks, from the variation's expanded row on the Variations
+-- tab, exactly which of its photographs go up front. Stored by URL rather than
+-- by index so that reordering or removing one of the variation's pictures cannot
+-- quietly promote a different one; a URL no longer on the variation is ignored
+-- where it is read.
+--
+-- NULL (or an empty list, or a list none of whose URLs survive) means "the first
+-- photo", which is what every existing product already shows - so nothing
+-- changes until somebody picks. Meaningless while show_image_in_gallery is off,
+-- and kept rather than cleared then, so switching it back on returns the same
+-- choice. The chosen photos travel together as one block at gallery_position.
+--
+-- New numbered file rather than an edit to 001 alone: editing an applied
+-- migration only ever reaches fresh installs. 001 is kept in step.
+ALTER TABLE "svr_variants"
+    ADD COLUMN IF NOT EXISTS "gallery_image_urls" TEXT[];

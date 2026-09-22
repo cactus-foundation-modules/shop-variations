@@ -2,7 +2,8 @@
 // a grid lets the shopper flick through its variations' pictures with the arrows,
 // not just the parent's own. One representative image per enabled variation (its
 // primary, or its first photo), appended after the product's own images by shop's
-// card builder. Variations ticked "Image up front" carry `promoted` and the slot the
+// card builder. Variations ticked "Image up front" bring the photos the owner picked
+// for them instead (their first unless chosen otherwise), carry `promoted` and the slot the
 // owner dragged them to in the product's Images grid, so they land AMONG the
 // product's own photographs on the tile exactly as they do in the gallery - drag one
 // to second place and it is the second picture on the tile too, which is the one the
@@ -24,6 +25,8 @@ import { getProductMediaForProducts } from '@/modules/shop/lib/db/products'
 import type { ShopCardMediaProvider, ShopCardMediaPayload } from '@/modules/shop/lib/card-media'
 import type { PartImage } from '@/modules/shop/components/puck/parts/part-context'
 import { getVariantsForProducts } from '@/modules/shop-variations/lib/db/variants'
+import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
+import { blocksAsPositionedItems, type GalleryPromoted } from '@/modules/shop-variations/lib/gallery-order'
 
 export const shopVariationsCardMedia: ShopCardMediaProvider = {
   async load(productIds) {
@@ -55,14 +58,17 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
       //
       // The rest of the range has no slot and goes behind the lot, which is what a
       // supplementary colour is.
-      const promotedImages: PartImage[] = []
+      const promotedBlocks: Array<GalleryPromoted<PartImage[]>> = []
       const plainImages: PartImage[] = []
       for (const v of variants) {
         if (!v.enabled) continue
-        // One picture per variation: its primary, else its first still image.
-        // Videos-by-URL cannot sit in the card's <img>, same filter shop uses.
-        const media = (mediaByChild.get(v.childProductId) ?? []).filter((m) => m.type !== 'VIDEO_URL')
-        const primary = media.find((m) => m.isPrimary) ?? media[0]
+        // One picture per plain variation: its primary, else its first still
+        // image. Videos-by-URL cannot sit in the card's <img>, same filter shop
+        // uses. Primary first, so "its first photo" is the same one here as on
+        // the product page when a promoted variation's pick falls back to it.
+        const stills = (mediaByChild.get(v.childProductId) ?? []).filter((m) => m.type !== 'VIDEO_URL')
+        const media = [...stills.filter((m) => m.isPrimary), ...stills.filter((m) => !m.isPrimary)]
+        const primary = media[0]
         if (!primary) continue
         // Alt is the media's own where set; empty otherwise - a supplementary
         // carousel image, with the product name already carried by the first, and
@@ -73,15 +79,23 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
         // pictures get in shop's card builder - a card that shrank the parent's
         // photographs and then pulled full-size variation ones through the arrows
         // would have saved nothing on the range that has the most pictures.
-        const image: PartImage = {
-          url: primary.thumbUrl ?? primary.url,
-          fullUrl: primary.url,
-          alt: primary.altText ?? '',
+        const toImage = (m: (typeof media)[number]): PartImage => ({
+          url: m.thumbUrl ?? m.url,
+          fullUrl: m.url,
+          alt: m.altText ?? '',
           sourceId: v.childProductId,
+        })
+        if (v.showImageInGallery) {
+          const picked = upFrontImageIndexes(media.map((m) => m.url), v.galleryImageUrls).map((i) => toImage(media[i]!))
+          promotedBlocks.push({ galleryPosition: v.galleryPosition, item: picked })
+        } else {
+          plainImages.push(toImage(primary))
         }
-        if (v.showImageInGallery) promotedImages.push({ ...image, promoted: true, position: v.galleryPosition })
-        else plainImages.push(image)
       }
+      // Shop's card builder counts pictures, not variations, so each promoted
+      // set is spread into slots that keep it together where it was dragged.
+      const promotedImages = blocksAsPositionedItems(promotedBlocks)
+        .map(({ galleryPosition, item }): PartImage => ({ ...item, promoted: true, position: galleryPosition }))
       const images = [...promotedImages, ...plainImages]
       if (images.length > 0) out.set(productId, { images })
     }

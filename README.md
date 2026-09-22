@@ -15,8 +15,9 @@ Adds product options to the Cactus shop:
   or uploaded from the shared media library, for the choices a colour can't
   describe (a wood grain, a fabric weave, a printed pattern). A combination can
   also be marked **Image up front** and, where the 3D module is installed,
-  **3D up front** - independent switches that put its first photograph and/or
-  its model on the product's gallery before the shopper has chosen anything,
+  **3D up front** - independent switches that put its photographs (its first,
+  unless the owner opens the row and picks others) and/or its model on the
+  product's gallery before the shopper has chosen anything,
   and narrow to what is still on offer as they pick. The product's own
   photographs normally lead that gallery; a tick box at the foot of the
   product's **Images** tab turns it round, so the promoted variations lead and

@@ -11,6 +11,7 @@ function mapVariant(r: Record<string, unknown>): SvrVariant {
     showImageInGallery: r.show_image_in_gallery as boolean,
     showModelInGallery: r.show_model_in_gallery as boolean,
     galleryPosition: (r.gallery_position as number | null) ?? null,
+    galleryImageUrls: (r.gallery_image_urls as string[] | null) ?? null,
     position: r.position as number,
   }
 }
@@ -275,6 +276,14 @@ export async function setVariantEnabled(id: string, enabled: boolean): Promise<v
 // from its own checkbox and neither implies the other.
 export async function setVariantShowImageInGallery(id: string, showImageInGallery: boolean): Promise<void> {
   await prisma.$executeRaw`UPDATE "svr_variants" SET "show_image_in_gallery" = ${showImageInGallery} WHERE "id" = ${id}`
+}
+
+// Which of the variation's photographs go up front, by URL (migration 018). An
+// empty list is stored as NULL - "the first photo" - so there is one way of
+// saying it rather than two.
+export async function setVariantGalleryImageUrls(id: string, urls: string[]): Promise<void> {
+  const value = urls.length > 0 ? urls : null
+  await prisma.$executeRaw`UPDATE "svr_variants" SET "gallery_image_urls" = ${value}::text[] WHERE "id" = ${id}`
 }
 
 export async function setVariantShowModelInGallery(id: string, showModelInGallery: boolean): Promise<void> {

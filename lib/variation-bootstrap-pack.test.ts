@@ -142,7 +142,7 @@ describe('packVariationBootstrap round trip', () => {
     const input = bootstrap([
       variant(0, { enabled: false }),
       variant(1, { inStock: false, tracksStock: false, stockCount: 0 }),
-      variant(2, { showImageInGallery: true, galleryPosition: 3, showModelInGallery: true }),
+      variant(2, { showImageInGallery: true, galleryPosition: 3, galleryImageIndexes: [1, 2], showModelInGallery: true }),
       variant(3, { compareAtPrice: 499, price: 399.5, minOrderQuantity: 4, supplier: 'Acme' }),
       variant(4, { sku: 'AIR-120-OAK', saleSku: 'CLR-9', returnable: false, returnsDiscretionary: true }),
       variant(5, { returnable: true, returnsDiscretionary: false }),

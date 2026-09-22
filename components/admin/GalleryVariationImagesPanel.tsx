@@ -10,6 +10,9 @@ type Promoted = {
   url: string
   altText: string
   position: number | null
+  // How many of its photos go up front. They travel together, so they are one
+  // tile here; the count says so. Optional for a response from before it existed.
+  photoCount?: number
 }
 
 /**
@@ -71,7 +74,7 @@ export function GalleryVariationImagesPanel({ productId }: { productId: string }
     url: p.url,
     altText: p.altText,
     badge: 'Variation',
-    caption: p.label,
+    caption: (p.photoCount ?? 1) > 1 ? `${p.label} (${p.photoCount} photos)` : p.label,
     removeLabel: `Take ${p.label || 'this variation'} off the gallery. Its picture stays on the variation.`,
     position: p.position,
   })), [live])

@@ -98,6 +98,10 @@ export type SvrVariant = {
   // product looked like before the Images tab could arrange them. Meaningless
   // while showImageInGallery is off. See migration 016 and lib/gallery-order.ts.
   galleryPosition: number | null
+  // Which of its photographs go up front, by URL. Null for "the first photo",
+  // which is every variation nobody has picked for. Read through
+  // lib/up-front-images.ts, never directly. See migration 018.
+  galleryImageUrls: string[] | null
   position: number
 }
 
@@ -243,6 +247,11 @@ export type VariantSelectorVariant = {
   // cached payload reads as, so a gallery built from one that predates this comes
   // out exactly as it used to.
   galleryPosition?: number | null
+  // Which of `imageUrls` go up front while it is promoted, as indexes into that
+  // list. Absent means "the first photo" - the usual answer, and what any
+  // payload from before the owner could pick reads as. Read it through
+  // upFrontIndexesFromPayload in lib/up-front-images.ts.
+  galleryImageIndexes?: number[]
   // This combination's own product code, and the code the supplier's clearance
   // stock is currently ordered under. Both are staff references, so both are
   // null in a shopper's payload rather than merely unrendered - see

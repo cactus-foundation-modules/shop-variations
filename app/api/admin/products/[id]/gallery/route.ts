@@ -5,9 +5,11 @@ import { Prisma } from '@prisma/client'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, setVariantGalleryPositions, setVariantShowImageInGallery } from '@/modules/shop-variations/lib/db/variants'
+import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
+import type { SvrVariant } from '@/modules/shop-variations/lib/types'
 
 // The variations promoted onto this product's gallery with "Image up front", as
-// the product editor's Images tab needs them: one picture each, the slot the
+// the product editor's Images tab needs them: one tile each, the slot the
 // owner dragged it to, and the description sitting on that picture. They are
 // drawn among the product's own photographs in the same grid, so this is a read
 // of the same gallery from the other end - see lib/gallery-order.ts.
@@ -15,6 +17,26 @@ import { getVariants, getVariantValueMap, setVariantGalleryPositions, setVariant
 // The description is the picture's own alt text on the variation's hidden child
 // product, not a copy kept here. Type one on the Images tab and it is the same
 // words the variation's photograph carries everywhere else it appears.
+//
+// A variation can go up front with several of its photos (picked on the
+// Variations tab - migration 018). They travel as one block, so it is still one
+// tile here: the block's first photo, with the count beside it.
+
+// The picture a promoted variation's tile stands for: the first of the photos
+// picked to go up front, found in the same primary-first order every other view
+// reads, plus how many go up front with it.
+function leadImages<Row extends { product_id: string; url: string }>(variants: SvrVariant[], rows: Row[]): Map<string, { lead: Row; count: number }> {
+  const byChild = new Map<string, Row[]>()
+  for (const r of rows) byChild.set(r.product_id, [...(byChild.get(r.product_id) ?? []), r])
+  const out = new Map<string, { lead: Row; count: number }>()
+  for (const v of variants) {
+    const own = byChild.get(v.childProductId) ?? []
+    const indexes = upFrontImageIndexes(own.map((r) => r.url), v.galleryImageUrls)
+    const lead = indexes[0] != null ? own[indexes[0]] : undefined
+    if (lead) out.set(v.id, { lead, count: indexes.length })
+  }
+  return out
+}
 
 type Promoted = {
   variantId: string
@@ -24,6 +46,8 @@ type Promoted = {
   altText: string
   /** Its index in the finished gallery, null for "after the product's own". */
   position: number | null
+  /** How many of its photos go up front, the tile's one included. */
+  photoCount: number
 }
 
 async function loadPromoted(productId: string): Promise<Promoted[]> {
@@ -40,31 +64,28 @@ async function loadPromoted(productId: string): Promise<Promoted[]> {
 
   // One query for the whole set, primary first within each child - the same
   // ordering everything else calls "its first picture", so the tile on the
-  // Images tab is the picture the shopper will actually see.
+  // Images tab is the picture the shopper will actually see first.
   const rows = await prisma.$queryRaw<{ product_id: string; url: string; alt_text: string | null }[]>`
     SELECT "product_id", "url", "alt_text"
     FROM "shp_product_media"
     WHERE "product_id" IN (${Prisma.join(variants.map((v) => v.childProductId))}) AND "type" = 'IMAGE'
     ORDER BY "product_id", "is_primary" DESC, "position" ASC
   `
-  const firstByChild = new Map<string, { url: string; altText: string }>()
-  for (const r of rows) {
-    if (firstByChild.has(r.product_id)) continue
-    firstByChild.set(r.product_id, { url: r.url, altText: r.alt_text ?? '' })
-  }
+  const leads = leadImages(variants, rows)
 
   // A variation promoted without a photograph of its own contributes no tile -
   // it may have been promoted for its 3D model, which is a separate switch.
   return variants.flatMap((v) => {
-    const image = firstByChild.get(v.childProductId)
-    if (!image) return []
+    const found = leads.get(v.id)
+    if (!found) return []
     const ids = (valueMap[v.id] ?? []).slice().sort((a, b) => (valueOptionOrder.get(a) ?? 0) - (valueOptionOrder.get(b) ?? 0))
     return [{
       variantId: v.id,
       label: ids.map((id) => labelByValueId.get(id)).filter(Boolean).join(' / '),
-      url: image.url,
-      altText: image.altText,
+      url: found.lead.url,
+      altText: found.lead.alt_text ?? '',
       position: v.galleryPosition,
+      photoCount: found.count,
     }]
   })
 }
@@ -116,24 +137,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   ])
 
   // The description belongs to the picture, so it is written where the picture
-  // lives: the variation's own first image on its hidden child product. Only the
-  // ones that actually changed are touched.
+  // lives: the image the tile stands for, on the variation's hidden child
+  // product. Only the ones that actually changed are touched.
   const childIds = images.map((i) => own.get(i.variantId)!.childProductId)
   if (childIds.length > 0) {
-    const rows = await prisma.$queryRaw<{ id: string; product_id: string; alt_text: string | null }[]>`
-      SELECT "id", "product_id", "alt_text"
+    const rows = await prisma.$queryRaw<{ id: string; product_id: string; url: string; alt_text: string | null }[]>`
+      SELECT "id", "product_id", "url", "alt_text"
       FROM "shp_product_media"
       WHERE "product_id" IN (${Prisma.join(childIds)}) AND "type" = 'IMAGE'
       ORDER BY "product_id", "is_primary" DESC, "position" ASC
     `
-    const firstByChild = new Map<string, { id: string; altText: string }>()
-    for (const r of rows) {
-      if (firstByChild.has(r.product_id)) continue
-      firstByChild.set(r.product_id, { id: r.id, altText: r.alt_text ?? '' })
-    }
+    const leads = leadImages(images.map((i) => own.get(i.variantId)!), rows)
     for (const image of images) {
-      const media = firstByChild.get(own.get(image.variantId)!.childProductId)
-      if (!media || media.altText === image.altText) continue
+      const media = leads.get(image.variantId)?.lead
+      if (!media || (media.alt_text ?? '') === image.altText) continue
       // Emptied means emptied: an image with no description stores none rather
       // than an empty string, which is the shape the rest of the shop reads.
       const altText = image.altText.trim() === '' ? null : image.altText

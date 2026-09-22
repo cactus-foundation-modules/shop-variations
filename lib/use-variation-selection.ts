@@ -22,7 +22,8 @@ import { addToCart } from '@/modules/shop/components/public/cart'
 import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
 import { collectPurchaseCompanions } from '@/modules/shop-variations/lib/purchase-companions'
-import { mergeGalleryItems } from '@/modules/shop-variations/lib/gallery-order'
+import { mergeGalleryBlocks } from '@/modules/shop-variations/lib/gallery-order'
+import { upFrontIndexesFromPayload } from '@/modules/shop-variations/lib/up-front-images'
 import { unpackVariationBootstrap, type PackedVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap-pack'
 import type { VariantSelectorPayload, VariationBootstrap } from '@/modules/shop-variations/lib/types'
 
@@ -432,17 +433,19 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // Reset options clears the picks, so `variant` goes null and the promoted media
   // comes back - which is what a reset should look like.
   //
-  // One picture each - their first - not their whole set. A promoted variation is
-  // a taster of what the range offers, and four angles of the oak desk would
-  // bury the product's own photographs on its own page.
+  // The photos the owner picked for each - their first unless they chose
+  // otherwise on the Variations tab - not their whole set. A promoted variation
+  // is a taster of what the range offers, and every angle of the oak desk would
+  // bury the product's own photographs on its own page unless someone meant it.
+  // Each variation's picks travel together as one block at its slot.
   const promoted = payload && !variant ? payload.variants.filter((v) => v.enabled) : []
   const featuredImages = promoted.flatMap((v) => {
     if (!v.showImageInGallery) return []
-    const url = v.imageUrls[0]
-    if (!url) return []
+    const indexes = upFrontIndexesFromPayload(v.imageUrls.length, v.galleryImageIndexes)
+    if (indexes.length === 0) return []
     return [{
       galleryPosition: v.galleryPosition ?? null,
-      item: { url, alt: v.imageAlts?.[0] || '', thumbUrl: v.imageThumbUrls?.[0] || undefined },
+      item: indexes.map((i) => ({ url: v.imageUrls[i]!, alt: v.imageAlts?.[i] || '', thumbUrl: v.imageThumbUrls?.[i] || undefined })),
     }]
   })
   // The gallery the shopper opens on: the product's own photographs with the
@@ -450,7 +453,7 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // Images tab. One list rather than two piles, because that is what it is - see
   // lib/gallery-order.ts, which the server-rendered views share so a strip drawn
   // without this hook comes out in the same order.
-  const galleryImages = mergeGalleryItems(
+  const galleryImages = mergeGalleryBlocks(
     payload?.baseImages.map((i) => ({ url: i.url, alt: i.alt, thumbUrl: i.thumbUrl })) ?? [],
     featuredImages,
   )

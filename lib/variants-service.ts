@@ -18,6 +18,7 @@ import { canSeeReturnsPolicy } from '@/modules/shop/lib/admin-returns'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
+import { payloadUpFrontIndexes } from '@/modules/shop-variations/lib/up-front-images'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -428,6 +429,12 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       showImageInGallery: v.showImageInGallery,
       showModelInGallery: v.showModelInGallery,
       galleryPosition: v.galleryPosition,
+      // Only where it says something: a variation that is not promoted, or whose
+      // pick is its first photo anyway, carries no key at all.
+      ...(() => {
+        const indexes = v.showImageInGallery ? payloadUpFrontIndexes(imagesByChild.get(v.childProductId) ?? [], v.galleryImageUrls) : undefined
+        return indexes ? { galleryImageIndexes: indexes } : {}
+      })(),
       sku: exposeCodes ? child?.sku ?? null : null,
       saleSku: exposeCodes ? child?.sale_sku ?? null : null,
       supplier: exposeSupplier ? child?.supplier ?? null : null,
@@ -637,6 +644,9 @@ export type VariantEditorRow = {
   orderSizeDeduction: number | null
   // Every image on this variant's hidden child product, primary first.
   imageUrls: string[]
+  // Which of those the owner picked to go up front, by URL, limited to ones the
+  // variant still carries. Empty for "the first photo" - see migration 018.
+  galleryImageUrls: string[]
 }
 
 export type EditorPayload = {
@@ -717,6 +727,7 @@ function buildEditorPayload(
       weight: child?.weight != null ? Number(child.weight) : null,
       orderSizeDeduction: optionalPrice(child?.order_size_deduction),
       imageUrls: imagesByChild.get(v.childProductId) ?? [],
+      galleryImageUrls: (v.galleryImageUrls ?? []).filter((url) => (imagesByChild.get(v.childProductId) ?? []).includes(url)),
     }
   })
 
@@ -901,7 +912,7 @@ export async function upsertVariantForCombination(
     if (ctx) {
       // Matches what createVariant just wrote: a new variation is never
       // promoted onto the parent's gallery until someone ticks one of the boxes.
-      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, galleryPosition: null, position: existing.length })
+      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, galleryPosition: null, galleryImageUrls: null, position: existing.length })
       ctx.valueMap[cv.id] = optionValueIds
     }
   }
