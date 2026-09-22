@@ -25,7 +25,10 @@ export async function getVariantSalesReport(): Promise<ParentSalesReport[]> {
     JOIN "shp_products" parent ON parent."id" = v."product_id"
     JOIN "shp_products" child ON child."id" = v."child_product_id"
     JOIN "shp_order_items" oi ON oi."product_id" = child."id"
-    JOIN "shp_orders" o ON o."id" = oi."order_id" AND o."payment_status" = 'PAID'
+    -- Every order that was paid for, refunded or not, the way shop's own reports
+    -- count sales: shop moves payment_status on to PARTIALLY_REFUNDED or
+    -- REFUNDED after a refund, and a bare = 'PAID' would quietly drop those.
+    JOIN "shp_orders" o ON o."id" = oi."order_id" AND o."payment_status" IN ('PAID', 'PARTIALLY_REFUNDED', 'REFUNDED')
     GROUP BY parent."id", parent."name", child."id", child."name"
   `
 
