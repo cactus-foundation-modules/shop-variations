@@ -29,6 +29,10 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
   // that is not a variation, which then stands on its own row exactly as an
   // ordinary product does.
   const minOrder = await getVariantMinOrder(product)
+  // The same parent id, said outright for the rules that are pinned to a
+  // listing (an automatic discount on "this chair" covers every colour of it).
+  // The pool key above is not for reading - shop only groups by it.
+  const listingId = minOrder?.key ?? null
 
   // What the returns policy says about this combination, and the wording that
   // goes with it. Same reason as the minimum above: a child's own flag is very
@@ -42,7 +46,7 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
   // getAddonsForLine serves this from the request batch cache when shop
   // prefetched the whole cart, and falls back to the per-line lookups otherwise.
   const addons = await getAddonsForLine(product)
-  if (addons.length === 0) return { ...NOOP, displayTitle, minOrder, returns }
+  if (addons.length === 0) return { ...NOOP, displayTitle, minOrder, listingId, returns }
 
   const rawAddons = (meta && typeof meta.addons === 'object' && meta.addons) ? (meta.addons as Record<string, unknown>) : {}
 
@@ -70,6 +74,7 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
     reason: pricing.reason,
     displayTitle,
     minOrder,
+    listingId,
     returns,
   }
 }
