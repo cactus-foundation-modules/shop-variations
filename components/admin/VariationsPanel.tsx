@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
 import { useAlert, usePrompt } from '@/modules/shop/components/admin/dialogs'
+import { useAdminConfirm } from '@/components/admin/useAdminConfirm'
 import { uploadOneFile } from '@/lib/media/upload-client'
 import { preflightUploadError } from '@/lib/media/limits'
 import type { ReturnsPolicy } from '@/modules/shop/lib/returnable'
@@ -170,6 +171,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const currency = useProductEditorCurrency()
   const [promptText, promptNode] = usePrompt()
   const [showAlert, alertNode] = useAlert()
+  const [askConfirm, confirmNode] = useAdminConfirm()
   // Enabled names from the shop's supplier directory. Only fetched when the
   // supplier column is on, so a shop that never asked for it pays nothing.
   const [supplierOptions, setSupplierOptions] = useState<string[]>([])
@@ -571,7 +573,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   }
 
   async function clearAll() {
-    if (!window.confirm('Delete every variant for this product? Their stock counts and prices go with them.')) return
+    if (!(await askConfirm({ title: 'Delete every variant for this product?', message: 'Their stock counts and prices go with them.' }))) return
     setBusy(true)
     await fetch(`/api/m/shop-variations/admin/products/${productId}/clear-variants`, { method: 'POST' })
     setEdits({})
@@ -582,7 +584,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   // and rebuilding would only make them again - so each is deletable on its own.
   // Any unsaved edit to that row is dropped along with it.
   async function removeVariant(variantId: string) {
-    if (!window.confirm('Delete this variant? Its stock count and price go with it.')) return
+    if (!(await askConfirm({ title: 'Delete this variant?', message: 'Its stock count and price go with it.' }))) return
     setBusy(true)
     await fetch(`/api/m/shop-variations/admin/variants/${variantId}`, { method: 'DELETE' })
     setEdits((prev) => { const next = { ...prev }; delete next[variantId]; return next })
@@ -603,7 +605,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   async function deleteSelected() {
     const ids = [...selected]
     if (ids.length === 0) return
-    if (!window.confirm(`Delete ${ids.length} variant${ids.length === 1 ? '' : 's'}? Their stock counts and prices go with them.`)) return
+    if (!(await askConfirm({ title: `Delete ${ids.length} variant${ids.length === 1 ? '' : 's'}?`, message: ids.length === 1 ? 'Its stock count and price go with it.' : 'Their stock counts and prices go with them.' }))) return
     setBusy(true)
     await fetch(`/api/m/shop-variations/admin/products/${productId}/delete-variants`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantIds: ids }),
@@ -1421,6 +1423,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
       <PersonalisationEditor productId={productId} addons={data.addons} currency={currency} onChange={refresh} />
       {promptNode}
       {alertNode}
+      {confirmNode}
     </div>
   )
 }
