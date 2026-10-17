@@ -77,7 +77,7 @@ type Payload = {
 
 type VariantEdit = Partial<Pick<
   VariantRow,
-  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'orderSizeDeduction' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls' | 'galleryImageUrls'
+  'price' | 'salePrice' | 'retailPrice' | 'tradePrice' | 'costPrice' | 'sku' | 'saleSku' | 'barcode' | 'supplier' | 'stockCount' | 'minOrderQuantity' | 'returnable' | 'returnsDiscretionary' | 'weight' | 'orderSizeDeduction' | 'enabled' | 'showImageInGallery' | 'showModelInGallery' | 'imageUrls' | 'galleryImageUrls'
 >>
 
 /**
@@ -1192,6 +1192,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     <th style={{ padding: '0.5rem' }}>Price</th>
                     {priceFields.map((p) => <th key={p.type} style={{ padding: '0.5rem' }}>{p.label}</th>)}
                     <th style={{ padding: '0.5rem' }}>SKU</th>
+                    <th style={{ padding: '0.5rem' }} title="This combination's own EAN or UPC. It is held on the variation, not the listing.">Barcode</th>
                     {saleSkuColumn && (
                       <th style={{ padding: '0.5rem' }} title="The code to order this variation under while it is on offer, where the supplier issues a separate one. The SKU itself stays put, so stock lists still match.">
                         Sale SKU
@@ -1315,6 +1316,14 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                             aria-label={`SKU for ${v.label}`}
                             value={valueOf(v, 'sku') ?? ''}
                             onChange={(e) => editVariant(v.variantId, { sku: e.target.value || null })}
+                          />
+                        </td>
+                        <td style={{ padding: '0.5rem' }}>
+                          <input
+                            style={{ ...input, width: 140 }} placeholder="—"
+                            aria-label={`Barcode for ${v.label}`}
+                            value={valueOf(v, 'barcode') ?? ''}
+                            onChange={(e) => editVariant(v.variantId, { barcode: e.target.value.trim() || null })}
                           />
                         </td>
                         {saleSkuColumn && (
