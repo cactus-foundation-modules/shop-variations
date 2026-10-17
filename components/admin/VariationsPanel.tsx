@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type DragEvent } from 'react'
 import { MediaPickerModal } from '@/modules/shop/components/admin/MediaPickerModal'
+import { ProductPartsEditor } from '@/modules/shop/components/admin/ProductPartsEditor'
 import { useAlert, usePrompt } from '@/modules/shop/components/admin/dialogs'
 import { useAdminConfirm } from '@/components/admin/useAdminConfirm'
 import { uploadOneFile } from '@/lib/media/upload-client'
@@ -35,6 +36,9 @@ type VariantRow = {
   enabled: boolean; showImageInGallery: boolean; showModelInGallery: boolean; price: number; sku: string | null; saleSku: string | null; barcode: string | null; supplier: string | null
   salePrice: number | null; retailPrice: number | null; tradePrice: number | null; costPrice: number | null
   trackInventory: boolean; stockCount: number | null; weight: number | null; imageUrls: string[]
+  // How many other products this variation is made up of. With any, the count is
+  // worked out from them and the Stock cell is read-only.
+  partCount: number
   // Which of imageUrls go up front while "Image up front" is on. Empty means the
   // first photo - see lib/up-front-images.ts, which reads it the same way here as
   // the storefront does.
@@ -1310,7 +1314,11 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                           <input
                             type="number" step="1" style={numInput} placeholder="—"
                             aria-label={`Stock for ${v.label}`}
-                            value={valueOf(v, 'stockCount') ?? ''}
+                            value={v.partCount > 0 ? (v.stockCount ?? '') : (valueOf(v, 'stockCount') ?? '')}
+                            // A variation made up of other products has no count of
+                            // its own: the shop works it out from the parts.
+                            readOnly={v.partCount > 0}
+                            title={v.partCount > 0 ? `Made up of ${v.partCount} other ${v.partCount === 1 ? 'product' : 'products'}, so its stock follows them. Open the row to change the parts.` : undefined}
                             onChange={(e) => editVariant(v.variantId, { stockCount: e.target.value === '' ? null : Number(e.target.value) })}
                           />
                         </td>
@@ -1398,6 +1406,23 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                                 : { showImageInGallery: false, galleryImageUrls: [] })}
                               onSetUrls={(urls) => setVariantImages(v, urls)}
                             />
+                            <div style={{ padding: '0 0.75rem 1rem 2.5rem', maxWidth: 720 }}>
+                              <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.875rem' }}>Made up of other products</h4>
+                              <p style={{ margin: '0 0 0.5rem', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+                                For a variation sold as a set of other products, with no stock or SKU of its own. It is out of stock as soon as any one part is, and a purchase order for a sale buys the parts.
+                              </p>
+                              <ProductPartsEditor
+                                key={v.childProductId}
+                                productId={v.childProductId}
+                                compact
+                                // The grid's own figures go stale the moment parts change
+                                // (the count is now worked out from them), so reload when
+                                // what the editor found differs from what the row shows.
+                                onChange={(summary) => {
+                                  if (summary.isKit !== (v.partCount > 0) || (summary.isKit && summary.stock?.count !== v.stockCount)) void refresh()
+                                }}
+                              />
+                            </div>
                           </td>
                         </tr>
                       )}

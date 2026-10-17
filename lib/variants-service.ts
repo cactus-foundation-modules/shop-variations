@@ -625,6 +625,11 @@ export type VariantEditorRow = {
   supplier: string | null
   trackInventory: boolean
   stockCount: number | null
+  // How many other products this variation is made up of (shop's
+  // shp_product_components). Zero is an ordinary variation. A variation with
+  // parts has no count of its own to type: shop works it out from the parts, so
+  // the grid shows it read-only.
+  partCount: number
   // The fewest of this combination the shop sells in one go. Null means "as the
   // product says" rather than "one" - the grid shows the parent's figure as the
   // placeholder so a blank cell is not mistaken for no minimum.
@@ -678,6 +683,8 @@ type ChildEditRow = ChildRow & {
   trade_price: unknown
   cost_price: unknown
   order_size_deduction: unknown
+  /** Parts, from shop's shp_product_components; absent where the shop predates it. */
+  part_count?: number
 }
 
 type EditorPayloadParent = { id: string; name: string; slug: string; price: number | string; minOrderQuantity?: number | null; returnable?: boolean | null; returnsDiscretionary?: boolean | null }
@@ -721,6 +728,7 @@ function buildEditorPayload(
       supplier: child?.supplier ?? null,
       trackInventory: child?.track_inventory ?? false,
       stockCount: child?.stock_count ?? null,
+      partCount: child?.part_count ?? 0,
       minOrderQuantity: child?.min_order_quantity ?? null,
       returnable: child?.returnable ?? null,
       returnsDiscretionary: child?.returns_discretionary ?? null,
@@ -758,6 +766,23 @@ async function loadChildRowsAndImages(childIds: string[]): Promise<{ childById: 
     FROM "shp_products" WHERE "id" IN (${Prisma.join(childIds)})
   `
   for (const r of childRows) childById.set(r.id, r)
+  // Parts live in shop's shp_product_components (shop migration 075). Read on
+  // its own and forgiven when the table is not there: the two modules are pinned
+  // independently, and a grid that cannot say "made up of" is better than no grid.
+  try {
+    const partRows = await prisma.$queryRaw<{ product_id: string; n: number }[]>`
+      SELECT "product_id", COUNT(*)::int AS n
+      FROM "shp_product_components"
+      WHERE "product_id" IN (${Prisma.join(childIds)})
+      GROUP BY "product_id"
+    `
+    for (const r of partRows) {
+      const child = childById.get(r.product_id)
+      if (child) child.part_count = Number(r.n)
+    }
+  } catch {
+    // No parts table: every variation is an ordinary one.
+  }
   const mediaRows = await prisma.$queryRaw<{ product_id: string; url: string }[]>`
     SELECT "product_id", "url"
     FROM "shp_product_media"
