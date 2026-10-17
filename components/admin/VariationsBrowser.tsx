@@ -201,7 +201,7 @@ export function VariationsBrowser() {
             catalogue, which takes real seconds - without this the page just sat
             there looking like the filter had done nothing. */}
         {loading && <span className="svb-spinner" role="status" aria-label="Applying filter" />}
-        <input className="svb-search" aria-label="Search variations" placeholder="Search product or SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="svb-search" aria-label="Search variations" placeholder="Search product, SKU or barcode…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {hasFilters && <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear</button>}
         {!loading && !failed && <span className="svb-count">{total} variation{total === 1 ? '' : 's'}</span>}
       </div>
@@ -233,6 +233,7 @@ export function VariationsBrowser() {
                 <th>Product</th>
                 <th>Variation</th>
                 <th>SKU</th>
+                <th>Barcode</th>
                 <th>Price</th>
                 <th>Stock</th>
                 {columns.map((c) => <th key={c.id}>{c.label}</th>)}
@@ -288,6 +289,7 @@ function Row({ row, columns, adminPath, currencySymbol }: {
             behind on a row that has come off sale is a record, not an order. */}
         {row.saleSku && onSale && <div className="svb-salesku">on offer: {row.saleSku}</div>}
       </td>
+      <td className="svb-muted">{row.barcode || '—'}</td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {formatMoney(onSale ? row.salePrice : row.price, currencySymbol)}
         {onSale && <span className="svb-was">{formatMoney(row.price, currencySymbol)}</span>}
