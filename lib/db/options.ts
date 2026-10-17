@@ -30,6 +30,7 @@ function mapValue(r: Record<string, unknown>): SvrOptionValue {
     swatchSmall: (r.swatch_small as string | null) ?? null,
     swatchTiny: (r.swatch_tiny as string | null) ?? null,
     position: r.position as number,
+    requiresValueIds: Array.isArray(r.requires_value_ids) ? (r.requires_value_ids as unknown[]).filter((x): x is string => typeof x === 'string') : [],
     sourceRef: (r.source_ref as string | null) ?? null,
   }
 }
@@ -210,7 +211,7 @@ export async function createOptionValue(
 
 export async function updateOptionValue(
   id: string,
-  fields: { label?: string; slug?: string; swatch?: string | null; swatchSmall?: string | null; swatchTiny?: string | null; position?: number; sourceRef?: string | null },
+  fields: { label?: string; slug?: string; swatch?: string | null; swatchSmall?: string | null; swatchTiny?: string | null; position?: number; sourceRef?: string | null; requiresValueIds?: string[] },
 ): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.label !== undefined) sets.push(Prisma.sql`"label" = ${fields.label}`)
@@ -224,6 +225,7 @@ export async function updateOptionValue(
   // Which source value this copy answers to. Moved when a rename makes it a
   // different one of the source's values - see rename-repoint.ts.
   if (fields.sourceRef !== undefined) sets.push(Prisma.sql`"source_ref" = ${fields.sourceRef}`)
+  if (fields.requiresValueIds !== undefined) sets.push(Prisma.sql`"requires_value_ids" = ${JSON.stringify(fields.requiresValueIds)}::jsonb`)
   if (sets.length === 0) return
   await prisma.$executeRaw`UPDATE "svr_option_values" SET ${Prisma.join(sets, ', ')} WHERE "id" = ${id}`
 }

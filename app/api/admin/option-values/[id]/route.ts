@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
-import { updateOptionValue, deleteOptionValue, getOptionValueOwner } from '@/modules/shop-variations/lib/db/options'
+import { updateOptionValue, deleteOptionValue, getOptionValueOwner, getOptionsWithValues } from '@/modules/shop-variations/lib/db/options'
 import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { syncVariantChildNames } from '@/modules/shop-variations/lib/variants-service'
 import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
@@ -10,6 +10,8 @@ const PatchBody = z.object({
   label: z.string().min(1).max(80).optional(),
   swatch: z.string().max(SWATCH_MAX_LENGTH).nullable().optional(),
   position: z.number().int().optional(),
+  // Other values on the same listing, any one of which must be in the basket.
+  requiresValueIds: z.array(z.string().max(64)).max(50).optional(),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,8 +35,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // from the PREVIOUS picture: this module never makes the files itself (a
   // source module does), so a stale copy showing the old picture is the only
   // thing keeping them could mean. The storefront falls back to the new swatch.
+  // A requirement can only name another value of the same listing - never itself,
+  // never a value of some other product (it could never be in this basket line's
+  // listing, and would leave the value unbuyable for ever).
+  let requiresValueIds: string[] | undefined
+  if (parsed.data.requiresValueIds !== undefined) {
+    const own = new Set((await getOptionsWithValues(owner.productId)).flatMap((o) => o.values.map((v) => v.id)))
+    requiresValueIds = [...new Set(parsed.data.requiresValueIds)].filter((v) => v !== id && own.has(v))
+  }
+
   await updateOptionValue(id, {
     ...parsed.data,
+    ...(requiresValueIds !== undefined ? { requiresValueIds } : {}),
     ...(label !== undefined ? { label } : {}),
     ...(parsed.data.swatch !== undefined ? { swatchSmall: null, swatchTiny: null } : {}),
   })

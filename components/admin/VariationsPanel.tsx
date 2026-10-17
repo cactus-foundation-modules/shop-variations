@@ -19,7 +19,7 @@ import {
 import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
 import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
 
-type OptionValue = { id: string; label: string; slug: string; swatch: string | null; swatchSmall?: string | null; position: number; sourceRef: string | null }
+type OptionValue = { id: string; label: string; slug: string; swatch: string | null; swatchSmall?: string | null; position: number; sourceRef: string | null; requiresValueIds?: string[] }
 type Option = {
   id: string; name: string; controlType: SvrControlType; position: number; requiresPreviousOption: boolean
   // Set when the option was built from another module's source. Null on a
@@ -378,7 +378,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
     return { providerLabel: provider.label, sourceName: source?.name ?? null, groupLabel: source?.groupLabel ?? null }
   }
 
-  async function patchAndRefresh(url: string, patch: Record<string, string | number | boolean | null>, fallback: string): Promise<boolean> {
+  async function patchAndRefresh(url: string, patch: Record<string, string | number | boolean | string[] | null>, fallback: string): Promise<boolean> {
     setBusy(true); setOptionError(null)
     const res = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) })
     if (!res.ok) {
@@ -408,6 +408,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const setCardShow = (id: string, fields: { cardLimit: number | null; cardFitLines: number | null }) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, fields, 'Could not save that setting.')
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
+  const setValueNeeds = (id: string, requiresValueIds: string[]) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { requiresValueIds }, 'Could not save that rule.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
 
   // Build an option from a source module's ready-made list. Only the picked refs
@@ -505,6 +506,8 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const [optionDrag, setOptionDrag] = useState<number | null>(null)
   const [optionOver, setOptionOver] = useState<number | null>(null)
   const [valueDrag, setValueDrag] = useState<{ optionId: string; index: number } | null>(null)
+  // The value whose "can only be bought with" panel is open, if any.
+  const [needsOpenId, setNeedsOpenId] = useState<string | null>(null)
   const [valueOver, setValueOver] = useState<{ optionId: string; index: number } | null>(null)
 
   // Write back only the rows whose position actually moved. The editor grid and
@@ -987,6 +990,18 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                       {opt.values.some((s) => s.id !== v.id && s.label.trim().toLowerCase() === v.label.trim().toLowerCase()) && (
                         <span title={`Spreadsheet spelling: (${v.slug})${v.label}`} style={{ fontSize: '0.6875rem', color: 'var(--color-text-secondary)' }}>({v.slug})</span>
                       )}
+                      <button
+                        type="button"
+                        aria-label={`Rules for ${v.label}: can only be bought with`}
+                        aria-expanded={needsOpenId === v.id}
+                        title={(v.requiresValueIds?.length ?? 0) > 0 ? `Can only be bought with ${v.requiresValueIds!.length} other value(s)` : 'Can only be bought with...'}
+                        onClick={() => setNeedsOpenId(needsOpenId === v.id ? null : v.id)}
+                        disabled={busy}
+                        className="spe-icon-btn"
+                        style={(v.requiresValueIds?.length ?? 0) > 0 ? { color: 'var(--color-primary)', fontWeight: 700 } : undefined}
+                      >
+                        ⚭
+                      </button>
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
                   ))}
@@ -1000,6 +1015,33 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     disabled={busy}
                   />
                 </div>
+                {(() => {
+                  const open = opt.values.find((v) => v.id === needsOpenId)
+                  if (!open) return null
+                  const others = data.options.flatMap((o) => o.values.filter((v) => v.id !== open.id).map((v) => ({ id: v.id, text: `${o.name}: ${v.label}` })))
+                  const chosen = new Set(open.requiresValueIds ?? [])
+                  return (
+                    <fieldset style={{ margin: '0.5rem 0 0', padding: '0.5rem 0.75rem', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                      <legend style={{ fontSize: '0.8125rem', padding: '0 0.25rem' }}>{open.label} can only be bought with at least one of</legend>
+                      <p style={{ margin: '0 0 0.375rem', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                        It can still be added to the basket on its own, but the basket warns the shopper and checkout is blocked until one of the ticked values is in the basket too. Leave all unticked for no rule.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        {others.map((o) => (
+                          <label key={o.id} style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center', fontSize: '0.8125rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={chosen.has(o.id)}
+                              disabled={busy}
+                              onChange={(e) => setValueNeeds(open.id, e.target.checked ? [...chosen, o.id] : [...chosen].filter((x) => x !== o.id))}
+                            />
+                            {o.text}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )
+                })()}
               </div>
             ))}
           </div>

@@ -73,6 +73,10 @@ export type SvrOptionValue = {
   // `swatchSmall` to `swatch`.
   swatchTiny?: string | null
   position: number
+  // Ids of OTHER values on this listing, any one of which must be in the basket for
+  // this value to be checked out (a reception desk's extension needs a desk). Empty
+  // for no rule. See migration 019 and lib/cart-requirements.ts.
+  requiresValueIds?: string[]
   // The source value this one was copied from, opaque here. Null on a value added
   // by hand, which a refresh then leaves alone.
   sourceRef: string | null

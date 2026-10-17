@@ -1,0 +1,15 @@
+-- "Can only be bought with" for an option value.
+--
+-- The case that asked for it: a reception desk sold as a 146.2cm or 166.2cm
+-- rectangular unit, plus a 100cm extension that is useless on its own. The
+-- extension is a value of the same "Unit" option, so the rule lives on the value:
+-- the ids of the OTHER values of this listing, any one of which must be in the
+-- basket (on any line of the same listing) before this one can be checked out.
+--
+-- A JSONB list of value ids rather than a join table: it is read as a whole, never
+-- queried by member, and a value deleted later simply stops matching - the cart
+-- check ignores ids it cannot find, so no cleanup trigger is needed.
+--
+-- Empty (the default) means no rule, so every existing value behaves as before.
+-- Idempotent so a re-run is harmless; fresh installs land here as a no-op-free add.
+ALTER TABLE "svr_option_values" ADD COLUMN IF NOT EXISTS "requires_value_ids" JSONB NOT NULL DEFAULT '[]'::jsonb;
