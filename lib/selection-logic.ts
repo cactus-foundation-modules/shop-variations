@@ -85,6 +85,24 @@ export function resolveVariant(payload: VariantSelectorPayload, selection: Optio
   ) ?? null
 }
 
+// The variations a part-made selection could still become, in the owner's matrix
+// order: switched on, and answering to every pick made so far. The gallery leads
+// with the first of these that has pictures (or a model) of its own, so picking a
+// finish shows that finish before the size is settled. Empty with nothing picked -
+// the opening view is the owner's, not the first row of the matrix.
+//
+// Stock is deliberately not a filter. This chooses what to LOOK at, and a
+// sold-out walnut desk is still what walnut looks like; leaving it out would show
+// the shopper a second-best photograph for no reason they could see.
+export function previewVariants(payload: VariantSelectorPayload, selection: OptionSelection): VariantSelectorVariant[] {
+  const picks = payload.options.flatMap((o) => (selection[o.id] ? [{ optionId: o.id, valueId: selection[o.id]! }] : []))
+  if (picks.length === 0) return []
+  const v2o = valueToOptionMap(payload)
+  return payload.variants.filter((variant) =>
+    variant.enabled && picks.every((p) => variantAnswersTo(variant, p.optionId, p.valueId, v2o)),
+  )
+}
+
 // Whether an option value is still reachable, filtered DIRECTIONALLY: at least
 // one buyable variant carries this value AND is consistent with every option
 // chosen ABOVE this one in display order. Options below it are deliberately

@@ -104,3 +104,36 @@ describe('useVariationSelection seeding', () => {
     expect(last?.optionValues).toEqual({})
   })
 })
+
+describe('useVariationSelection part-made preview', () => {
+  // Arms then Colour. Variant b (Loop, Black) has no photos; c (Loop, Red) has.
+  function withPhotos(): VariantSelectorPayload {
+    const p = mkPayload()
+    p.variants = p.variants.map((v) => (v.id === 'c' ? { ...v, imageUrls: ['/red-loop.jpg'] } : v))
+    return p
+  }
+
+  it('shows nothing of a variation before anything is picked', async () => {
+    await mount({ payload: withPhotos(), currencySymbol: '£' })
+    expect(last?.variantImages).toEqual([])
+    expect(last?.previewChildIds).toEqual([])
+  })
+
+  it('one pick leads with the first matching variation that has photos', async () => {
+    const slug = await mount({ payload: withPhotos(), currencySymbol: '£' })
+    await act(async () => { setOptionValue(slug, 'A', 'A2') })
+    expect(last?.variant).toBeNull()
+    expect(last?.variantImages).toEqual(['/red-loop.jpg'])
+    expect(last?.image).toBe('/red-loop.jpg')
+    expect(last?.previewChildIds).toEqual(['child-b', 'child-c'])
+  })
+
+  it('a resolved variation with no photos of its own shows none, as before', async () => {
+    const slug = await mount({ payload: withPhotos(), currencySymbol: '£' })
+    await act(async () => { setOptionValue(slug, 'A', 'A2') })
+    await act(async () => { setOptionValue(slug, 'U', 'U1') })
+    expect(last?.variant?.id).toBe('b')
+    expect(last?.variantImages).toEqual([])
+    expect(last?.previewChildIds).toEqual([])
+  })
+})

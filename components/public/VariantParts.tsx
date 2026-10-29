@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { previewAwareThumbs } from '@/modules/shop-variations/lib/gallery-extra-thumbs'
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
@@ -1728,6 +1729,9 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
   const main = held ?? sel.image ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
+  // The same contributors, typed to take the part-made choice's candidates as
+  // well (see lib/gallery-extra-thumbs.ts). Same components, so nothing remounts.
+  const stripExtras = extras.map((e) => ({ ...e, Thumbs: previewAwareThumbs(e) }))
   const activeProductId = sel.variant?.childProductId ?? null
   // Whether what is on the stage is the shopper's own configuration rather than
   // the product's general pictures: a contributed stage (their variation's 3D
@@ -1772,7 +1776,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
           {/* Contributed media (a 3D model, say) leads the strip, so the richer
               view sits first rather than trailing behind the photos - it is also
               what the stage opens on, and the two should agree. */}
-          {extras.map((extra) => (
+          {stripExtras.map((extra) => (
             <extra.Thumbs
               // Reset counter in the key: a contributor may hold state of its own
               // about the variation the shopper had settled on, and a null
@@ -1785,6 +1789,7 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
               // before a whole combination is settled. Empty from the moment one
               // resolves (see the same note in DetailSlotPartsClient).
               featuredProductIds={sel.featuredModelChildIds}
+              previewProductIds={sel.previewChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"
@@ -1805,13 +1810,14 @@ export function VariantGalleryPart({ preview, slug: explicitSlug, initial, extra
         // where "lead with the model" lives (see Gallery3dThumbs). No picker is
         // needed with nothing to pick between, so it mounts invisibly rather than
         // inside the visible strip.
-        extras.map((extra) => (
+        stripExtras.map((extra) => (
           // Keyed on the reset counter for the same reason as the visible strip.
           <div key={`${extra.id}:${sel.resetEpoch}`} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
             <extra.Thumbs
               payload={extra.payload}
               activeProductId={activeProductId}
               featuredProductIds={sel.featuredModelChildIds}
+              previewProductIds={sel.previewChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => setPicked(key === null ? null : { id: extra.id, key })}
               thumbClass="svr-gallery-thumb"

@@ -20,6 +20,7 @@
 // nothing in this file ever sees the packed shape.
 import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
+import { previewAwareThumbs } from '@/modules/shop-variations/lib/gallery-extra-thumbs'
 import { OPTIONS_AREA_CLASS, STICKY_GALLERY_CLASS, useStickyMobileGallery } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { GalleryThumbStrip } from '@/modules/shop/components/public/GalleryThumbStrip'
 import { responsiveImg, HALF_WIDTH_LADDER, type ImageResizing } from '@/lib/media/resize-url'
@@ -170,6 +171,9 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   const held = override !== null && thumbs.some((t) => t.url === override) ? override : null
   const main = held ?? variantImage ?? thumbs[0]?.url ?? null
   const activeExtra = picked ? extras.find((e) => e.id === picked.id) ?? null : null
+  // The same contributors, typed to take the part-made choice's candidates as
+  // well (see lib/gallery-extra-thumbs.ts). Same components, so nothing remounts.
+  const stripExtras = extras.map((e) => ({ ...e, Thumbs: previewAwareThumbs(e) }))
 
   // Magnifying is shop's behaviour for shop's image. A contributed stage owns its
   // whole box (a 3D viewer does its own zooming), so the pointer must reach it
@@ -284,7 +288,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
           {/* Contributed media (a 3D model, say) leads the strip, so the richer
               view sits first rather than trailing behind the photos - it is also
               what the stage opens on, and the two should agree. */}
-          {extras.map((extra) => (
+          {stripExtras.map((extra) => (
             <extra.Thumbs
               // The reset counter is in the key deliberately: a contributor may be
               // holding state of its own about the variation the shopper had settled
@@ -300,6 +304,10 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               // finish sitting in the strip beside its photograph. Empty from the
               // moment one resolves, so nothing has to be undone here.
               featuredProductIds={sel.featuredModelChildIds}
+              // Part-way through the options, the variations still matching the
+              // picks so far, so the contributor can lead with the first one that
+              // has a model - picking a finish shows that finish in 3D straight away.
+              previewProductIds={sel.previewChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => {
                 setPicked(key === null ? null : { id: extra.id, key })
@@ -328,7 +336,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
         // where "lead with the model" lives (see Gallery3dThumbs). No picker is
         // needed with nothing to pick between, so it mounts invisibly rather than
         // inside the visible strip.
-        extras.map((extra) => (
+        stripExtras.map((extra) => (
           // Keyed on the reset counter for the same reason as the visible strip
           // above - the wrapper carries it here because the wrapper is the sibling
           // React is keying.
@@ -337,6 +345,7 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
               payload={extra.payload}
               activeProductId={activeProductId}
               featuredProductIds={sel.featuredModelChildIds}
+              previewProductIds={sel.previewChildIds}
               activeKey={picked?.id === extra.id ? picked.key : null}
               onPick={(key) => {
                 setPicked(key === null ? null : { id: extra.id, key })

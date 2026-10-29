@@ -16,7 +16,7 @@
 // made the options turn up a beat after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, previewVariants, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { optionParamEntries, selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { minOrderQuantity } from '@/modules/shop/lib/min-order'
@@ -403,15 +403,30 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // charged, which is the same rule shop's own price block follows.
   const retailCandidate = variant ? variant.retailPrice ?? null : (!hasOptions ? payload?.baseRetailPrice ?? null : null)
   const retailPrice = retailCandidate != null && retailCandidate > price + 0.005 ? retailCandidate : null
-  // Every picture the chosen variant owns, and the one the main stage shows.
-  // An empty list means the variant brought none of its own, so the parent's
-  // gallery stands as it is.
-  const variantImages = variant?.imageUrls ?? []
+  // Part-way through the options, the variations still in the running for what
+  // has been picked so far, in matrix order (see previewVariants). Empty with
+  // nothing picked and once a whole combination resolves, so the opening view and
+  // the chosen variant's own view are both exactly what they were.
+  const previewCandidates = payload && !variant ? previewVariants(payload, optionValues) : []
+  // The first of them with photographs of its own stands in for the variant
+  // until the rest of the options are answered: pick "Walnut" and the stage shows
+  // walnut, rather than holding the opening picture until the size is chosen too.
+  // None with a photograph leaves the opening gallery as it is.
+  const imageSource = variant ?? previewCandidates.find((v) => v.imageUrls.length > 0) ?? null
+  // Every picture the chosen variant (or that stand-in) owns, and the one the
+  // main stage shows. An empty list means it brought none of its own, so the
+  // parent's gallery stands as it is.
+  const variantImages = imageSource?.imageUrls ?? []
   // The 300px copies of those, index-aligned, for the thumbnail strip. An empty
   // string means "no copy on file for that one" and the strip falls back to the
   // full picture; an older cached payload carries no list at all and every
   // thumbnail falls back, which is exactly what it did before this existed.
-  const variantImageThumbs = variant?.imageThumbUrls ?? []
+  const variantImageThumbs = imageSource?.imageThumbUrls ?? []
+  // The same candidates by child product id, for whatever else hangs media off a
+  // product (the 3D module's models). This module cannot tell which of them has a
+  // model, so the whole ordered list goes over and the provider leads with the
+  // first that does - see shop's ShopGalleryExtraThumbsProps.previewProductIds.
+  const previewChildIds = previewCandidates.map((v) => v.childProductId)
   // The variations the owner has promoted onto the parent's gallery, while they
   // are still worth showing: in matrix order, switched-on ones only. Images and
   // models are promoted independently of one another - a variation worth
@@ -419,6 +434,9 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // so this is two separate filters over the same list, not one.
   //
   // They stay up until a whole combination RESOLVES, and not a moment sooner.
+  // (A part-made choice does now put the first matching variation's own photos
+  // at the FRONT of the strip and on the stage - see `imageSource` above - but
+  // these stay behind them, so the strip still never empties itself.)
   // Neither "the shopper has touched something" (the original rule) nor "their
   // picks have ruled that variation out" (its replacement) is the right moment:
   // both take the promoted media away mid-configure, and on a product whose
@@ -594,6 +612,11 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
     // gallery hands the ids to whatever else contributes media (see shop's
     // ShopGalleryExtraThumbsProps).
     featuredModelChildIds,
+    // The variations a part-made choice could still become, by child product id
+    // and in matrix order, for a contributed gallery to lead with the first that
+    // has media of its own. Empty with nothing picked and once a combination
+    // resolves.
+    previewChildIds,
     inStock,
     minQuantity,
     hasOptions,
