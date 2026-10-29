@@ -37,3 +37,24 @@ export function payloadUpFrontIndexes(imageUrls: readonly string[], chosenUrls: 
   const indexes = upFrontImageIndexes(imageUrls, chosenUrls)
   return indexes.length === 1 && indexes[0] === 0 ? undefined : indexes
 }
+
+/**
+ * Each up-front photo's own slot in the finished gallery (migration 020), lined
+ * up with `pickedUrls` - the photos the rules above resolved, in the variation's
+ * own order. Looked up by URL rather than by index, because the stored slots sit
+ * parallel to the owner's pick and the pick is not always what goes up front
+ * (the first-photo fallback). A photo with no slot of its own gets null: after
+ * the rest.
+ *
+ * Undefined where the variation was never arranged photo by photo, which tells
+ * every reader to fall back to one block at its gallery_position.
+ */
+export function photoPositionsFor(
+  pickedUrls: readonly string[],
+  chosenUrls: readonly string[] | null | undefined,
+  chosenPositions: ReadonlyArray<number | null> | null | undefined,
+): Array<number | null> | undefined {
+  if (!chosenPositions || pickedUrls.length === 0) return undefined
+  const slotByUrl = new Map((chosenUrls ?? []).map((url, i) => [url, chosenPositions[i] ?? null] as const))
+  return pickedUrls.map((url) => slotByUrl.get(url) ?? null)
+}

@@ -93,6 +93,10 @@ CREATE TABLE IF NOT EXISTS "svr_variants" (
     -- "the first photo". The chosen ones travel as one block at
     -- gallery_position. See 018.
     "gallery_image_urls" TEXT[],
+    -- Each up-front photo's own slot in the finished gallery, counted in
+    -- pictures, parallel to gallery_image_urls. NULL is "one block at
+    -- gallery_position". See 020.
+    "gallery_image_positions" INTEGER[],
     "position" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_variants_pkey" PRIMARY KEY ("id"),

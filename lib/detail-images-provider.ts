@@ -14,8 +14,8 @@ import { prisma } from '@/lib/db/prisma'
 import { Prisma } from '@prisma/client'
 import type { ShopDetailImagesProvider, ShopExtraDetailImages } from '@/modules/shop/lib/detail-images'
 import { getVariants } from '@/modules/shop-variations/lib/db/variants'
-import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
-import { blocksAsPositionedItems } from '@/modules/shop-variations/lib/gallery-order'
+import { photoPositionsFor, upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
+import { promotedPhotosAsPositionedItems } from '@/modules/shop-variations/lib/gallery-order'
 
 export const shopVariationsDetailImages: ShopDetailImagesProvider = {
   async load(productId): Promise<ShopExtraDetailImages | null> {
@@ -43,11 +43,16 @@ export const shopVariationsDetailImages: ShopDetailImagesProvider = {
     // Matrix order, and a variation promoted without a photograph of its own
     // simply contributes none - it may have been promoted for its 3D model.
     // Shop's merge counts pictures, not variations, so each variation's set is
-    // spread into slots of its own that keep it together where it was dragged.
-    const images = blocksAsPositionedItems(promoted.map((v) => {
+    // spread into slots of its own that keep it together where it was dragged -
+    // or, arranged photo by photo, each photo goes to its own.
+    const images = promotedPhotosAsPositionedItems(promoted.map((v) => {
       const own = imagesByChild.get(v.childProductId) ?? []
       const picked = upFrontImageIndexes(own.map((i) => i.url), v.galleryImageUrls).map((i) => own[i]!)
-      return { galleryPosition: v.galleryPosition, item: picked }
+      return {
+        galleryPosition: v.galleryPosition,
+        item: picked,
+        photoPositions: photoPositionsFor(picked.map((i) => i.url), v.galleryImageUrls, v.galleryImagePositions),
+      }
     })).map(({ galleryPosition, item }) => ({ ...item, position: galleryPosition }))
     if (images.length === 0) return null
 

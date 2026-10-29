@@ -106,6 +106,11 @@ export type SvrVariant = {
   // which is every variation nobody has picked for. Read through
   // lib/up-front-images.ts, never directly. See migration 018.
   galleryImageUrls: string[] | null
+  // Each of those photos' own slot in the finished gallery, counted in pictures,
+  // parallel to galleryImageUrls (null element: "after the rest"). Null for the
+  // whole list is a variation arranged as one block at galleryPosition. Read
+  // through photoPositionsFor in lib/up-front-images.ts. See migration 020.
+  galleryImagePositions: Array<number | null> | null
   position: number
 }
 
@@ -256,6 +261,12 @@ export type VariantSelectorVariant = {
   // payload from before the owner could pick reads as. Read it through
   // upFrontIndexesFromPayload in lib/up-front-images.ts.
   galleryImageIndexes?: number[]
+  // Each up-front photo's own slot in the finished gallery, counted in pictures,
+  // lined up with the photos upFrontIndexesFromPayload resolves. Absent means the
+  // variation's photos travel as one block at galleryPosition - every variation
+  // nobody has arranged photo by photo, and any payload from before there was a
+  // choice. Read through promotedPhotosAsPositionedItems in lib/gallery-order.ts.
+  galleryImagePositions?: Array<number | null>
   // This combination's own product code, and the code the supplier's clearance
   // stock is currently ordered under. Both are staff references, so both are
   // null in a shopper's payload rather than merely unrendered - see

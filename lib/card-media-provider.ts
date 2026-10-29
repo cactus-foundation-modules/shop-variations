@@ -25,8 +25,8 @@ import { getProductMediaForProducts } from '@/modules/shop/lib/db/products'
 import type { ShopCardMediaProvider, ShopCardMediaPayload } from '@/modules/shop/lib/card-media'
 import type { PartImage } from '@/modules/shop/components/puck/parts/part-context'
 import { getVariantsForProducts } from '@/modules/shop-variations/lib/db/variants'
-import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
-import { blocksAsPositionedItems, type GalleryPromoted } from '@/modules/shop-variations/lib/gallery-order'
+import { photoPositionsFor, upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
+import { promotedPhotosAsPositionedItems, type GalleryPromotedPhotos } from '@/modules/shop-variations/lib/gallery-order'
 
 export const shopVariationsCardMedia: ShopCardMediaProvider = {
   async load(productIds) {
@@ -58,7 +58,7 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
       //
       // The rest of the range has no slot and goes behind the lot, which is what a
       // supplementary colour is.
-      const promotedBlocks: Array<GalleryPromoted<PartImage[]>> = []
+      const promotedBlocks: Array<GalleryPromotedPhotos<PartImage>> = []
       const plainImages: PartImage[] = []
       for (const v of variants) {
         if (!v.enabled) continue
@@ -86,15 +86,20 @@ export const shopVariationsCardMedia: ShopCardMediaProvider = {
           sourceId: v.childProductId,
         })
         if (v.showImageInGallery) {
-          const picked = upFrontImageIndexes(media.map((m) => m.url), v.galleryImageUrls).map((i) => toImage(media[i]!))
-          promotedBlocks.push({ galleryPosition: v.galleryPosition, item: picked })
+          const pickedMedia = upFrontImageIndexes(media.map((m) => m.url), v.galleryImageUrls).map((i) => media[i]!)
+          promotedBlocks.push({
+            galleryPosition: v.galleryPosition,
+            item: pickedMedia.map(toImage),
+            photoPositions: photoPositionsFor(pickedMedia.map((m) => m.url), v.galleryImageUrls, v.galleryImagePositions),
+          })
         } else {
           plainImages.push(toImage(primary))
         }
       }
       // Shop's card builder counts pictures, not variations, so each promoted
-      // set is spread into slots that keep it together where it was dragged.
-      const promotedImages = blocksAsPositionedItems(promotedBlocks)
+      // set is spread into slots that keep it together where it was dragged -
+      // or, arranged photo by photo, each photo goes to its own.
+      const promotedImages = promotedPhotosAsPositionedItems(promotedBlocks)
         .map(({ galleryPosition, item }): PartImage => ({ ...item, promoted: true, position: galleryPosition }))
       const images = [...promotedImages, ...plainImages]
       if (images.length > 0) out.set(productId, { images })

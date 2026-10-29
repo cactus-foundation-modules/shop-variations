@@ -1,0 +1,22 @@
+-- Where EACH of a promoted variation's up-front photographs sits in the parent's
+-- gallery.
+--
+-- 018 let a variation go up front with several photos, but they travelled as
+-- one block at gallery_position, so a range with two finishes and two shots of
+-- each could only ever read oak, oak, walnut, walnut. Owners want oak, walnut,
+-- oak, walnut - one of each first, the second angles after.
+--
+-- So each up-front photo now carries a slot of its own: its index in the
+-- FINISHED gallery, counted in pictures, the parent's own photographs included.
+-- Parallel to gallery_image_urls - the slot for gallery_image_urls[i] is
+-- gallery_image_positions[i] - and a NULL element means "after the rest", where
+-- a photo ticked on the Variations tab since the last arrangement lands.
+--
+-- NULL for the whole column is every variation nobody has arranged photo by
+-- photo, and reads exactly as before: one block at gallery_position. Written by
+-- the product's Images tab, which stores both columns together.
+--
+-- New numbered file rather than an edit to 001 alone: editing an applied
+-- migration only ever reaches fresh installs. 001 is kept in step.
+ALTER TABLE "svr_variants"
+    ADD COLUMN IF NOT EXISTS "gallery_image_positions" INTEGER[];

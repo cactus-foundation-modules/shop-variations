@@ -88,3 +88,33 @@ export function blocksAsPositionedItems<T>(blocks: Array<GalleryPromoted<T[]>>):
   }
   return out
 }
+
+/** A promoted variation's up-front photos, and where they go. */
+export type GalleryPromotedPhotos<T> = GalleryPromoted<T[]> & {
+  /**
+   * Each photo's own slot, counted in pictures and lined up with `item`
+   * (migration 020). Absent, or out of step with `item`, for a variation still
+   * arranged as one block at `galleryPosition`.
+   */
+  photoPositions?: ReadonlyArray<number | null>
+}
+
+/**
+ * Every promoted photo with a slot of its own, counted in pictures, ready for
+ * mergeGalleryItems - or for shop's own merge, which counts the same way.
+ *
+ * A variation arranged photo by photo on the Images tab hands each photo its own
+ * slot, so oak, walnut, oak, walnut is something an owner can actually ask for.
+ * One nobody has arranged that way goes through blocksAsPositionedItems and comes
+ * out exactly as it always has. `entries` in matrix order, as everywhere else.
+ */
+export function promotedPhotosAsPositionedItems<T>(entries: Array<GalleryPromotedPhotos<T>>): Array<GalleryPromoted<T>> {
+  const slotsOf = (entry: GalleryPromotedPhotos<T>) => (
+    entry.photoPositions && entry.photoPositions.length === entry.item.length ? entry.photoPositions : null
+  )
+  const placed = entries.flatMap((entry) => {
+    const slots = slotsOf(entry)
+    return slots ? entry.item.map((item, i) => ({ galleryPosition: slots[i] ?? null, item })) : []
+  })
+  return [...placed, ...blocksAsPositionedItems(entries.filter((entry) => !slotsOf(entry)))]
+}

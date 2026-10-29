@@ -20,7 +20,7 @@ import type { ShpProduct } from '@/modules/shop/lib/types'
 import { getVariationBootstrap } from '@/modules/shop-variations/lib/variation-bootstrap'
 import { selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
 import { resolveVariant, valueToOptionMap, withAutoSelected, withStrandedFilled, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
-import { mergeGalleryBlocks } from '@/modules/shop-variations/lib/gallery-order'
+import { mergeGalleryItems, promotedPhotosAsPositionedItems } from '@/modules/shop-variations/lib/gallery-order'
 import { upFrontIndexesFromPayload } from '@/modules/shop-variations/lib/up-front-images'
 
 export const shopVariationsSocialImage: ShopProductSocialImageProvider = {
@@ -59,13 +59,13 @@ export const shopVariationsSocialImage: ShopProductSocialImageProvider = {
     // promoted variations folded in where the owner put them on the Images tab.
     // The scraper is promised the picture the page will open on, so the answer
     // has to be the front of that one list, not a guess between two piles.
-    const gallery = mergeGalleryBlocks(
+    const gallery = mergeGalleryItems(
       payload.baseImages.map((i) => i.url),
-      promoted.flatMap((v) => {
+      promotedPhotosAsPositionedItems(promoted.flatMap((v) => {
         if (!v.showImageInGallery) return []
         const urls = upFrontIndexesFromPayload(v.imageUrls.length, v.galleryImageIndexes).map((i) => v.imageUrls[i]!)
-        return urls.length > 0 ? [{ galleryPosition: v.galleryPosition ?? null, item: urls }] : []
-      }),
+        return urls.length > 0 ? [{ galleryPosition: v.galleryPosition ?? null, item: urls, photoPositions: v.galleryImagePositions }] : []
+      })),
     )
     return variantImages[0] ?? gallery[0] ?? null
   },

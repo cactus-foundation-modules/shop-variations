@@ -18,7 +18,7 @@ import { canSeeReturnsPolicy } from '@/modules/shop/lib/admin-returns'
 import { getOptionsWithValues, getOptionsWithValuesForProducts } from '@/modules/shop-variations/lib/db/options'
 import { getVariants, getVariantValueMap, getVariantAliasMap, getVariantByChildProductId, getVariantsForProducts, getVariantValueMapForProducts, createVariant, setVariantPositions, type ChildProductFields } from '@/modules/shop-variations/lib/db/variants'
 import { getAddons, getAddonsForProducts } from '@/modules/shop-variations/lib/db/addons'
-import { payloadUpFrontIndexes } from '@/modules/shop-variations/lib/up-front-images'
+import { payloadUpFrontIndexes, photoPositionsFor, upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 import type { SvrAddon, SvrAddonConfig, SvrOptionWithValues, VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
 
@@ -432,8 +432,16 @@ export async function getVariantSelectorPayload(parentId: string): Promise<Varia
       // Only where it says something: a variation that is not promoted, or whose
       // pick is its first photo anyway, carries no key at all.
       ...(() => {
-        const indexes = v.showImageInGallery ? payloadUpFrontIndexes(imagesByChild.get(v.childProductId) ?? [], v.galleryImageUrls) : undefined
-        return indexes ? { galleryImageIndexes: indexes } : {}
+        if (!v.showImageInGallery) return {}
+        const urls = imagesByChild.get(v.childProductId) ?? []
+        const indexes = payloadUpFrontIndexes(urls, v.galleryImageUrls)
+        // Each photo's own slot, lined up with the photos the payload's reader
+        // will resolve - only on a variation arranged photo by photo.
+        const positions = photoPositionsFor(upFrontImageIndexes(urls, v.galleryImageUrls).map((i) => urls[i]!), v.galleryImageUrls, v.galleryImagePositions)
+        return {
+          ...(indexes ? { galleryImageIndexes: indexes } : {}),
+          ...(positions ? { galleryImagePositions: positions } : {}),
+        }
       })(),
       sku: exposeCodes ? child?.sku ?? null : null,
       saleSku: exposeCodes ? child?.sale_sku ?? null : null,
@@ -937,7 +945,7 @@ export async function upsertVariantForCombination(
     if (ctx) {
       // Matches what createVariant just wrote: a new variation is never
       // promoted onto the parent's gallery until someone ticks one of the boxes.
-      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, galleryPosition: null, galleryImageUrls: null, position: existing.length })
+      ctx.existing.push({ id: cv.id, productId: parentId, childProductId: child.id, enabled: true, showImageInGallery: false, showModelInGallery: false, galleryPosition: null, galleryImageUrls: null, galleryImagePositions: null, position: existing.length })
       ctx.valueMap[cv.id] = optionValueIds
     }
   }

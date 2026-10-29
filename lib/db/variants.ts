@@ -12,6 +12,7 @@ function mapVariant(r: Record<string, unknown>): SvrVariant {
     showModelInGallery: r.show_model_in_gallery as boolean,
     galleryPosition: (r.gallery_position as number | null) ?? null,
     galleryImageUrls: (r.gallery_image_urls as string[] | null) ?? null,
+    galleryImagePositions: (r.gallery_image_positions as Array<number | null> | null) ?? null,
     position: r.position as number,
   }
 }
@@ -281,9 +282,51 @@ export async function setVariantShowImageInGallery(id: string, showImageInGaller
 // Which of the variation's photographs go up front, by URL (migration 018). An
 // empty list is stored as NULL - "the first photo" - so there is one way of
 // saying it rather than two.
+//
+// Each photo's own gallery slot (020) sits parallel to that list, so it is
+// carried across by URL in the same statement: a photo still picked keeps its
+// slot, a newly picked one gets none (after the rest). Going back to "the first
+// photo" drops the slots and the variation reads as one block again - there is
+// no pick left for them to line up with.
 export async function setVariantGalleryImageUrls(id: string, urls: string[]): Promise<void> {
   const value = urls.length > 0 ? urls : null
-  await prisma.$executeRaw`UPDATE "svr_variants" SET "gallery_image_urls" = ${value}::text[] WHERE "id" = ${id}`
+  await prisma.$executeRaw`
+    UPDATE "svr_variants"
+    SET "gallery_image_positions" = CASE
+          WHEN "gallery_image_positions" IS NULL OR ${value}::text[] IS NULL THEN NULL
+          ELSE ARRAY(
+            SELECT "gallery_image_positions"[array_position("gallery_image_urls", picked.url)]
+            FROM unnest(${value}::text[]) WITH ORDINALITY AS picked(url, n)
+            ORDER BY picked.n
+          )
+        END,
+        "gallery_image_urls" = ${value}::text[]
+    WHERE "id" = ${id}
+  `
+}
+
+// A promoted variation as the Images tab last arranged it, photo by photo
+// (migration 020): the photos going up front, each one's slot in the finished
+// gallery counted in pictures, and gallery_position kept as the earliest of them
+// for anything that still reads a variation as one block.
+export type VariantGalleryArrangement = {
+  id: string
+  imageUrls: string[]
+  imagePositions: Array<number | null>
+}
+
+export async function setVariantGalleryArrangements(arrangements: VariantGalleryArrangement[]): Promise<void> {
+  for (const a of arrangements) {
+    const slots = a.imagePositions.filter((p): p is number => p != null)
+    const first = slots.length > 0 ? Math.min(...slots) : null
+    await prisma.$executeRaw`
+      UPDATE "svr_variants"
+      SET "gallery_image_urls" = ${a.imageUrls}::text[],
+          "gallery_image_positions" = ${a.imagePositions}::int[],
+          "gallery_position" = ${first}::int
+      WHERE "id" = ${a.id}
+    `
+  }
 }
 
 export async function setVariantShowModelInGallery(id: string, showModelInGallery: boolean): Promise<void> {
@@ -295,12 +338,15 @@ export async function setVariantShowModelInGallery(id: string, showModelInGaller
 // Written as one statement because the Images tab hands back the whole
 // arrangement at once, and a loop of single UPDATEs would be a round trip per
 // tile every time an image was dragged.
+//
+// A block-level slot replaces any photo-by-photo one (020), so the per-photo
+// slots go too.
 export async function setVariantGalleryPositions(positions: { id: string; galleryPosition: number | null }[]): Promise<void> {
   if (positions.length === 0) return
   const tuples = positions.map((p) => Prisma.sql`(${p.id}::text, ${p.galleryPosition}::int)`)
   await prisma.$executeRaw`
     UPDATE "svr_variants" AS v
-    SET "gallery_position" = c.slot
+    SET "gallery_position" = c.slot, "gallery_image_positions" = NULL
     FROM (VALUES ${Prisma.join(tuples)}) AS c(id, slot)
     WHERE v."id" = c.id
   `

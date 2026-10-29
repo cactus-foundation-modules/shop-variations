@@ -134,6 +134,9 @@ export type PackedSelectorVariants = {
   // Which photos a promoted variation leads with, where it is not just its
   // first. Absent on every range nobody has picked for.
   galleryImageIndexes?: SparseColumn<number[]>
+  // Each up-front photo's own slot, where the owner arranged a variation photo
+  // by photo. Absent on every range nobody has.
+  galleryImagePositions?: SparseColumn<Array<number | null>>
   skus?: SparseColumn<string>
   saleSkus?: SparseColumn<string>
   suppliers?: SparseColumn<string>
@@ -364,6 +367,7 @@ export function packSelectorVariants(variants: VariantSelectorVariant[], options
       showModelInGallery: collectSparse(variants, (variant) => variant.showModelInGallery, (value) => value === false),
       galleryPositions: collectPresent(variants, (variant) => variant.galleryPosition),
       galleryImageIndexes: collectPresent(variants, (variant) => variant.galleryImageIndexes),
+      galleryImagePositions: collectPresent(variants, (variant) => variant.galleryImagePositions),
       skus: collectPresent(variants, (variant) => variant.sku),
       saleSkus: collectPresent(variants, (variant) => variant.saleSku),
       suppliers: collectPresent(variants, (variant) => variant.supplier),
@@ -404,6 +408,7 @@ export function unpackSelectorVariants(packed: PackedSelectorVariants, options: 
   const showModelInGallery = spreadSparse(packed.showModelInGallery, count, false)
   const galleryPositions = spreadSparse<number | null>(packed.galleryPositions, count, null)
   const galleryImageIndexes = spreadSparse<number[] | undefined>(packed.galleryImageIndexes, count, undefined)
+  const galleryImagePositions = spreadSparse<Array<number | null> | undefined>(packed.galleryImagePositions, count, undefined)
   const skus = spreadSparse<string | null>(packed.skus, count, null)
   const saleSkus = spreadSparse<string | null>(packed.saleSkus, count, null)
   const suppliers = spreadSparse<string | null>(packed.suppliers, count, null)
@@ -435,6 +440,7 @@ export function unpackSelectorVariants(packed: PackedSelectorVariants, options: 
       galleryPosition: galleryPositions[index] ?? null,
       // Written only where the packer had one, as the server builds it.
       ...(galleryImageIndexes[index] !== undefined ? { galleryImageIndexes: galleryImageIndexes[index] } : {}),
+      ...(galleryImagePositions[index] !== undefined ? { galleryImagePositions: galleryImagePositions[index] } : {}),
       sku: skus[index] ?? null,
       saleSku: saleSkus[index] ?? null,
       supplier: suppliers[index] ?? null,
