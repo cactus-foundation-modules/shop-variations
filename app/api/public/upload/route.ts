@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash, randomUUID } from 'crypto'
 import { getActiveMediaProvider, isMediaProviderConfigured } from '@/lib/config/env'
 import { uploadMedia, validateUpload } from '@/lib/media/upload'
-import { checkInMemoryRateLimit } from '@/modules/shop/lib/rate-limit'
-import { getClientIp } from '@/lib/auth/rate-limit'
+import { getClientIp, checkSharedRateLimit } from '@/lib/auth/rate-limit'
 import { getAddonById } from '@/modules/shop-variations/lib/db/addons'
 import { getSettings } from '@/modules/shop-variations/lib/db/settings'
 import { createUpload } from '@/modules/shop-variations/lib/db/uploads'
@@ -43,7 +42,7 @@ async function checkContent(buffer: Buffer, mimeType: string): Promise<{ ok: tru
 
 export async function POST(request: NextRequest) {
   const ip = await getClientIp()
-  if (!checkInMemoryRateLimit(`svr-upload:${ip}`, 20, 15 * 60 * 1000)) {
+  if (!(await checkSharedRateLimit(`svr-upload:${ip}`, 20, 15 * 60 * 1000))) {
     return NextResponse.json({ error: 'Too many uploads, please try again shortly.' }, { status: 429 })
   }
 
