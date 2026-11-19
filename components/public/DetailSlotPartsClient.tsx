@@ -116,6 +116,14 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
   // installing a module that contributes gallery media would quietly do nothing
   // on exactly the products we claimed.
   const [picked, setPicked] = useState<{ id: string; key: string } | null>(null)
+  // Photos whose resized copies would not load, by address. Cloudflare refuses a
+  // resize once a plan's quota is spent (HTTP 429), and core's page-wide rescue
+  // (lib/media/resize-fallback.ts) swaps in the original - but only on the DOM.
+  // Without this the next render (a zoom released, a variation picked and picked
+  // back) handed the same refused srcset straight back and drew the broken
+  // picture again until the rescue caught it. Remembered here, the stage asks for
+  // the original from then on.
+  const [resizeRefused, setResizeRefused] = useState<Record<string, true>>({})
   const variantImages = sel.variantImages
   const variantImage = variantImages[0] ?? null
   // A stable key for the reset effect: the array is rebuilt every render, so
@@ -253,9 +261,16 @@ export function VariantSlotGalleryClient({ slug, productName, images, zoom, clas
             // the original is served WHILE magnified and the responsive set the
             // rest of the time. The shopper who zooms pays one fetch, which is
             // what everybody used to pay on arrival.
-            {...(magnified
+            {...(magnified || resizeRefused[main]
               ? { src: main }
               : responsiveImg(main, '(max-width: 900px) 100vw, 640px', HALF_WIDTH_LADDER, resizing))}
+            // Marked from the resized render only. Core's rescue may already have
+            // swapped the source by the time this runs, so currentSrc proves
+            // nothing; marking is harmless anyway - the worst case is the stage
+            // asking for the original it would have fallen back to.
+            onError={() => {
+              if (!magnified && !resizeRefused[main]) setResizeRefused((r) => (r[main] ? r : { ...r, [main]: true }))
+            }}
             alt={productName}
             // The one urgent picture on the page, as it is in shop's own gallery,
             // which hands this stage over to us on a product with options. It is
