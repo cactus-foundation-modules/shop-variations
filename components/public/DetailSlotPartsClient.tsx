@@ -457,9 +457,11 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
   const optionsPlaced = layoutBlockTypes.includes('ShopVariantOptions')
   const addonsPlaced = layoutBlockTypes.includes('ShopVariantPersonalisation')
 
-  // The stepper OPENS on the chosen combination's minimum and moves with it,
-  // but its floor is 1: a listing's minimum is met across the basket, so one of
-  // this colour and three of another is a perfectly good way to reach four.
+  // The stepper opens on 1 and its floor is 1 wherever the minimum is pooled: a
+  // listing's minimum is met across the basket, so one of this colour and three
+  // of another is a perfectly good way to reach four - opening on four read as
+  // "four of THIS one". A product claimed for its add-ons alone is one line that
+  // must meet its minimum by itself, so that one still opens on the minimum.
   // Derived rather than pushed into state on a change - state set from a prop
   // needs an effect to keep up, and an effect here would leave the box showing a
   // stale figure for a frame after every option press.
@@ -467,7 +469,10 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
   // Worked out above the early return below, not beside the markup, because the
   // publish that follows is a hook and hooks cannot sit after a return.
   const min = sel.minQuantity
-  const shownQty = Math.max(1, qty ?? min)
+  const shownQty = Math.max(1, qty ?? (sel.hasOptions ? 1 : min))
+  // What the box shows while being typed in: an emptied box stays empty until it
+  // is blurred, rather than snapping straight back to 1 under the backspace.
+  const [qtyDraft, setQtyDraft] = useState<string | null>(null)
 
   // How many are in hand, announced to the rest of the page for a block that has
   // to do arithmetic with it - an accessories box offering one screen per desk
@@ -548,8 +553,13 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
           <div className={classNames.stepper}>
             <button type="button" onClick={() => setQty(Math.max(1, shownQty - 1))} disabled={shownQty <= 1} aria-label="Decrease quantity">−</button>
             <input
-              type="text" inputMode="numeric" value={shownQty} aria-label="Quantity"
-              onChange={(e) => setQty(Math.max(1, Number(e.target.value.replace(/\D/g, '')) || 1))}
+              type="text" inputMode="numeric" value={qtyDraft ?? String(shownQty)} aria-label="Quantity"
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '')
+                setQtyDraft(digits)
+                if (digits !== '') setQty(Math.max(1, Number(digits)))
+              }}
+              onBlur={() => setQtyDraft(null)}
             />
             <button type="button" onClick={() => setQty(shownQty + 1)} aria-label="Increase quantity">+</button>
           </div>

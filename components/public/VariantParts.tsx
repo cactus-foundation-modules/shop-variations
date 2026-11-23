@@ -1590,18 +1590,21 @@ export function VariantPricePart({ preview, slug: explicitSlug, initial, showCom
 export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, label }: PartProps & { label?: string }) {
   const slug = useProductSlug(explicitSlug ?? null)
   const sel = useVariationSelection(slug, initial)
-  // null = untouched, so the box shows the chosen combination's minimum and
-  // keeps up as the shopper changes their mind - see the detail slot's buy row.
+  // null = untouched, so the box shows the opening figure and keeps up as the
+  // shopper changes their mind - see the detail slot's buy row.
   const [qty, setQty] = useState<number | null>(null)
+  // An emptied box stays empty while being typed in, rather than snapping back.
+  const [qtyDraft, setQtyDraft] = useState<string | null>(null)
   const [added, setAdded] = useState(false)
 
-  // Opens on the chosen combination's minimum, floored at 1 - the minimum is met
-  // across the basket, not by this line alone. See the same note on the detail
+  // Opens on 1 where the minimum is pooled across options - it is met across the
+  // basket, not by this line alone - and on the minimum for an add-ons-only
+  // product, which is one line meeting it by itself. See the same note on the detail
   // slot's buy row for why it is derived rather than kept in step by an effect.
   // Worked out up here rather than beside the markup because the publish below
   // is a hook, and hooks cannot sit after the early returns.
   const min = sel.minQuantity
-  const shownQty = Math.max(1, qty ?? min)
+  const shownQty = Math.max(1, qty ?? (sel.hasOptions ? 1 : min))
 
   // How many are in hand, announced for a block that has to do arithmetic with
   // it - an accessories box offering one screen per desk needs to know four
@@ -1630,8 +1633,13 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
       <SelectionSummary sel={sel} />
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
         <input
-          type="number" min={1} step={1} value={shownQty} aria-label="Quantity"
-          onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+          type="number" inputMode="numeric" min={1} step={1} value={qtyDraft ?? String(shownQty)} aria-label="Quantity"
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, '')
+            setQtyDraft(digits)
+            if (digits !== '') setQty(Math.max(1, Number(digits)))
+          }}
+          onBlur={() => setQtyDraft(null)}
           style={{ width: 64, padding: '0.5rem', borderRadius: 6, border: '1px solid var(--color-border)' }}
         />
         {/* The tooltip goes on a wrapper, not on the button: a disabled control
