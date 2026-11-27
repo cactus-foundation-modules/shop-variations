@@ -40,6 +40,8 @@ const CONTROL_OPTIONS: { value: SvrControlType; label: string }[] = [
   { value: 'PILL', label: 'Pills' },
   { value: 'SWATCH', label: 'Colour swatch' },
   { value: 'IMAGE', label: 'Image swatch' },
+  { value: 'CHECKBOX', label: 'Tick box' },
+  { value: 'RAL', label: 'RAL colour' },
 ]
 
 /** An option already on the product, so the picker can spot clashes and repeats. */

@@ -17,6 +17,7 @@ function mapOption(r: Record<string, unknown>): SvrOption {
     cardLabel: (r.card_label as string | null) ?? null,
     cardLimit: (r.card_limit as number | null) ?? null,
     cardFitLines: (r.card_fit_lines as number | null) ?? null,
+    customNote: (r.custom_note as string | null) ?? null,
   }
 }
 
@@ -114,7 +115,7 @@ export async function getOptionWithValues(id: string): Promise<SvrOptionWithValu
 // `cardLabel`, `cardLimit` and `cardFitLines` are nullable columns, so undefined
 // (leave alone) and null (clear it) mean different things here and must stay
 // distinguishable.
-export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean; nameOverridden?: boolean; cardDisplay?: boolean; cardLabel?: string | null; cardLimit?: number | null; cardFitLines?: number | null }): Promise<void> {
+export async function updateOption(id: string, fields: { name?: string; controlType?: SvrControlType; position?: number; requiresPreviousOption?: boolean; nameOverridden?: boolean; cardDisplay?: boolean; cardLabel?: string | null; cardLimit?: number | null; cardFitLines?: number | null; customNote?: string | null }): Promise<void> {
   const sets: Prisma.Sql[] = []
   if (fields.name !== undefined) sets.push(Prisma.sql`"name" = ${fields.name}`)
   if (fields.nameOverridden !== undefined) sets.push(Prisma.sql`"name_overridden" = ${fields.nameOverridden}`)
@@ -125,6 +126,7 @@ export async function updateOption(id: string, fields: { name?: string; controlT
   if (fields.cardLabel !== undefined) sets.push(Prisma.sql`"card_label" = ${fields.cardLabel}`)
   if (fields.cardLimit !== undefined) sets.push(Prisma.sql`"card_limit" = ${fields.cardLimit}`)
   if (fields.cardFitLines !== undefined) sets.push(Prisma.sql`"card_fit_lines" = ${fields.cardFitLines}`)
+  if (fields.customNote !== undefined) sets.push(Prisma.sql`"custom_note" = ${fields.customNote}`)
   if (sets.length === 0) return
   await prisma.$executeRaw`UPDATE "svr_options" SET ${Prisma.join(sets, ', ')} WHERE "id" = ${id}`
 }

@@ -5,7 +5,19 @@
 import type { ReturnsPolicy } from '@/modules/shop/lib/returnable'
 import type { ProductTaxView } from '@/modules/shop/lib/tax-view-shared'
 
-export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL' | 'IMAGE'
+// CHECKBOX is the tick box for a yes-or-nothing extra (a power module, a
+// headrest): an option with exactly two values, one of which means "without".
+// Unticked is that value, chosen for the shopper; ticked is the other one. See
+// tickBoxValues in selection-logic.ts for how the two are told apart.
+//
+// RAL is a paint colour from the RAL Classic chart: the owner's suggested colours
+// are ordinary values, and a value labelled "Custom RAL" opens the rest of the
+// chart to the shopper. See lib/ral-option.ts.
+export type SvrControlType = 'DROPDOWN' | 'SWATCH' | 'PILL' | 'IMAGE' | 'CHECKBOX' | 'RAL'
+
+// Every control type, in the order the admin lists them. Kept here so the APIs'
+// validators and the pickers can never disagree about what exists.
+export const SVR_CONTROL_TYPES = ['DROPDOWN', 'PILL', 'SWATCH', 'IMAGE', 'CHECKBOX', 'RAL'] as const satisfies readonly SvrControlType[]
 
 // Cap on the swatch column at the API edge. Roomy because an IMAGE swatch stores
 // a media-library url, and the hosted ones carry a folder path and a cache-busting
@@ -48,6 +60,11 @@ export type SvrOption = {
   // does the counting, since only it knows the width. Wins over cardLimit when
   // both are set; null falls back to the cardLimit rule.
   cardFitLines: number | null
+  // A line of the owner's own words shown with the custom choice ("adds five
+  // working days"). Only the RAL type reads it; null shows nothing. Optional so
+  // other modules that build option objects of their own (test fixtures, the
+  // modular configurator) keep compiling against this type unchanged.
+  customNote?: string | null
 }
 
 export type SvrOptionValue = {

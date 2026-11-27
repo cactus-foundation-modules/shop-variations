@@ -72,7 +72,9 @@ export type CardOptionsFacts = { options: CardOptionSummary[]; preview?: CardOpt
 export const CARD_OPTIONS_FACT_ID = 'variations-card-options'
 
 function kindOf(controlType: string): CardOptionKind {
-  if (controlType === 'SWATCH') return 'swatch'
+  // A RAL option's suggested colours carry the chart's colour as their swatch,
+  // so a card draws them as colour dots like any colour option.
+  if (controlType === 'SWATCH' || controlType === 'RAL') return 'swatch'
   if (controlType === 'IMAGE') return 'image'
   return 'text'
 }

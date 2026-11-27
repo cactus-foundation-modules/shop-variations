@@ -16,8 +16,10 @@
 // made the options turn up a beat after everything else.
 import { useEffect, useState } from 'react'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
-import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, previewVariants, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
+import { resolveVariant, isValueAvailable, isValueOutOfStock, isOptionVisible, withAutoSelected, withStrandedFilled, withTickBoxDefaults, optionalRalOff, unavailableWith, availableWith, availableWithPhrase, valueToOptionMap, valuePriceRange, optionAffectsPrice, valueOnSale, optionHasSale, previewVariants, type OptionSelection } from '@/modules/shop-variations/lib/selection-logic'
 import { optionParamEntries, selectionValueIdsFromParams } from '@/modules/shop-variations/lib/url-selection'
+import { checkCustomRal, ralOptionParts } from '@/modules/shop-variations/lib/ral-option'
+import { ralLabel } from '@/modules/shop-variations/lib/ral-classic'
 import { addToCart } from '@/modules/shop/components/public/cart'
 import { minOrderQuantity } from '@/modules/shop/lib/min-order'
 import { publishVariantSelection } from '@/modules/shop-variations/lib/selection-broadcast'
@@ -34,6 +36,15 @@ type Entry = {
   fetching: boolean
   optionValues: OptionSelection
   addonValues: Record<string, AddonValue>
+  // What the shopper has typed or picked behind a RAL option's custom choice,
+  // keyed by option id. Raw - checked against the chart when read (see
+  // checkCustomRal) - so a half-typed "50" stays in the box while they finish.
+  ralCodes: Record<string, string>
+  // The optional RAL options whose "choose a RAL colour" box the shopper has
+  // ticked. Ticked with no colour picked yet is a real state - the box is on,
+  // the buy button waits - and the picks map has no way to say it, so it lives
+  // here. See withTickBoxDefaults, which leaves these options empty.
+  ralOpened: Record<string, boolean>
   // Set when the entry was seeded from a server-resolved payload, which carries
   // the shop's symbol with it. Null on the fetch path, where the symbol is a
   // page-wide lookup rather than a per-product one - hence the fallback below.
@@ -71,7 +82,7 @@ let currencyFetched = false
 const isServer = typeof window === 'undefined'
 
 function newEntry(slug: string): Entry {
-  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, currencySymbol: null, resetEpoch: 0, seeded: false, openingSettled: false, subs: new Set() }
+  return { slug, payload: null, loaded: false, fetching: false, optionValues: {}, addonValues: {}, ralCodes: {}, ralOpened: {}, currencySymbol: null, resetEpoch: 0, seeded: false, openingSettled: false, subs: new Set() }
 }
 
 // Turn a flat list of option-value ids (a deep-linked variant's combination)
@@ -213,6 +224,8 @@ function seedVariationSelection(slug: string, packed: PackedVariationBootstrap):
   // Carry over anything an unseeded island already collected for this slug.
   if (existing) {
     entry.addonValues = existing.addonValues
+    entry.ralCodes = existing.ralCodes
+    entry.ralOpened = existing.ralOpened
     entry.resetEpoch = existing.resetEpoch
     for (const cb of existing.subs) entry.subs.add(cb)
   }
@@ -286,8 +299,40 @@ export function setOptionValue(slug: string, optionId: string, valueId: string):
 export function resetOptionValues(slug: string): void {
   const entry = getEntry(slug)
   entry.optionValues = {}
+  entry.ralCodes = {}
+  entry.ralOpened = {}
   entry.openingSettled = true
   entry.resetEpoch += 1
+  notify(entry)
+  syncSelectionToUrl(entry)
+}
+
+// The custom RAL code behind one option's custom choice. Not part of the URL or
+// the variant: it is a detail of the line, carried to the basket as meta.
+export function setRalCode(slug: string, optionId: string, code: string): void {
+  const entry = getEntry(slug)
+  entry.ralCodes = { ...entry.ralCodes, [optionId]: code }
+  notify(entry)
+}
+
+// Tick or untick an optional RAL option's box. Ticking drops a standing "No RAL
+// colour" pick so the colour is the shopper's to choose; unticking puts it back
+// as their own pick, so it reads as an answer and not a gap.
+export function setRalOpened(slug: string, optionId: string, opened: boolean): void {
+  const entry = getEntry(slug)
+  entry.ralOpened = { ...entry.ralOpened, [optionId]: opened }
+  const option = entry.payload?.options.find((o) => o.id === optionId)
+  const off = option ? optionalRalOff(option) : null
+  if (opened) {
+    if (off && entry.optionValues[optionId] === off.id) {
+      const rest = { ...entry.optionValues }
+      delete rest[optionId]
+      entry.optionValues = rest
+    }
+  } else if (off) {
+    entry.optionValues = { ...entry.optionValues, [optionId]: off.id }
+  }
+  entry.openingSettled = true
   notify(entry)
   syncSelectionToUrl(entry)
 }
@@ -356,16 +401,30 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // single choice (cascading downward). Both steps are gated on the shopper having
   // actually picked something: an untouched page opens unchosen, showing the
   // parent's price, and must not quietly pick a first option for them.
-  const effective = payload ? withStrandedFilled(payload, rawOptionValues) : rawOptionValues
+  //
+  // The one exception is a tick box: unticked is a real answer ("without"), not a
+  // question left open, so it is filled from the start (withTickBoxDefaults). It
+  // goes in before the single-value settling so a box counts as chosen for the
+  // options beneath it, but it does not itself open that gate - an untouched page
+  // still settles nothing else on the shopper's behalf.
+  const stranded = payload ? withStrandedFilled(payload, rawOptionValues) : rawOptionValues
+  const ralOpened = entry?.ralOpened ?? {}
+  const opened = new Set(Object.keys(ralOpened).filter((id) => ralOpened[id]))
+  const effective = payload ? withTickBoxDefaults(payload, stranded, opened) : stranded
   const optionValues = payload && Object.keys(rawOptionValues).length > 0 ? withAutoSelected(payload, effective) : effective
   const addonValues = entry?.addonValues ?? {}
+  const ralCodes = entry?.ralCodes ?? {}
 
   const variant = payload ? resolveVariant(payload, optionValues) : null
   const addonPricing = payload ? computeAddonPricing(payload.addons, addonValues) : { priceAdjust: 0, valid: true, fields: [] }
   const hasOptions = (payload?.options.length ?? 0) > 0
   // Whether there's anything to reset - the link has no business appearing over
   // a set of controls the shopper hasn't touched.
-  const anyOptionChosen = payload ? payload.options.some((o) => !!optionValues[o.id]) : false
+  // Judged on the shopper's own picks: an untouched page that only carries the
+  // tick boxes' "without" answers has nothing to put back.
+  // A ticked RAL box counts too: it is something the shopper did, with nothing
+  // picked under it yet.
+  const anyOptionChosen = payload ? opened.size > 0 || (Object.keys(rawOptionValues).length > 0 && payload.options.some((o) => !!optionValues[o.id])) : false
   // The cheapest a shopper could pay across the variations on offer, for the
   // "From £…" shown before a combination is settled. Enabled variants only - a
   // switched-off one is not on sale - and falls back to the parent's own price
@@ -500,7 +559,11 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
         if (!isOptionVisible(payload, optionValues, index)) return []
         const valueId = optionValues[o.id]
         if (!valueId) return []
-        const label = o.values.find((v) => v.id === valueId)?.label
+        // The custom RAL choice reads back as the colour actually settled on
+        // rather than as "Custom RAL", once there is one.
+        const parts = ralOptionParts(o)
+        const custom = parts?.custom?.id === valueId ? checkCustomRal(parts, ralCodes[o.id]) : null
+        const label = custom?.ok ? `${ralLabel(custom.colour)} (custom)` : o.values.find((v) => v.id === valueId)?.label
         return label ? [{ optionId: o.id, optionName: o.name, valueLabel: label }] : []
       })
     : []
@@ -512,7 +575,20 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
   // (which needs a resolved variant, and so a full combination, to be true). The
   // two happened to agree, and relying on that made "the button is locked until
   // every option is picked" an accident of the stock check rather than a rule.
-  const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid
+  // A RAL option whose custom choice is picked still owes us the colour itself:
+  // the variation says "any other RAL colour", and the basket cannot be told
+  // which until a chart code is in the box. Named like the missing options, so
+  // the locked button can say what it is waiting for.
+  const customRal: Record<string, string> = {}
+  const missingRalNames: string[] = []
+  for (const o of payload?.options ?? []) {
+    const parts = ralOptionParts(o)
+    if (!parts?.custom || optionValues[o.id] !== parts.custom.id) continue
+    const check = checkCustomRal(parts, ralCodes[o.id])
+    if (check.ok) customRal[o.id] = check.colour.code
+    else missingRalNames.push(`a ${o.name.toLowerCase()} code`)
+  }
+  const canAdd = !!payload && (!hasOptions || (allOptionsChosen && inStock)) && addonPricing.valid && missingRalNames.length === 0
 
   // The minimum this listing answers to for what is in hand: the chosen
   // combination's own figure (already resolved against the parent server-side),
@@ -570,6 +646,7 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
     })
     const mainMeta: Record<string, unknown> = { ...companions.mainMeta }
     if (Object.keys(filled).length > 0) mainMeta.addons = filled
+    if (Object.keys(customRal).length > 0) mainMeta.ral = customRal
 
     if (Object.keys(mainMeta).length > 0) {
       // The stable key folds the companion meta in, so the same variation added
@@ -623,7 +700,12 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
     allOptionsChosen,
     anyOptionChosen,
     missingOptionNames,
+    // Custom RAL codes still owed once every option is picked ("a frame colour
+    // code"), for the locked button to name in the same sentence form.
+    missingRalNames,
     chosenSummary,
+    ralCodes,
+    ralOpened,
     addonPricing,
     canAdd,
     // Counts the shopper's presses of Reset options. Islands showing something
@@ -644,6 +726,8 @@ export function useVariationSelection(slug: string | null, initial?: PackedVaria
     setOption: (optionId: string, valueId: string) => slug && setOptionValue(slug, optionId, valueId),
     resetOptions: () => slug && resetOptionValues(slug),
     setAddon: (addonId: string, value: AddonValue) => slug && setAddonValue(slug, addonId, value),
+    setRalCode: (optionId: string, code: string) => slug && setRalCode(slug, optionId, code),
+    setRalOpened: (optionId: string, on: boolean) => slug && setRalOpened(slug, optionId, on),
     isAvailable: (optionId: string, valueId: string) => (payload ? isValueAvailable(payload, optionValues, optionId, valueId) : false),
     // A pick left stranded by a change above it: present in the raw map but
     // pruned from the reachable `optionValues`. Returned so the control can show

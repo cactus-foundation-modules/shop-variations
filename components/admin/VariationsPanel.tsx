@@ -13,10 +13,14 @@ import {
   useSetProductEditorPriceManaged,
 } from '@/modules/shop/components/admin/product-editor/context'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
+import { tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
+import { findRal, ralCodeInLabel, ralLabel, searchRal, type RalColour } from '@/modules/shop-variations/lib/ral-classic'
+import { CUSTOM_RAL_LABEL, NO_RAL_LABEL, isCustomRalLabel } from '@/modules/shop-variations/lib/ral-option'
+import { isWithoutLabel } from '@/modules/shop-variations/lib/without-label'
 import {
   OptionSourcePicker, type OptionSourceSelection, type PickerProvider,
 } from '@/modules/shop-variations/components/admin/OptionSourcePicker'
-import type { SvrAddon, SvrControlType } from '@/modules/shop-variations/lib/types'
+import { SVR_CONTROL_TYPES, type SvrAddon, type SvrControlType } from '@/modules/shop-variations/lib/types'
 import { upFrontImageIndexes } from '@/modules/shop-variations/lib/up-front-images'
 
 type OptionValue = { id: string; label: string; slug: string; swatch: string | null; swatchSmall?: string | null; position: number; sourceRef: string | null; requiresValueIds?: string[] }
@@ -29,6 +33,9 @@ type Option = {
   // what it is called there (null = the option's own name) and how many values
   // are shown before the "+4" marker (null = all of them).
   cardDisplay: boolean; cardLabel: string | null; cardLimit: number | null; cardFitLines: number | null
+  // The owner's note beside a RAL option's custom choice. Absent from an older
+  // payload, which reads the same as no note.
+  customNote?: string | null
   values: OptionValue[]
 }
 type VariantRow = {
@@ -125,10 +132,10 @@ export type VariantColumn = {
 // the other modules' columns.
 const MODEL_COLUMN_PREFIX = 'product-3d-views-variant:'
 
-const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch' }
+const CONTROL_LABELS: Record<Option['controlType'], string> = { DROPDOWN: 'Dropdown', SWATCH: 'Colour swatch', PILL: 'Pills', IMAGE: 'Image swatch', CHECKBOX: 'Tick box', RAL: 'RAL colour' }
 // One order for both the add-an-option box and the per-option picker, so the list
 // never reads differently depending on where the owner meets it.
-const CONTROL_ORDER: Option['controlType'][] = ['DROPDOWN', 'PILL', 'SWATCH', 'IMAGE']
+const CONTROL_ORDER: Option['controlType'][] = [...SVR_CONTROL_TYPES]
 
 const DEFAULT_SWATCH = '#000000'
 
@@ -409,6 +416,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
   const renameValue = (id: string, label: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { label }, 'Could not rename that value.')
   const recolourValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that colour.')
   const setValueNeeds = (id: string, requiresValueIds: string[]) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { requiresValueIds }, 'Could not save that rule.')
+  const setCustomNote = (id: string, note: string) => patchAndRefresh(`/api/m/shop-variations/admin/options/${id}`, { customNote: note.trim() || null }, 'Could not save that note.')
   const repictureValue = (id: string, swatch: string) => patchAndRefresh(`/api/m/shop-variations/admin/option-values/${id}`, { swatch }, 'Could not change that picture.')
 
   // Build an option from a source module's ready-made list. Only the picked refs
@@ -938,6 +946,19 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                   onLabel={(label) => setCardLabel(opt.id, label)}
                   onShow={(fields) => setCardShow(opt.id, fields)}
                 />
+                {/* A tick box needs exactly two values - the "without" and the
+                    extra - and says which is which, so the owner can see what an
+                    unticked box will mean before a shopper does. */}
+                {opt.controlType === 'CHECKBOX' && (() => {
+                  const pair = tickBoxValues(opt)
+                  return (
+                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: pair ? 'var(--color-text-secondary)' : 'var(--color-warning, var(--color-text-secondary))' }}>
+                      {pair
+                        ? <>Unticked means <strong>{pair.off.label}</strong>, chosen for the shopper. Ticking picks <strong>{pair.on.label}</strong>.</>
+                        : <>A tick box needs exactly two values: one meaning without (such as &ldquo;No&rdquo;) and the extra itself. Until then shoppers see pills.</>}
+                    </p>
+                  )
+                })()}
                 {/* Duplicate labels are legal now (two "Black"s, told apart by
                     slug and swatch) - but a dropdown or pill control shows text
                     only, so there the duplicates would read identically to a
@@ -979,6 +1000,7 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                       {opt.controlType === 'SWATCH' && (
                         <InlineSwatch value={v.swatch} label={v.label} onSave={(swatch) => recolourValue(v.id, swatch)} disabled={busy} />
                       )}
+                      {opt.controlType === 'RAL' && <RalValueDot label={v.label} />}
                       {opt.controlType === 'IMAGE' && (
                         <InlineImageSwatch value={v.swatch} previewUrl={v.swatchSmall ?? null} label={v.label} onSave={(swatch) => repictureValue(v.id, swatch)} disabled={busy} resolveUploadFolderId={resolveUploadFolderId} resolveBrowseFolderId={resolveBrowseFolderId} />
                       )}
@@ -1005,7 +1027,9 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                       <button type="button" aria-label={`Remove ${v.label}`} onClick={() => deleteValue(v.id)} disabled={busy} className="spe-icon-btn spe-icon-btn-danger">×</button>
                     </span>
                   ))}
-                  <AddValueInline optionId={opt.id} isSwatch={opt.controlType === 'SWATCH'} onAdd={addValue} disabled={busy} />
+                  {opt.controlType === 'RAL'
+                    ? <RalValueAdder optionId={opt.id} values={opt.values} onAdd={addValue} disabled={busy} />
+                    : <AddValueInline optionId={opt.id} isSwatch={opt.controlType === 'SWATCH'} onAdd={addValue} disabled={busy} />}
                   {/* Sits beside the type-it-in field rather than replacing it:
                       a sourced option can still take a one-off value of its own. */}
                   <AddFromSourceInline
@@ -1015,6 +1039,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     disabled={busy}
                   />
                 </div>
+                {opt.controlType === 'RAL' && (
+                  <RalCustomControls
+                    key={opt.customNote ?? ''}
+                    option={opt} disabled={busy}
+                    onAddCustom={() => addValue(opt.id, CUSTOM_RAL_LABEL, null)}
+                    onAddOff={() => addValue(opt.id, NO_RAL_LABEL, null)}
+                    onRemoveCustom={(id) => deleteValue(id)}
+                    onNote={(note) => setCustomNote(opt.id, note)}
+                  />
+                )}
                 {(() => {
                   const open = opt.values.find((v) => v.id === needsOpenId)
                   if (!open) return null
@@ -1574,7 +1608,7 @@ function CardDisplayControls({ option, disabled, onToggle, onLabel, onShow }: {
   const savedMode = option.cardFitLines != null ? `fit${option.cardFitLines}` : option.cardLimit != null ? 'count' : 'all'
   const [mode, setMode] = useState(savedMode)
 
-  const showsSwatches = option.controlType === 'SWATCH' || option.controlType === 'IMAGE'
+  const showsSwatches = option.controlType === 'SWATCH' || option.controlType === 'IMAGE' || option.controlType === 'RAL'
   const countLabel = showsSwatches ? 'Swatches shown' : 'Options shown'
   const things = showsSwatches ? 'swatches' : 'options'
   const rowText: CSSProperties = { display: 'inline-flex', gap: '0.375rem', alignItems: 'center', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }
@@ -1937,6 +1971,135 @@ function InlineImageSwatch({ value, previewUrl, label, onSave, disabled, resolve
         />
       )}
     </span>
+  )
+}
+
+// The colour a RAL value stands for, beside its name in the value list. Read from
+// the chart by the code in the label, so it is always the chart's own colour; a
+// value naming no code (the custom choice) shows a dashed ring instead.
+function RalValueDot({ label }: { label: string }) {
+  const code = ralCodeInLabel(label)
+  const colour = code ? findRal(code) : null
+  return (
+    <span
+      aria-hidden
+      style={{ width: 14, height: 14, borderRadius: 999, flexShrink: 0, background: colour?.hex ?? 'transparent', border: colour ? '1px solid var(--color-border)' : '1px dashed var(--color-border-strong, var(--color-border))' }}
+    />
+  )
+}
+
+// Add a suggested colour to a RAL option by code or by name: "70" offers the
+// 70xx greys, "anthra" offers Anthracite grey. Each pick becomes an ordinary value
+// labelled the chart's way ("RAL 7016 Anthracite grey") with the chart's colour
+// as its swatch, so product cards can draw it too. Colours already on the option
+// are left out of the list rather than offered twice.
+function RalValueAdder({ optionId, values, onAdd, disabled }: {
+  optionId: string
+  values: OptionValue[]
+  onAdd: (optionId: string, label: string, swatch: string | null) => void
+  disabled: boolean
+}) {
+  const [query, setQuery] = useState('')
+  const have = new Set(values.flatMap((v) => { const c = ralCodeInLabel(v.label); return c ? [c] : [] }))
+  const results = searchRal(query, 12).filter((c) => !have.has(c.code)).slice(0, 8)
+  const listId = `ral-add-${optionId}`
+
+  function add(colour: RalColour) {
+    onAdd(optionId, ralLabel(colour), colour.hex)
+    setQuery('')
+  }
+
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex' }}>
+      <input
+        placeholder="Add a RAL colour: 7016 or anthracite" value={query} onChange={(e) => setQuery(e.target.value)}
+        aria-label="Add a suggested RAL colour" aria-controls={listId} aria-expanded={results.length > 0} role="combobox" aria-autocomplete="list"
+        onKeyDown={(e) => { if (e.key === 'Enter' && results[0]) { e.preventDefault(); add(results[0]) } if (e.key === 'Escape') setQuery('') }}
+        disabled={disabled}
+        style={{ padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: 250, fontSize: '0.8125rem', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+      />
+      {results.length > 0 && (
+        <span
+          id={listId} role="listbox" aria-label="Matching RAL colours"
+          style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 30, minWidth: 250, display: 'grid', padding: '0.25rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)' }}
+        >
+          {results.map((c) => (
+            <button
+              key={c.code} type="button" role="option" aria-selected={false} onClick={() => add(c)} disabled={disabled}
+              // Shop's editor icon-button class lends the row its hover wash; the
+              // background is left to it rather than set here, where an inline
+              // value would beat the hover rule.
+              className="spe-icon-btn"
+              style={{ display: 'flex', gap: '0.5rem', padding: '0.3125rem 0.5rem', color: 'var(--color-text)', fontSize: '0.8125rem', lineHeight: 1.3, textAlign: 'left' }}
+            >
+              <span aria-hidden style={{ width: 16, height: 16, borderRadius: 999, background: c.hex, border: '1px solid var(--color-border)', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>RAL {c.code}</span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>{c.name}</span>
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// The custom choice on a RAL option: whether shoppers may have any other chart
+// colour, and the note shown with it. On is simply a value labelled "Custom RAL"
+// (see lib/ral-option.ts), so its variations carry its price and stock like any
+// other value's - the hint says where to set the extra charge. Off removes that
+// value, exactly as its own remove button would.
+function RalCustomControls({ option, disabled, onAddCustom, onAddOff, onRemoveCustom, onNote }: {
+  option: Option
+  disabled: boolean
+  onAddCustom: () => void
+  onAddOff: () => void
+  onRemoveCustom: (valueId: string) => void
+  onNote: (note: string) => void
+}) {
+  const custom = option.values.find((v) => isCustomRalLabel(v.label)) ?? null
+  // Optional is a "No RAL colour" value: shoppers then see a tick box first,
+  // and leaving it unticked buys that value's variations.
+  const off = option.values.find((v) => isWithoutLabel(v.label) && !isCustomRalLabel(v.label)) ?? null
+  const [note, setNote] = useState(option.customNote ?? '')
+  const saveNote = () => { if (note.trim() !== (option.customNote ?? '')) onNote(note) }
+  return (
+    <div style={{ marginTop: '0.625rem', paddingTop: '0.625rem', borderTop: '1px solid var(--color-border)', display: 'grid', gap: '0.375rem', fontSize: '0.8125rem' }}>
+      <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', color: 'var(--color-text-secondary)' }}>
+        <input
+          type="checkbox" checked={!!off} disabled={disabled}
+          onChange={(e) => { if (e.target.checked) onAddOff(); else if (off) onRemoveCustom(off.id) }}
+        />
+        Optional: shoppers tick &ldquo;Choose a RAL colour&rdquo; before the colours appear
+      </label>
+      {off && (
+        <p style={{ margin: 0, paddingLeft: '1.375rem', color: 'var(--color-text-secondary)' }}>
+          Left unticked, they get the <strong>{off.label}</strong> variations - price those as the standard finish.
+        </p>
+      )}
+      <label style={{ display: 'inline-flex', gap: '0.375rem', alignItems: 'center', color: 'var(--color-text-secondary)' }}>
+        <input
+          type="checkbox" checked={!!custom} disabled={disabled}
+          onChange={(e) => { if (e.target.checked) onAddCustom(); else if (custom) onRemoveCustom(custom.id) }}
+        />
+        Add a Custom RAL choice at the end, so shoppers can have any other RAL Classic colour
+      </label>
+      {custom && (
+        <>
+          <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', paddingLeft: '1.375rem', color: 'var(--color-text-secondary)' }}>
+            Note shown with it
+            <input
+              value={note} maxLength={160} placeholder="Adds 5 working days" disabled={disabled}
+              onChange={(e) => setNote(e.target.value)} onBlur={saveNote}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveNote() } }}
+              style={{ padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', width: 220, fontSize: '0.8125rem', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+            />
+          </label>
+          <p style={{ margin: 0, paddingLeft: '1.375rem', color: 'var(--color-text-secondary)' }}>
+            Set the extra charge on the <strong>{custom.label}</strong> variations in the list below. The colour the shopper picks goes on the order line, invoice and emails.
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 

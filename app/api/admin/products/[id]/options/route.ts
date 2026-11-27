@@ -6,11 +6,11 @@ import { createOption, createOptionValue, ensureUniqueOptionValueSlug, getOption
 import { slugify } from '@/modules/shop/lib/slug'
 import { fileSwatchImage } from '@/modules/shop-variations/lib/media-folder'
 import { resolveOptionSourceProvider } from '@/modules/shop-variations/lib/option-sources'
-import { SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
+import { SVR_CONTROL_TYPES, SWATCH_MAX_LENGTH } from '@/modules/shop-variations/lib/types'
 
 const Body = z.object({
   name: z.string().min(1).max(80),
-  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).default('DROPDOWN'),
+  controlType: z.enum(SVR_CONTROL_TYPES).default('DROPDOWN'),
   values: z.array(z.object({ label: z.string().min(1).max(80), swatch: z.string().max(SWATCH_MAX_LENGTH).nullable().optional() })).optional(),
   // Build the option from a source module instead of from typed-in values. The
   // refs are the provider's own; `valueRefs` is which of the source's values to

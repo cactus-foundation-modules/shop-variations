@@ -505,6 +505,7 @@ export function VariantSlotPurchaseClient({ slug, showStepper, label, classNames
   // shopper on a phone or a screen reader.
   const reason = !sel.allOptionsChosen ? (missingOptionsSentence(sel.missingOptionNames) ?? 'Choose your options')
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
+    : sel.missingRalNames.length > 0 ? missingOptionsSentence(sel.missingRalNames)
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 

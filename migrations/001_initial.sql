@@ -38,10 +38,13 @@ CREATE TABLE IF NOT EXISTS "svr_options" (
     -- tile (1-6), however many values that is at the width the card is drawn at.
     -- Wins over card_limit when both are set; null = the card_limit rule. See 012.
     "card_fit_lines" INTEGER,
+    -- A line of the owner's own words shown with the option's custom choice
+    -- ("adds five working days"). Only the RAL type reads it. See 021.
+    "custom_note" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "svr_options_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "svr_options_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "shp_products"("id") ON DELETE CASCADE,
-    CONSTRAINT "svr_options_control_type_check" CHECK ("control_type" IN ('DROPDOWN', 'SWATCH', 'PILL', 'IMAGE'))
+    CONSTRAINT "svr_options_control_type_check" CHECK ("control_type" IN ('DROPDOWN', 'SWATCH', 'PILL', 'IMAGE', 'CHECKBOX', 'RAL'))
 );
 CREATE INDEX IF NOT EXISTS "svr_options_product_id_idx" ON "svr_options" ("product_id");
 

@@ -5,6 +5,9 @@ import { previewAwareThumbs } from '@/modules/shop-variations/lib/gallery-extra-
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
+import { tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
+import { checkCustomRal, ralOptionParts, type RalOptionParts } from '@/modules/shop-variations/lib/ral-option'
+import { RAL_CLASSIC, RAL_FAMILIES, findRal, ralLabel } from '@/modules/shop-variations/lib/ral-classic'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
 import type { ShopGalleryExtra } from '@/modules/shop/lib/gallery-media'
 import { publishPurchaseQuantity } from '@/modules/shop/components/public/purchase-quantity'
@@ -1006,6 +1009,235 @@ function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
   return <span className="svr-peek-pv" aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
 
+// The custom chip's dot before a colour is chosen: a little wheel of the chart's
+// own colours, so it reads as "any colour" at a glance. Built from the chart
+// rather than typed in, so it only ever shows real RAL colours.
+const RAL_WHEEL = `conic-gradient(${['3020', '2004', '1023', '6018', '5015', '4008', '3020'].map((c) => findRal(c)?.hex ?? 'transparent').join(', ')})`
+
+// One choice in a RAL option's row: a suggested colour or the custom chip. The
+// same pill shape, edge and tint as every other option on the page, with the code
+// over the name so a shopper holding a chart can match it by number.
+function RalChip({ dot, top, bottom, active, available, title, onClick, onSale }: {
+  dot: string | null; top: string; bottom: string | null; active: boolean; available: boolean; title: string; onClick: () => void; onSale: boolean
+}) {
+  return (
+    <button
+      type="button" disabled={!available} onClick={onClick} aria-pressed={active} title={title}
+      style={{
+        position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+        padding: '0.375rem 0.75rem 0.375rem 0.375rem', boxSizing: 'border-box', borderRadius: 999,
+        border: `2px ${available ? 'solid' : 'dashed'} ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        background: active ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))' : 'var(--color-surface)',
+        color: available ? 'var(--color-text)' : 'var(--color-text-muted)',
+        cursor: available ? 'pointer' : 'not-allowed', fontSize: '0.875rem', textAlign: 'left', fontFamily: 'inherit',
+      }}
+    >
+      {active && <ChosenTick />}
+      <span aria-hidden style={{ width: 24, height: 24, borderRadius: 999, flexShrink: 0, border: dot ? '1px solid var(--color-border)' : '1px dashed var(--color-border)', background: dot ?? 'transparent' }} />
+      <span style={{ display: 'grid', lineHeight: 1.2 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', textDecoration: available ? 'none' : 'line-through' }}>
+          {top}
+          {onSale && <SaleBadge />}
+        </span>
+        {bottom && <span data-cactus-hover-fg="inherit" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{bottom}</span>}
+      </span>
+    </button>
+  )
+}
+
+// The whole RAL option: suggestions, the Custom chip last, and - once Custom is
+// picked - the panel for the rest of the chart: a code box for the shopper who
+// has a code in hand, and the chart itself, family by family, for the one who
+// does not. Both write the same code into the selection store (setRalCode), so
+// typing 5015 lights its swatch and clicking a swatch fills the box.
+//
+// The code is the line's detail, not a variant: the custom choice's variations
+// carry the price and stock, and the code rides to the basket as meta (see
+// lib/ral-option.ts). Until a chart code is in, the buy button stays locked and
+// says so (missingRalNames).
+function RalChoices({ option, parts, sel, chosen, beside, showPrices, markSale, unavailableTitle, onChoose }: {
+  option: SvrOptionWithValues
+  parts: RalOptionParts<SvrOptionWithValues['values'][number]>
+  sel: ReturnType<typeof useVariationSelection>
+  chosen: string | undefined
+  beside: boolean
+  showPrices: boolean
+  markSale: boolean
+  unavailableTitle: (v: SvrOptionWithValues['values'][number]) => string
+  onChoose?: () => void
+}) {
+  const code = sel.ralCodes[option.id] ?? ''
+  const check = checkCustomRal(parts, code)
+  // Which family of the chart is open. Follows a typed code to its own family,
+  // so the swatch the shopper just named is on screen; otherwise the shopper's
+  // own pick of tab, starting on the greys (where most frames and legs live).
+  const [familyPick, setFamilyPick] = useState('7')
+  const [hovered, setHovered] = useState<string | null>(null)
+  const typedFamily = check.ok ? check.colour.code[0] : null
+  const [followed, setFollowed] = useState<string | null>(null)
+  if (typedFamily && typedFamily !== followed) {
+    // Adjusting state to a change in the typed code, the pattern React documents
+    // for deriving state from props during render - no effect, no extra paint.
+    setFollowed(typedFamily)
+    setFamilyPick(typedFamily)
+  }
+  const family = familyPick
+  const custom = parts.custom
+  const customChosen = !!custom && chosen === custom.id
+  const suggestedCodes = new Set(parts.suggestions.flatMap((s) => (s.colour ? [s.colour.code] : [])))
+  const chart = RAL_CLASSIC.filter((c) => c.code[0] === family && !suggestedCodes.has(c.code))
+  const hoveredColour = hovered ? findRal(hovered) : null
+  const customPrice = custom && showPrices && sel.isAvailable(option.id, custom.id) ? valuePriceHint(sel, option.id, custom.id) : null
+  const panelId = `svr-ral-${option.id}`
+  const inputId = `svr-ral-code-${option.id}`
+  const errorText = code.length < 4 || check.ok ? null
+    : check.reason === 'suggested' && check.colour ? `${ralLabel(check.colour)} is one of the colours above - pick it there.`
+    : `RAL ${code} isn't a RAL Classic colour. Check the code on your chart.`
+
+  // An optional RAL option opens on a tick box; the colours are only drawn once
+  // it is ticked. Ticked is the shopper's tick, or a colour already standing
+  // (a shared link, a pick from before), or no colourless variation to be had
+  // in the first place - then the box is on and locked, since unticking would
+  // ask for something this combination does not come in.
+  const off = parts.off
+  const offAvailable = off ? sel.isAvailable(option.id, off.id) : false
+  const opened = !off || !!sel.ralOpened[option.id] || (!!chosen && chosen !== off.id) || !offAvailable
+  const tickBox = off ? (
+    <label
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.75rem', boxSizing: 'border-box', borderRadius: 8,
+        border: `2px solid ${opened ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        background: opened ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))' : 'var(--color-surface)',
+        color: 'var(--color-text)', cursor: offAvailable ? 'pointer' : 'not-allowed', fontSize: '0.875rem',
+        marginBottom: opened ? '0.625rem' : 0, ...(beside ? { verticalAlign: 'top' as const } : null),
+      }}
+    >
+      <input
+        type="checkbox" checked={opened} disabled={!offAvailable}
+        onChange={(e) => { sel.setRalOpened(option.id, e.target.checked); if (!e.target.checked) onChoose?.() }}
+        style={{ width: 18, height: 18, margin: 0, accentColor: 'var(--color-primary)', cursor: 'inherit', flexShrink: 0 }}
+      />
+      Choose a RAL colour
+    </label>
+  ) : null
+  if (!opened) return tickBox
+
+  const pickCustomCode = (next: string) => {
+    sel.setRalCode(option.id, next)
+    if (findRal(next) && !suggestedCodes.has(next)) onChoose?.()
+  }
+
+  return (
+    <>
+      {tickBox && <div>{tickBox}</div>}
+      <div style={beside ? { marginBottom: '-0.5rem' } : { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {parts.suggestions.map(({ value: v, colour }) => {
+          const available = sel.isAvailable(option.id, v.id)
+          const active = chosen === v.id
+          const wrap = beside ? { marginRight: '0.5rem', marginBottom: '0.5rem', display: 'inline-block', verticalAlign: 'top' as const } : undefined
+          return (
+            <span key={v.id} style={wrap}>
+              <RalChip
+                dot={colour?.hex ?? v.swatch ?? null}
+                top={colour ? `RAL ${colour.code}` : v.label}
+                bottom={colour?.name ?? null}
+                active={active} available={available}
+                title={available ? v.label : unavailableTitle(v)}
+                onSale={available && markSale && sel.valueOnSale(option.id, v.id)}
+                onClick={() => { sel.setOption(option.id, v.id); onChoose?.() }}
+              />
+            </span>
+          )
+        })}
+        {custom && (() => {
+          const available = sel.isAvailable(option.id, custom.id)
+          const shown = customChosen && check.ok ? check.colour : null
+          return (
+            <span style={beside ? { marginRight: '0.5rem', marginBottom: '0.5rem', display: 'inline-block', verticalAlign: 'top' } : undefined}>
+              <RalChip
+                dot={shown ? shown.hex : RAL_WHEEL}
+                top={shown ? `RAL ${shown.code}` : custom.label}
+                bottom={shown ? shown.name : 'Any other colour'}
+                active={customChosen} available={available}
+                title={available ? `${custom.label} - any other RAL Classic colour` : unavailableTitle(custom)}
+                onSale={available && markSale && sel.valueOnSale(option.id, custom.id)}
+                onClick={() => sel.setOption(option.id, custom.id)}
+              />
+            </span>
+          )
+        })()}
+      </div>
+      {customChosen && custom && (
+        <div id={panelId} role="group" aria-label={`${custom.label} colour`} style={{ marginTop: '0.75rem', border: '2px solid var(--color-primary)', borderRadius: 12, padding: '0.75rem', display: 'grid', gap: '0.625rem', clear: 'both' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <label htmlFor={inputId} style={{ fontWeight: 600, fontSize: '0.875rem' }}>{custom.label} colour</label>
+            {(customPrice || option.customNote) && (
+              <span style={{ fontSize: '0.75rem', padding: '0.125rem 0.5rem', borderRadius: 6, background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)' }}>
+                {customPrice}{customPrice && option.customNote ? ' · ' : ''}{option.customNote}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'stretch', border: '1px solid var(--color-border)', borderRadius: 6, overflow: 'hidden', height: 38 }}>
+              <span aria-hidden style={{ display: 'inline-flex', alignItems: 'center', padding: '0 0.625rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', background: 'var(--color-bg-subtle)', borderRight: '1px solid var(--color-border)' }}>RAL</span>
+              <input
+                id={inputId} value={code} inputMode="numeric" maxLength={4} placeholder="5015" autoComplete="off"
+                aria-describedby={errorText ? `${inputId}-err` : undefined} aria-invalid={!!errorText}
+                onChange={(e) => sel.setRalCode(option.id, e.target.value.replace(/\D/g, '').slice(0, 4))}
+                style={{ border: 'none', outline: 'none', width: 72, padding: '0 0.625rem', fontSize: '0.9375rem', fontFamily: 'var(--font-mono, monospace)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+              />
+            </span>
+            <span aria-hidden style={{ width: 38, height: 38, borderRadius: 6, border: check.ok ? '1px solid var(--color-border)' : '1px dashed var(--color-border)', background: check.ok ? check.colour.hex : 'transparent' }} />
+            <span aria-live="polite" style={{ fontSize: '0.875rem', color: check.ok ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
+              {check.ok ? check.colour.name : code.length < 4 ? 'Type a code, or pick one below' : ''}
+            </span>
+          </div>
+          {errorText && <p id={`${inputId}-err`} role="alert" style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--color-destructive-hover)' }}>{errorText}</p>}
+          <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.625rem', display: 'grid', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Or pick from the chart</span>
+            <div role="group" aria-label="Colour family" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+              {RAL_FAMILIES.map((f) => (
+                <button
+                  key={f.digit} type="button" aria-pressed={family === f.digit} onClick={() => setFamilyPick(f.digit)} data-cactus-unstyled=""
+                  style={{
+                    padding: '0.25rem 0.625rem', borderRadius: 999, fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit',
+                    border: `1px solid ${family === f.digit ? 'var(--color-text-muted)' : 'var(--color-border)'}`,
+                    background: family === f.digit ? 'var(--color-bg-subtle)' : 'transparent',
+                    color: family === f.digit ? 'var(--color-text)' : 'var(--color-text-muted)',
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(34px, 1fr))', gap: '0.5rem' }} onMouseLeave={() => setHovered(null)}>
+              {chart.map((c) => {
+                const on = check.ok && check.colour.code === c.code
+                return (
+                  <button
+                    key={c.code} type="button" aria-pressed={on} aria-label={ralLabel(c)} title={ralLabel(c)} data-cactus-unstyled=""
+                    onMouseEnter={() => setHovered(c.code)} onFocus={() => setHovered(c.code)}
+                    onClick={() => pickCustomCode(c.code)}
+                    style={{
+                      width: '100%', aspectRatio: '1', padding: 0, borderRadius: 6, cursor: 'pointer',
+                      background: c.hex, border: '1px solid var(--color-border)',
+                      outline: on ? '2px solid var(--color-primary)' : 'none', outlineOffset: 2,
+                    }}
+                  />
+                )
+              })}
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', minHeight: '1.2em' }}>
+              {hoveredColour ? ralLabel(hoveredColour) : 'Hover or tap a colour to see its name.'}
+            </span>
+          </div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Screen colours are a guide. Ask for a painted sample if the exact shade matters.</span>
+        </div>
+      )}
+    </>
+  )
+}
+
 // Puts the shopper back to an unchosen page. Rendered by SelectionSummary just
 // above the buy button, in both hosts (see DetailSlotPartsClient) - one control,
 // one look, wherever the buy row happens to be.
@@ -1139,6 +1371,93 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // struck-through price beside the buy button - so the badges stay off and the
   // choices read as they always did. See optionHasSale in selection-logic.
   const markSale = sel.optionHasSale(option.id)
+
+  // A RAL paint colour: the owner's suggestions as chips, then a Custom chip that
+  // opens the rest of the chart. Its own component - see RalChoices below.
+  const ralParts = ralOptionParts(option)
+  if (ralParts) {
+    return (
+      <div style={rowStyle}>
+        {labelRow}
+        <RalChoices
+          option={option} parts={ralParts} sel={sel} chosen={chosen} beside={beside}
+          showPrices={showPrices} markSale={markSale} unavailableTitle={unavailableTitle} onChoose={onChoose}
+        />
+      </div>
+    )
+  }
+
+  // A tick box: one extra the shopper either takes or leaves. Unticked is the
+  // option's "without" value, already chosen for them (withTickBoxDefaults), so
+  // there is nothing to answer unless they want it; ticking picks the extra and
+  // unticking puts the "without" back. A tick-box option that is not exactly a
+  // yes-and-without pair has no honest box to draw and falls through to pills.
+  const tickPair = tickBoxValues(option)
+  if (tickPair) {
+    const { off, on } = tickPair
+    const ticked = chosen === on.id
+    const onAvailable = sel.isAvailable(option.id, on.id)
+    const offAvailable = sel.isAvailable(option.id, off.id)
+    // Locked whichever way the shopper cannot go: an extra this combination does
+    // not come with cannot be ticked, and one every remaining variation carries
+    // cannot be unticked.
+    const locked = ticked ? !offAvailable : !onAvailable
+    const lockedTitle = ticked ? `Comes with ${on.label} in this combination` : unavailableTitle(on)
+    // What ticking adds, where the option moves the money. Once both halves are
+    // pinned to one figure the honest hint is the difference ("+£45"); while
+    // other choices still leave a range it is the extra's own "from" figure, the
+    // same line a pill would print.
+    const onRange = showPrices && onAvailable ? sel.valuePrice(option.id, on.id) : null
+    const offRange = showPrices && offAvailable ? sel.valuePrice(option.id, off.id) : null
+    const pinned = (r: { min: number; max: number } | null) => !!r && r.max - r.min <= 0.005
+    const delta = onRange && offRange && pinned(onRange) && pinned(offRange) ? onRange.min - offRange.min : null
+    const priceLine = !showPrices || !onAvailable ? null
+      : delta != null
+        ? (Math.abs(delta) <= 0.005 ? null : <>{delta > 0 ? '+' : '-'}<TaxViewMoney amount={Math.abs(delta)} view={sel.taxView} format={(n) => moneyShort(n, sel.currencySymbol)} /></>)
+        : valuePriceHint(sel, option.id, on.id)
+    const onSale = onAvailable && markSale && sel.valueOnSale(option.id, on.id)
+    const note = !ticked && !onAvailable ? (availabilityNote(on) || unavailableWord(on)) : null
+    return (
+      <div style={rowStyle}>
+        {labelRow}
+        <label
+          title={locked ? lockedTitle : undefined}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.375rem 0.75rem', boxSizing: 'border-box', borderRadius: 8,
+            // The same edge and tint the pills use, so a ticked extra reads as
+            // chosen in the same language as every other pick on the page, and a
+            // dashed edge says "not on offer here" before the line underneath does.
+            border: `2px ${locked && !ticked ? 'dashed' : 'solid'} ${ticked ? 'var(--color-primary)' : 'var(--color-border)'}`,
+            background: ticked
+              ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))'
+              : 'var(--color-surface)',
+            color: locked && !ticked ? 'var(--color-text-muted)' : 'var(--color-text)',
+            cursor: locked ? 'not-allowed' : 'pointer',
+            fontSize: '0.875rem',
+            ...(beside ? { verticalAlign: 'top' as const } : null),
+          }}
+        >
+          <input
+            type="checkbox" checked={ticked} disabled={locked}
+            onChange={(e) => { sel.setOption(option.id, e.target.checked ? on.id : off.id); onChoose?.() }}
+            style={{ width: 18, height: 18, margin: 0, accentColor: 'var(--color-primary)', cursor: 'inherit', flexShrink: 0 }}
+          />
+          <span style={{ display: 'grid', lineHeight: 1.2 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <span style={{ textDecoration: note ? 'line-through' : 'none' }}>{on.label}</span>
+              {onSale && <SaleBadge />}
+            </span>
+            {(note || priceLine) && (
+              <span data-cactus-hover-fg="inherit" style={{ fontSize: '0.75rem', fontWeight: note ? 600 : 400, color: 'var(--color-text-muted)' }}>
+                {note ?? priceLine}
+              </span>
+            )}
+          </span>
+        </label>
+      </div>
+    )
+  }
 
   if (option.controlType === 'DROPDOWN') {
     return (
@@ -1625,6 +1944,7 @@ export function VariantAddToCartPart({ preview, slug: explicitSlug, initial, lab
   // should not have to audit the page to find the one they missed.
   const reason = !sel.allOptionsChosen ? (missingOptionsSentence(sel.missingOptionNames) ?? 'Choose your options')
     : sel.hasOptions && !sel.inStock ? 'Out of stock'
+    : sel.missingRalNames.length > 0 ? missingOptionsSentence(sel.missingRalNames)
     : !sel.addonPricing.valid ? (sel.addonPricing.reason ?? 'Complete the required fields')
     : null
 

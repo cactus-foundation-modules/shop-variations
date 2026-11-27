@@ -3,6 +3,7 @@
 // selectable/in-stock given the current partial choice. No React, no client
 // APIs, so it stays easy to reason about and reuse.
 import type { VariantSelectorPayload, VariantSelectorVariant } from '@/modules/shop-variations/lib/types'
+import { isWithoutLabel } from '@/modules/shop-variations/lib/without-label'
 
 export type OptionSelection = Record<string, string> // optionId -> chosen option_value_id
 
@@ -528,3 +529,58 @@ export function withAutoSelected(payload: VariantSelectorPayload, selection: Opt
 // (nor, worse, in the price) as though they had. Hence no preselect function
 // here - the opening selection is the empty one, and `resolveVariant` above
 // already treats that as "no variant yet".
+
+// The two halves of a tick-box option: the value an unticked box stands for (the
+// "without") and the value ticking it picks (the extra). Null unless the option is
+// a tick box with exactly two values - anything else has no honest yes-or-no
+// reading, and the storefront draws it as ordinary pills instead.
+//
+// The "without" is the value whose label says so - "No", "None", "Without
+// headrest", "No module" - wherever it sits in the list, so an owner who typed Yes
+// before No still gets the right box. Where neither label reads that way, the
+// first value in the owner's order is the unticked one.
+export function tickBoxValues<V extends { id: string; label: string }>(
+  option: { controlType: string; values: V[] },
+): { off: V; on: V } | null {
+  if (option.controlType !== 'CHECKBOX' || option.values.length !== 2) return null
+  const [first, second] = option.values
+  if (!first || !second) return null
+  const firstIsOff = isWithoutLabel(first.label) || !isWithoutLabel(second.label)
+  return firstIsOff ? { off: first, on: second } : { off: second, on: first }
+}
+
+// An unticked box is an answer, not a gap: the shopper who leaves the power module
+// off has chosen "without" as surely as one who picked a size has chosen a size.
+// So every tick-box option nobody has touched is filled with its "without" value -
+// and so is an optional RAL option (one with a "No RAL colour" value, see
+// lib/ral-option.ts) whose box the shopper has not ticked -
+// provided that value can be had with the picks above it, matching
+// isValueAvailable's directional filter. Where it cannot (every variation carries
+// the extra), the option is left empty and withAutoSelected settles it on the one
+// value that remains, which draws as a box ticked for the shopper.
+//
+// Runs top-down so a filled box counts as chosen for the options beneath it - an
+// option waiting on "every option above it" (isOptionVisible) is not held back by
+// a box the shopper has no reason to touch. Pure - hands back a new selection.
+//
+// `opened` names the optional RAL options whose box the shopper HAS ticked: those
+// are left empty, so the colour is theirs to choose and the buy button waits.
+export function withTickBoxDefaults(payload: VariantSelectorPayload, selection: OptionSelection, opened: ReadonlySet<string> = new Set()): OptionSelection {
+  let next = selection
+  for (const option of payload.options) {
+    if (next[option.id]) continue
+    const off = tickBoxValues(option)?.off ?? (opened.has(option.id) ? null : optionalRalOff(option))
+    if (!off) continue
+    if (isValueAvailable(payload, next, option.id, off.id)) next = { ...next, [option.id]: off.id }
+  }
+  return next
+}
+
+// The "No RAL colour" value of an optional RAL option, or null for a RAL option
+// that must be answered (and for every other type). Read the same way
+// lib/ral-option.ts reads it; kept here as well, rather than imported, because
+// that file imports the chart and selection logic stays free of it.
+export function optionalRalOff<V extends { id: string; label: string }>(option: { controlType: string; values: V[] }): V | null {
+  if (option.controlType !== 'RAL') return null
+  return option.values.find((v) => isWithoutLabel(v.label)) ?? null
+}

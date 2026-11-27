@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireShopUser } from '@/modules/shop/lib/access'
 import { updateOption, deleteOption, getOptionProductId, optionNameTaken } from '@/modules/shop-variations/lib/db/options'
+import { SVR_CONTROL_TYPES } from '@/modules/shop-variations/lib/types'
 
 const PatchBody = z.object({
   name: z.string().min(1).max(80).optional(),
-  controlType: z.enum(['DROPDOWN', 'SWATCH', 'PILL', 'IMAGE']).optional(),
+  controlType: z.enum(SVR_CONTROL_TYPES).optional(),
   position: z.number().int().optional(),
   requiresPreviousOption: z.boolean().optional(),
   cardDisplay: z.boolean().optional(),
@@ -17,6 +18,9 @@ const PatchBody = z.object({
   // Fill exactly N lines of the tile instead of a fixed count. The editor sends
   // the two as a pair (setting one clears the other), but each stands alone here.
   cardFitLines: z.number().int().min(1).max(6).nullable().optional(),
+  // The owner's note beside the custom choice ("adds five working days"). Null,
+  // or a blank box, clears it.
+  customNote: z.string().max(160).nullable().optional(),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -45,10 +49,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // it is stored as null rather than as an empty string the card would then print
   // in front of the swatches.
   const cardLabel = parsed.data.cardLabel?.trim()
+  const customNote = parsed.data.customNote?.trim()
   await updateOption(id, {
     ...parsed.data,
     ...(name !== undefined ? { name, nameOverridden: true } : {}),
     ...(parsed.data.cardLabel !== undefined ? { cardLabel: cardLabel || null } : {}),
+    ...(parsed.data.customNote !== undefined ? { customNote: customNote || null } : {}),
   })
   return NextResponse.json({ ok: true })
 }

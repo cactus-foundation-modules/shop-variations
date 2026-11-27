@@ -9,6 +9,7 @@ import { getAddonsForLine, prefetchAddons } from '@/modules/shop-variations/lib/
 import { buildVariantTitle, getVariantMinOrder, getVariantReturns, prefetchVariantTitles } from '@/modules/shop-variations/lib/variant-title-cache'
 import { getUploadByToken } from '@/modules/shop-variations/lib/db/uploads'
 import { computeAddonPricing, type AddonValue } from '@/modules/shop-variations/lib/addon-pricing'
+import { prefetchRalLines, resolveRalLine } from '@/modules/shop-variations/lib/ral-line'
 import type { CartLineResolution } from '@/modules/shop/lib/line-meta'
 import type { ShpProduct } from '@/modules/shop/lib/types'
 
@@ -46,7 +47,16 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
   // getAddonsForLine serves this from the request batch cache when shop
   // prefetched the whole cart, and falls back to the per-line lookups otherwise.
   const addons = await getAddonsForLine(product)
-  if (addons.length === 0) return { ...NOOP, displayTitle, minOrder, listingId, returns }
+
+  // A custom RAL colour picked on this variation: the code must be a real chart
+  // colour, and it goes onto the order line as its own field. Checked before the
+  // add-ons so a line missing its colour is refused whatever else it carries.
+  const ral = await resolveRalLine(product, meta)
+  if (!ral.valid) return { ...NOOP, valid: false, reason: ral.reason, displayTitle, minOrder, listingId, returns }
+
+  if (addons.length === 0) {
+    return { ...NOOP, persistMeta: ral.fields.length ? { fields: ral.fields } : null, displayTitle, minOrder, listingId, returns }
+  }
 
   const rawAddons = (meta && typeof meta.addons === 'object' && meta.addons) ? (meta.addons as Record<string, unknown>) : {}
 
@@ -70,7 +80,7 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
   return {
     valid: pricing.valid,
     priceAdjust: pricing.priceAdjust,
-    persistMeta: pricing.fields.length ? { fields: pricing.fields } : null,
+    persistMeta: pricing.fields.length || ral.fields.length ? { fields: [...ral.fields, ...pricing.fields] } : null,
     reason: pricing.reason,
     displayTitle,
     minOrder,
@@ -84,5 +94,5 @@ export async function resolveVariationLineMeta(product: ShpProduct, meta: Record
 // so resolveVariationLineMeta above is a cache read per line instead of two
 // queries. Called once per cart validate / checkout resolve with the whole set.
 export async function prefetchVariationLineMeta(products: ShpProduct[]): Promise<void> {
-  await Promise.all([prefetchAddons(products), prefetchVariantTitles(products)])
+  await Promise.all([prefetchAddons(products), prefetchVariantTitles(products), prefetchRalLines(products)])
 }

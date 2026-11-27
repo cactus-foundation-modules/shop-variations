@@ -13,7 +13,10 @@ Adds product options to the Cactus shop:
   catalogue. Each option picks how it looks on the page: a dropdown, a row of
   pills, colour swatches, or **image swatches** - a thumbnail per value, chosen
   or uploaded from the shared media library, for the choices a colour can't
-  describe (a wood grain, a fabric weave, a printed pattern). A combination can
+  describe (a wood grain, a fabric weave, a printed pattern), a **tick box** for
+  a take-it-or-leave-it extra, or a **RAL colour** picker - a few suggested
+  colours plus a Custom RAL choice that opens the whole RAL Classic chart, and
+  can itself sit behind a tick box when paint is optional. A combination can
   also be marked **Image up front** and, where the 3D module is installed,
   **3D up front** - independent switches that put its photographs (its first,
   unless the owner opens the row and picks others) and/or its model on the
