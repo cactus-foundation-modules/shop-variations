@@ -13,7 +13,7 @@ import {
   useSetProductEditorPriceManaged,
 } from '@/modules/shop/components/admin/product-editor/context'
 import { PersonalisationEditor } from '@/modules/shop-variations/components/admin/PersonalisationEditor'
-import { tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
+import { tickBoxChoices, tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
 import { findRal, ralCodeInLabel, ralLabel, searchRal, type RalColour } from '@/modules/shop-variations/lib/ral-classic'
 import { CUSTOM_RAL_LABEL, NO_RAL_LABEL, isCustomRalLabel } from '@/modules/shop-variations/lib/ral-option'
 import { isWithoutLabel } from '@/modules/shop-variations/lib/without-label'
@@ -951,11 +951,16 @@ export function VariationsPanel({ productId, columns = [], enabledPriceTypes = [
                     unticked box will mean before a shopper does. */}
                 {opt.controlType === 'CHECKBOX' && (() => {
                   const pair = tickBoxValues(opt)
+                  const multi = pair ? null : tickBoxChoices(opt)
+                  const choiceList = multi ? multi.choices.map((c) => c.label) : []
+                  const choiceText = choiceList.length > 1 ? `${choiceList.slice(0, -1).join(', ')} or ${choiceList[choiceList.length - 1]}` : choiceList[0] ?? ''
                   return (
-                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: pair ? 'var(--color-text-secondary)' : 'var(--color-warning, var(--color-text-secondary))' }}>
+                    <p role="status" style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', color: pair || multi ? 'var(--color-text-secondary)' : 'var(--color-warning, var(--color-text-secondary))' }}>
                       {pair
                         ? <>Unticked means <strong>{pair.off.label}</strong>, chosen for the shopper. Ticking picks <strong>{pair.on.label}</strong>.</>
-                        : <>A tick box needs exactly two values: one meaning without (such as &ldquo;No&rdquo;) and the extra itself. Until then shoppers see pills.</>}
+                        : multi
+                          ? <>Shoppers see &ldquo;Add {opt.name}&rdquo;. Unticked means <strong>{multi.off.label}</strong>; ticking shows <strong>{choiceText}</strong> to pick one from.</>
+                          : <>A tick box needs a value meaning without (such as &ldquo;No&rdquo; or &ldquo;No module&rdquo;) plus the extra, or several extras to choose between. Until then shoppers see pills.</>}
                     </p>
                   )
                 })()}

@@ -569,18 +569,35 @@ export function withTickBoxDefaults(payload: VariantSelectorPayload, selection: 
   let next = selection
   for (const option of payload.options) {
     if (next[option.id]) continue
-    const off = tickBoxValues(option)?.off ?? (opened.has(option.id) ? null : optionalRalOff(option))
+    const off = tickBoxValues(option)?.off ?? (opened.has(option.id) ? null : optionalOff(option))
     if (!off) continue
     if (isValueAvailable(payload, next, option.id, off.id)) next = { ...next, [option.id]: off.id }
   }
   return next
 }
 
-// The "No RAL colour" value of an optional RAL option, or null for a RAL option
-// that must be answered (and for every other type). Read the same way
-// lib/ral-option.ts reads it; kept here as well, rather than imported, because
-// that file imports the chart and selection logic stays free of it.
-export function optionalRalOff<V extends { id: string; label: string }>(option: { controlType: string; values: V[] }): V | null {
-  if (option.controlType !== 'RAL') return null
-  return option.values.find((v) => isWithoutLabel(v.label)) ?? null
+// The value an option falls back to while its "opt in" box is unticked: the
+// "No RAL colour" of an optional RAL option, or the "No module" of a tick box
+// with several choices behind it (tickBoxChoices). Null for anything that must
+// simply be answered. The RAL half is read the same way lib/ral-option.ts reads
+// it; kept here as well, rather than imported, because that file imports the
+// chart and selection logic stays free of it.
+export function optionalOff<V extends { id: string; label: string }>(option: { controlType: string; values: V[] }): V | null {
+  if (option.controlType === 'RAL') return option.values.find((v) => isWithoutLabel(v.label)) ?? null
+  return tickBoxChoices(option)?.off ?? null
+}
+
+// A tick box with more than one extra behind it: "No module", then White and
+// Black. The box opts in, and the choices appear under it to pick exactly one
+// from - unticking puts the "without" value back. Needs three or more values,
+// one of which says "without" (isWithoutLabel); a plain two-value tick box is
+// tickBoxValues' job, and a pile of values with no "without" among them has no
+// honest unticked state, so it is null and draws as pills.
+export function tickBoxChoices<V extends { id: string; label: string }>(
+  option: { controlType: string; values: V[] },
+): { off: V; choices: V[] } | null {
+  if (option.controlType !== 'CHECKBOX' || option.values.length < 3) return null
+  const off = option.values.find((v) => isWithoutLabel(v.label))
+  if (!off) return null
+  return { off, choices: option.values.filter((v) => v.id !== off.id) }
 }

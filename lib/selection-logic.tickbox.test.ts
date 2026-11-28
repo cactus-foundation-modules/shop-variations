@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tickBoxValues, withTickBoxDefaults, withAutoSelected, resolveVariant } from '@/modules/shop-variations/lib/selection-logic'
+import { tickBoxChoices, tickBoxValues, withTickBoxDefaults, withAutoSelected, resolveVariant } from '@/modules/shop-variations/lib/selection-logic'
 import type { VariantSelectorPayload } from '@/modules/shop-variations/lib/types'
 
 // Width then a power module offered as a tick box - the shape this exists for.
@@ -98,5 +98,35 @@ describe('withTickBoxDefaults on an optional RAL option', () => {
 
   it('leaves the colour open once the shopper ticks the box', () => {
     expect(withTickBoxDefaults(ralPayload(), {}, new Set(['R']))).toEqual({})
+  })
+})
+
+describe('tick box with several choices', () => {
+  it('finds the without value and the choices behind it', () => {
+    const pair = tickBoxChoices(opt('CHECKBOX', ['No Module', 'White', 'Black']))
+    expect(pair?.off.label).toBe('No Module')
+    expect(pair?.choices.map((c) => c.label)).toEqual(['White', 'Black'])
+  })
+
+  it('is null without a value meaning without, and for two values', () => {
+    expect(tickBoxChoices(opt('CHECKBOX', ['Red', 'White', 'Black']))).toBeNull()
+    expect(tickBoxChoices(opt('CHECKBOX', ['No', 'Yes']))).toBeNull()
+    expect(tickBoxChoices(opt('PILL', ['No Module', 'White', 'Black']))).toBeNull()
+  })
+
+  function multiPayload(): VariantSelectorPayload {
+    const v = (id: string, ids: string[]) => ({ id, childProductId: id, optionValueIds: ids, enabled: true, inStock: true, price: 100, compareAtPrice: null, imageUrls: [] })
+    return {
+      productId: 'p', basePrice: 5, baseImages: [], addons: [],
+      options: [{ id: 'M', name: 'Power Data Module', controlType: 'CHECKBOX', requiresPreviousOption: false, values: [
+        { id: 'M0', label: 'No Module', swatch: null }, { id: 'M1', label: 'White', swatch: null }, { id: 'M2', label: 'Black', swatch: null },
+      ] }],
+      variants: [v('a', ['M0']), v('b', ['M1']), v('c', ['M2'])],
+    } as unknown as VariantSelectorPayload
+  }
+
+  it('stands on No Module while unticked, and leaves the pick open once ticked', () => {
+    expect(withTickBoxDefaults(multiPayload(), {})).toEqual({ M: 'M0' })
+    expect(withTickBoxDefaults(multiPayload(), {}, new Set(['M']))).toEqual({})
   })
 })

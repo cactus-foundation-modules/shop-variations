@@ -5,7 +5,7 @@ import { previewAwareThumbs } from '@/modules/shop-variations/lib/gallery-extra-
 import { OPTIONS_AREA_CLASS } from '@/modules/shop-variations/lib/use-sticky-mobile-gallery'
 import { useVariationSelection } from '@/modules/shop-variations/lib/use-variation-selection'
 import { useProductSlug } from '@/modules/shop-variations/lib/use-product-slug'
-import { tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
+import { tickBoxChoices, tickBoxValues } from '@/modules/shop-variations/lib/selection-logic'
 import { checkCustomRal, ralOptionParts, type RalOptionParts } from '@/modules/shop-variations/lib/ral-option'
 import { RAL_CLASSIC, RAL_FAMILIES, findRal, ralLabel } from '@/modules/shop-variations/lib/ral-classic'
 import type { AddonValue, AddonFileValue } from '@/modules/shop-variations/lib/addon-pricing'
@@ -1009,6 +1009,32 @@ function ValuePreview({ src, colour }: { src?: string; colour?: string }) {
   return <span className="svr-peek-pv" aria-hidden style={{ width: 160, height: 90, display: 'block', borderRadius: 4, background: colour, border: '1px solid var(--color-border)' }} />
 }
 
+// The box an opt-in option opens on: an optional RAL option ("Choose a RAL
+// colour") or a tick box with several choices behind it ("Add Power Data
+// Module"). Unticked, the option's "without" value stands; ticked, its choices
+// are drawn underneath for the shopper to pick one. Locked ticked where no
+// "without" variation can be had with the picks above it.
+function OptInBox({ label, checked, locked, beside, onChange }: { label: string; checked: boolean; locked: boolean; beside: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.75rem', boxSizing: 'border-box', borderRadius: 8,
+        border: `2px solid ${checked ? 'var(--color-primary)' : 'var(--color-border)'}`,
+        background: checked ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))' : 'var(--color-surface)',
+        color: 'var(--color-text)', cursor: locked ? 'not-allowed' : 'pointer', fontSize: '0.875rem',
+        ...(beside ? { verticalAlign: 'top' as const } : null),
+      }}
+    >
+      <input
+        type="checkbox" checked={checked} disabled={locked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 18, height: 18, margin: 0, accentColor: 'var(--color-primary)', cursor: 'inherit', flexShrink: 0 }}
+      />
+      {label}
+    </label>
+  )
+}
+
 // The custom chip's dot before a colour is chosen: a little wheel of the chart's
 // own colours, so it reads as "any colour" at a glance. Built from the chart
 // rather than typed in, so it only ever shows real RAL colours.
@@ -1101,24 +1127,12 @@ function RalChoices({ option, parts, sel, chosen, beside, showPrices, markSale, 
   // ask for something this combination does not come in.
   const off = parts.off
   const offAvailable = off ? sel.isAvailable(option.id, off.id) : false
-  const opened = !off || !!sel.ralOpened[option.id] || (!!chosen && chosen !== off.id) || !offAvailable
+  const opened = !off || !!sel.optionalOpened[option.id] || (!!chosen && chosen !== off.id) || !offAvailable
   const tickBox = off ? (
-    <label
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.75rem', boxSizing: 'border-box', borderRadius: 8,
-        border: `2px solid ${opened ? 'var(--color-primary)' : 'var(--color-border)'}`,
-        background: opened ? 'color-mix(in srgb, var(--color-primary) 16%, var(--color-surface))' : 'var(--color-surface)',
-        color: 'var(--color-text)', cursor: offAvailable ? 'pointer' : 'not-allowed', fontSize: '0.875rem',
-        marginBottom: opened ? '0.625rem' : 0, ...(beside ? { verticalAlign: 'top' as const } : null),
-      }}
-    >
-      <input
-        type="checkbox" checked={opened} disabled={!offAvailable}
-        onChange={(e) => { sel.setRalOpened(option.id, e.target.checked); if (!e.target.checked) onChoose?.() }}
-        style={{ width: 18, height: 18, margin: 0, accentColor: 'var(--color-primary)', cursor: 'inherit', flexShrink: 0 }}
-      />
-      Choose a RAL colour
-    </label>
+    <OptInBox
+      label="Choose a RAL colour" checked={opened} locked={!offAvailable} beside={beside}
+      onChange={(on) => { sel.setOptionalOpened(option.id, on); if (!on) onChoose?.() }}
+    />
   ) : null
   if (!opened) return tickBox
 
@@ -1129,7 +1143,7 @@ function RalChoices({ option, parts, sel, chosen, beside, showPrices, markSale, 
 
   return (
     <>
-      {tickBox && <div>{tickBox}</div>}
+      {tickBox && <div style={{ marginBottom: '0.625rem' }}>{tickBox}</div>}
       <div style={beside ? { marginBottom: '-0.5rem' } : { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {parts.suggestions.map(({ value: v, colour }) => {
           const available = sel.isAvailable(option.id, v.id)
@@ -1305,8 +1319,12 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // picks above have ruled out still says its piece; under 'hide' only what the
   // shopper can actually pick - plus the current pick and any ghost, which stay
   // either way rather than letting the control blank out beneath them.
+  const multi = tickBoxChoices(option)
+  const multiOffAvailable = multi ? sel.isAvailable(option.id, multi.off.id) : false
+  const multiOpened = !!multi && (!!sel.optionalOpened[option.id] || (!!chosen && chosen !== multi.off.id) || !multiOffAvailable)
   const filteredValues = option.values.filter((v) =>
-    unavailable === 'show' || sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id)
+    v.id !== multi?.off.id
+    && (unavailable === 'show' || sel.isAvailable(option.id, v.id) || chosen === v.id || ghost === v.id))
   // Under 'last', the choices that cannot be had drop to the end of the row.
   // A stable partition rather than a sort: within each half the shop's own order
   // is untouched, so a size run stays 120/140/160 and only the dead ones move.
@@ -1459,6 +1477,17 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
     )
   }
 
+  // A tick box with several extras behind it (No module / White / Black): the
+  // box opts in, then the extras are drawn as the usual row of choices to pick
+  // exactly one. Unticked, nothing but the box shows and "No module" stands.
+  const multiBox = multi ? (
+    <OptInBox
+      label={`Add ${option.name}`} checked={multiOpened} locked={!multiOffAvailable} beside={beside}
+      onChange={(on) => { sel.setOptionalOpened(option.id, on); if (!on) onChoose?.() }}
+    />
+  ) : null
+  if (multi && !multiOpened) return <div style={rowStyle}>{labelRow}{multiBox}</div>
+
   if (option.controlType === 'DROPDOWN') {
     return (
       <label style={rowStyle}>
@@ -1494,7 +1523,9 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   // fabric answers "which one is that?" and the label answers "what is it called?"
   // - and a shopper who cannot see the picture is left with only the second.
   const isSwatch = option.controlType === 'SWATCH'
-  const isImage = option.controlType === 'IMAGE'
+  // A multi-choice tick box keeps the pictures its extras carry (a photo of the
+  // white module, the black one) - typically an image option switched over.
+  const isImage = option.controlType === 'IMAGE' || (!!multi && multi.choices.some((v) => !!v.swatch && !v.swatch.startsWith('#')))
   // A swatch or image option can still hold values with no colour or picture set,
   // and a label on its own makes a shorter button than one carrying a 28px
   // thumbnail. The row reserves the height of its tallest possible content so a
@@ -1503,6 +1534,7 @@ export function OptionControl({ option, sel, index, labelPlacement = 'above', hi
   return (
     <div style={rowStyle}>
       {labelRow}
+      {multiBox && <div style={{ marginBottom: '0.625rem' }}>{multiBox}</div>}
       {/* Beside drops out of flex entirely (see the note above the float): the
           buttons lay out as inline boxes so their line boxes wrap around the
           floated name. `gap` does nothing to inline layout, so the spacing moves
